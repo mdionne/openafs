@@ -27,7 +27,7 @@
 #define NO_LINK_TABLE 1
 #endif
 
-#define MAXINODETYPE VI_LINKTABLE
+#define MAXINODETYPE VI_FILEACL
 static struct afs_inode_info {
     struct versionStamp stamp;
     bit32 inodeType;
@@ -87,6 +87,14 @@ static struct afs_inode_info {
 	"link table",
 	NO_LINK_TABLE
     },
+    { 
+	{FILEACLMAGIC, FILEACLVERSION},
+	VI_FILEACL,
+	sizeof(struct versionStamp),
+	(Inode*)offsetof(struct VolumeHeader, fileACL),
+	"file acl index",
+	0
+    }, 
 };
 /* inodeType is redundant in the above table;  it used to be useful, but now
    we require the table to be ordered */

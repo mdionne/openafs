@@ -1770,6 +1770,7 @@ namei_ConvertROtoRWvolume(char *pname, afs_uint32 volumeId)
     h.smallVnodeIndex_hi = h.id;
     h.largeVnodeIndex_hi = h.id;
     h.linkTable_hi = h.id;
+    h.fileACL_hi = h.id;
 
     if (VCreateVolumeDiskHeader(&h, partP)) {
         Log("1 namei_ConvertROtoRWvolume: Couldn't write header for RW-volume %lu\n",

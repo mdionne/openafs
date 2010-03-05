@@ -1952,11 +1952,15 @@ VolumeHeaderToDisk(VolumeDiskHeader_t * dh, VolumeHeader_t * h)
 	(afs_int32) (h->largeVnodeIndex >> 32) & 0xffffffff;
     dh->linkTable_lo = (afs_int32) h->linkTable & 0xffffffff;
     dh->linkTable_hi = (afs_int32) (h->linkTable >> 32) & 0xffffffff;
+    dh->fileACL_lo = (afs_int32) h->fileACL & 0xffffffff;
+    dh->fileACL_hi = (afs_int32) (h->fileACL >> 32) & 0xffffffff;
+
 #else
     dh->volumeInfo_lo = h->volumeInfo;
     dh->smallVnodeIndex_lo = h->smallVnodeIndex;
     dh->largeVnodeIndex_lo = h->largeVnodeIndex;
     dh->linkTable_lo = h->linkTable;
+    dh->fileACL_lo = h->fileACL;
 #endif
 }
 
@@ -1989,11 +1993,14 @@ DiskToVolumeHeader(VolumeHeader_t * h, VolumeDiskHeader_t * dh)
 					  largeVnodeIndex_hi << 32);
     h->linkTable =
 	(Inode) dh->linkTable_lo | ((Inode) dh->linkTable_hi << 32);
+    h->fileACL =
+	(Inode) dh->fileACL_lo | ((Inode) dh->fileACL_hi << 32);
 #else
     h->volumeInfo = dh->volumeInfo_lo;
     h->smallVnodeIndex = dh->smallVnodeIndex_lo;
     h->largeVnodeIndex = dh->largeVnodeIndex_lo;
     h->linkTable = dh->linkTable_lo;
+    h->fileAcls = dh->fileAcls_lo;
 #endif
 }
 
@@ -2837,6 +2844,11 @@ attach_volume_header(Error *ec, Volume *vp, struct DiskPartition64 *partp,
     IH_INIT(vp->diskDataHandle, partp->device, header.parent,
 	    header.volumeInfo);
     IH_INIT(vp->linkHandle, partp->device, header.parent, header.linkTable);
+    if (header->fileACL == 0) {
+	vp->fileACLHandle = 0;
+    } else {
+	IH_INIT(vp->fileACLHandle, partp->device, header->parent, header->fileACL);
+    }
 
     if (first_try) {
 	/* only need to do this once */
@@ -4256,6 +4268,7 @@ VCloseVolumeHandles_r(Volume * vp)
 	IH_CONDSYNC(vp->vnodeIndex[vLarge].handle);
 	IH_CONDSYNC(vp->vnodeIndex[vSmall].handle);
 	IH_CONDSYNC(vp->diskDataHandle);
+	IH_CONDSYNC(vp->fileACLHandle);
 #ifdef AFS_NT40_ENV
 	IH_CONDSYNC(vp->linkHandle);
 #endif /* AFS_NT40_ENV */
@@ -4265,6 +4278,7 @@ VCloseVolumeHandles_r(Volume * vp)
     IH_REALLYCLOSE(vp->vnodeIndex[vSmall].handle);
     IH_REALLYCLOSE(vp->diskDataHandle);
     IH_REALLYCLOSE(vp->linkHandle);
+    IH_REALLYCLOSE(vp->fileACLHandle);
 
 #ifdef AFS_DEMAND_ATTACH_FS
     if ((V_attachFlags(vp) & VOL_LOCKED)) {
@@ -4305,6 +4319,7 @@ VReleaseVolumeHandles_r(Volume * vp)
 	IH_CONDSYNC(vp->vnodeIndex[vLarge].handle);
 	IH_CONDSYNC(vp->vnodeIndex[vSmall].handle);
 	IH_CONDSYNC(vp->diskDataHandle);
+	IH_CONDSYNC(vp->fileACLHandle);
 #ifdef AFS_NT40_ENV
 	IH_CONDSYNC(vp->linkHandle);
 #endif /* AFS_NT40_ENV */
@@ -4314,6 +4329,7 @@ VReleaseVolumeHandles_r(Volume * vp)
     IH_RELEASE(vp->vnodeIndex[vSmall].handle);
     IH_RELEASE(vp->diskDataHandle);
     IH_RELEASE(vp->linkHandle);
+    IH_RELEASE(vp->fileACLHandle);
 
 #ifdef AFS_DEMAND_ATTACH_FS
     if ((V_attachFlags(vp) & VOL_LOCKED)) {

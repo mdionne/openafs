@@ -262,6 +262,7 @@ typedef struct VolumePackageOptions {
 #define	MOUNTMAGIC		0x9a8b7c6d
 #define ACLMAGIC		0x88877712
 #define LINKTABLEMAGIC		0x99877712
+#define FILEACLMAGIC            0x77877712
 
 #define VOLUMEHEADERVERSION	1
 #define VOLUMEINFOVERSION	1
@@ -270,6 +271,7 @@ typedef struct VolumePackageOptions {
 #define	MOUNTVERSION		1
 #define ACLVERSION		1
 #define LINKTABLEVERSION	1
+#define FILEACLVERSION          1
 
 /*
  * Define whether we are keeping detailed statistics on volume dealings.
@@ -321,6 +323,7 @@ typedef struct VolumeHeader {
     Inode volumeAcl;
     Inode volumeMountTable;
     Inode linkTable;
+    Inode fileACL;
 } VolumeHeader_t;
 
 
@@ -341,8 +344,11 @@ typedef struct VolumeDiskHeader {
     afs_int32 volumeMountTable_hi;
     afs_int32 linkTable_lo;
     afs_int32 linkTable_hi;
+    afs_int32 fileACL_lo;
+    afs_int32 fileACL_hi;
+
     /* If you add fields, add them before here and reduce the size of  array */
-    bit32 reserved[3];
+    bit32 reserved[1];
 } VolumeDiskHeader_t;
 
 /* A vnode index file header */
@@ -637,6 +643,7 @@ typedef struct Volume {
 					 * start search from in bitmap */
     } vnodeIndex[nVNODECLASSES];
     IHandle_t *linkHandle;
+    IHandle_t *fileACLHandle;   /* Handle to file ACL file */
     Unique nextVnodeUnique;	/* Derived originally from volume uniquifier.
 				 * This is the actual next version number to
 				 * assign; the uniquifier is bumped by 200 and
