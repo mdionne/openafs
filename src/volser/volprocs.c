@@ -390,7 +390,6 @@ ViceCreateRoot(Volume *vp)
     vnode->author = 0;
     vnode->owner = 0;
     vnode->parent = 0;
-    vnode->vnodeMagic = vcp->magic;
 
     IH_INIT(h, vp->device, V_parentId(vp),
 	    vp->vnodeIndex[vLarge].handle->ih_ino);

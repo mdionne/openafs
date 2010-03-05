@@ -5782,11 +5782,6 @@ VGetBitmap_r(Error * ec, Volume * vp, VnodeClass class)
 	    if (STREAM_READ(vnode, vcp->diskSize, 1, file) != 1)
 		break;
 	    if (vnode->type != vNull) {
-		if (vnode->vnodeMagic != vcp->magic) {
-		    Log("GetBitmap: addled vnode index in volume %s; volume needs salvage\n", V_name(vp));
-		    *ec = VSALVAGE;
-		    break;
-		}
 #ifdef BITMAP_LATER
 		*(BitMap + (bitNumber >> 3)) |= (1 << (bitNumber & 0x7));
 #else /* BITMAP_LATER */

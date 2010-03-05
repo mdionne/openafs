@@ -1475,7 +1475,6 @@ ReadVnodes(struct iod *iodp, Volume * vp, int incremental,
 			   V_parentId(vp));
 		}
 	    }
-	    vnode->vnodeMagic = vcp->magic;
 	    if (FDH_PWRITE(fdP, vnode, vcp->diskSize, vnodeIndexOffset(vcp, vnodeNumber)) != vcp->diskSize) {
 		Log("1 Volser: ReadVnodes: Error writing vnode index: %s; restore aborted\n",
 		    afs_error_message(errno));

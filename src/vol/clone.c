@@ -247,8 +247,6 @@ DoCloneIndex(Volume * rwvp, Volume * clvp, VnodeClass class, int reclone)
 	if (rwvnode->type != vNull) {
 	    afs_fsize_t ll;
 
-	    if (rwvnode->vnodeMagic != vcp->magic)
-		ERROR_EXIT(-1);
 	    rwinode = VNDISK_GET_INO(rwvnode);
 	    filecount++;
 	    VNDISK_GET_LEN(ll, rwvnode);

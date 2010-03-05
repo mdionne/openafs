@@ -385,13 +385,17 @@ VInitVnodes(VnodeClass class, int nVnodes)
 	vcp->lruHead = NULL;
 	vcp->residentSize = SIZEOF_SMALLVNODE;
 	vcp->diskSize = SIZEOF_SMALLDISKVNODE;
+	/* Stolen for per file ACLs
 	vcp->magic = SMALLVNODEMAGIC;
+	*/
 	break;
     case vLarge:
 	vcp->lruHead = NULL;
 	vcp->residentSize = SIZEOF_LARGEVNODE;
 	vcp->diskSize = SIZEOF_LARGEDISKVNODE;
+	/* Stolen for per file ACLs
 	vcp->magic = LARGEVNODEMAGIC;
+	*/
 	break;
     }
     {
@@ -838,7 +842,6 @@ VAllocVnode_r(Error * ec, Volume * vp, VnodeType type)
     vnp->changed_newTime = 0;	/* set this bit when vnode is updated */
     vnp->changed_oldTime = 0;	/* set this on CopyOnWrite. */
     vnp->delete = 0;
-    vnp->disk.vnodeMagic = vcp->magic;
     vnp->disk.type = type;
     vnp->disk.uniquifier = unique;
     vnp->handle = NULL;
@@ -923,26 +926,9 @@ VnLoad(Error * ec, Volume * vp, Vnode * vnp,
     VOL_LOCK;
 
     /* Quick check to see that the data is reasonable */
-    if (vnp->disk.vnodeMagic != vcp->magic || vnp->disk.type == vNull) {
-	if (vnp->disk.type == vNull) {
-	    *ec = VNOVNODE;
-	    dosalv = 0;
-	} else {
-	    struct vnodeIndex *index = &vp->vnodeIndex[class];
-	    unsigned int bitNumber = vnodeIdToBitNumber(Vn_id(vnp));
-	    unsigned int offset = bitNumber >> 3;
-
-	    /* Test to see if vnode number is valid. */
-	    if ((offset >= index->bitmapSize)
-		|| ((*(index->bitmap + offset) & (1 << (bitNumber & 0x7)))
-		    == 0)) {
-		Log("VnLoad: Request for unallocated vnode %u, volume %u (%s) denied.\n", Vn_id(vnp), V_id(vp), V_name(vp));
-		*ec = VNOVNODE;
-		dosalv = 0;
-	    } else {
-		Log("VnLoad: Bad magic number, vnode %u, volume %u (%s); volume needs salvage\n", Vn_id(vnp), V_id(vp), V_name(vp));
-	    }
-	}
+    if (vnp->disk.type == vNull) {
+	*ec = VNOVNODE;
+	dosalv = 0;
 	goto error_encountered;
     }
 
@@ -1316,7 +1302,6 @@ VPutVnode_r(Error * ec, Vnode * vnp)
     assert(Vn_refcount(vnp) != 0);
     class = vnodeIdToClass(Vn_id(vnp));
     vcp = &VnodeClassInfo[class];
-    assert(vnp->disk.vnodeMagic == vcp->magic);
     VNLog(200, 2, Vn_id(vnp), (intptr_t) vnp, 0, 0);
 
 #ifdef AFS_DEMAND_ATTACH_FS
@@ -1457,7 +1442,6 @@ VVnodeWriteToRead_r(Error * ec, Vnode * vnp)
     assert(Vn_refcount(vnp) != 0);
     class = vnodeIdToClass(Vn_id(vnp));
     vcp = &VnodeClassInfo[class];
-    assert(vnp->disk.vnodeMagic == vcp->magic);
     VNLog(300, 2, Vn_id(vnp), (intptr_t) vnp, 0, 0);
 
 #ifdef AFS_DEMAND_ATTACH_FS

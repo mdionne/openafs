@@ -599,9 +599,6 @@ createMountpoint(Volume *vol, Volume *newvol, struct VnodeDiskObject *parent,
     IH_RELEASE(h);
     VNDISK_SET_INO(&vnode, newino);
     VNDISK_SET_LEN(&vnode, size);
-#ifndef AFS_RXOSD_SUPPORT
-    vnode.vnodeMagic = SMALLVNODEMAGIC;
-#endif
     if (FDH_PWRITE(fdP, &vnode, vcp->diskSize, offset) != vcp->diskSize) {
 	Log("split volume: couldn't write vnode for mountpoint %u.%u.%u\n",
 		V_id(vol), newvN, vnode.uniquifier);

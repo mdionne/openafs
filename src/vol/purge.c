@@ -140,8 +140,6 @@ ObliterateRegion(Volume * avp, VnodeClass aclass, StreamHandle_t * afile,
 	    break;
 	}
 	if (vnode->type != vNull) {
-	    if (vnode->vnodeMagic != vcp->magic)
-		goto fail;	/* something really wrong; let salvager take care of it */
 	    if (VNDISK_GET_INO(vnode))
 		inodes[iindex++] = VNDISK_GET_INO(vnode);
 	}

@@ -2571,14 +2571,6 @@ SalvageIndex(struct SalvInfo *salvinfo, Inode ino, VnodeClass class, int RW,
 		    vnodeChanged = 1;
 		}
 	    } else {
-		if (vcp->magic != vnode->vnodeMagic) {
-		    /* bad magic #, probably partially created vnode */
-		    Log("Partially allocated vnode %d deleted.\n",
-			vnodeNumber);
-		    memset(vnode, 0, vcp->diskSize);
-		    vnodeChanged = 1;
-		    goto vnodeDone;
-		}
 		/* ****** Should do a bit more salvage here:  e.g. make sure
 		 * vnode type matches what it should be given the index */
 		while (nInodes && ip->u.vnode.vnodeNumber < vnodeNumber) {
@@ -3538,7 +3530,7 @@ CreateReadme(struct SalvInfo *salvinfo, VolumeDiskData *volHeader,
     rvnode->owner = 0;
     rvnode->parent = 1;
     rvnode->group = 0;
-    rvnode->vnodeMagic = VnodeClassInfo[vSmall].magic;
+    rvnode->fileACL = 0;
 
     bytes = IH_IWRITE(salvinfo->vnodeInfo[vSmall].handle,
                       vnodeIndexOffset(&VnodeClassInfo[vSmall], afid->Vnode),
@@ -3712,7 +3704,7 @@ CreateRootDir(struct SalvInfo *salvinfo, VolumeDiskData *volHeader,
     rootvnode->owner = 0;
     rootvnode->parent = 0;
     rootvnode->group = 0;
-    rootvnode->vnodeMagic = VnodeClassInfo[vLarge].magic;
+    rootvnode->fileACL = 0;
 
     /* write it out to disk */
     bytes = IH_IWRITE(salvinfo->vnodeInfo[vLarge].handle,

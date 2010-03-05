@@ -1031,7 +1031,7 @@ VnQuery(struct cmd_syndesc * as, void * rock)
 	printf("\t\tauthor            = %u\n", v.disk.author);
 	printf("\t\towner             = %u\n", v.disk.owner);
 	printf("\t\tparent            = %u\n", v.disk.parent);
-	printf("\t\tvnodeMagic        = %u\n", v.disk.vnodeMagic);
+	printf("\t\tfileACL           = %u\n", v.disk.fileACL);
 
 	printf("\t\tlock = {\n");
 	printf("\t\t\tlockCount   = %d\n", v.disk.lock.lockCount);

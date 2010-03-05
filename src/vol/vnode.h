@@ -97,14 +97,7 @@ typedef struct VnodeDiskObject {
     UserId author;		/* Userid of the last user storing the file */
     UserId owner;		/* Userid of the user who created the file */
     VnodeId parent;		/* Parent directory vnode */
-    bit32 vnodeMagic;		/* Magic number--mainly for file server
-				 * paranoia checks */
-#   define	  SMALLVNODEMAGIC	0xda8c041F
-#   define	  LARGEVNODEMAGIC	0xad8765fe
-    /* Vnode magic can be removed, someday, if we run need the room.  Simply
-     * have to be sure that the thing we replace can be VNODEMAGIC, rather
-     * than 0 (in an old file system).  Or go through and zero the fields,
-     * when we notice a version change (the index version number) */
+    afs_int32 fileACL;		/* Pointer to file ACL slot */
     ViceLock lock;		/* Advisory lock */
     Date serverModifyTime;	/* Used only by the server; for incremental
 				 * backup purposes */
