@@ -853,6 +853,229 @@ VAllocVnode_r(Error * ec, Volume * vp, VnodeType type)
     return vnp;
 }
 
+/*
+ * Per file ACL routines
+ * Various functions to manipulate the file ACLs on disk
+ */
+
+/* Get current reference count for an ACL slot */
+int
+getRefcountACL(afs_int32 slot, Volume *vp) {
+    struct acl_diskslot tempslot;
+    FdHandle_t *fdP;
+    int offset;
+
+    fdP = IH_OPEN(vp->fileACLHandle);
+    offset = ACLSlotOffset(slot);
+    FDH_SEEK(fdP, offset, SEEK_SET);
+    FDH_READ(fdP, (char *)&tempslot, sizeof(tempslot));
+    FDH_CLOSE(fdP);
+    return tempslot.count;
+}
+
+/* Increment reference count for an ACL slot */
+int
+incRefcountACL(afs_int32 slot, Volume *vp) {
+    struct acl_diskslot tempslot;
+    FdHandle_t *fdP;
+    int offset;
+
+    fdP = IH_OPEN(vp->fileACLHandle);
+    offset = ACLSlotOffset(slot);
+    FDH_SEEK(fdP, offset, SEEK_SET);
+    FDH_READ(fdP, (char *)&tempslot, sizeof(tempslot));
+    tempslot.count++;
+    FDH_SEEK(fdP, offset, SEEK_SET);
+    FDH_WRITE(fdP, (char *)&tempslot, sizeof(tempslot));
+    FDH_CLOSE(fdP);
+    return tempslot.count;
+}
+
+/*
+ * Decrement reference count for a file ACL.
+ * If ACL becomes unreferenced, free it.
+ * Returns resulting ref count
+ */
+int
+decRefcountACL(afs_int32 slot, Volume *vp) {
+    int offset;
+    struct acl_diskslot tempslot, firstslot;
+    FdHandle_t *fdP;
+
+    fdP = IH_OPEN(vp->fileACLHandle);
+    offset = ACLSlotOffset(slot);
+    FDH_SEEK(fdP, offset, SEEK_SET);
+    FDH_READ(fdP, (char *)&tempslot, sizeof(tempslot));
+    Log("decRefcountACL: initial refcount is %d\n", tempslot.count);
+    tempslot.count--;
+    if (tempslot.count < 0) {
+	tempslot.count = 0;
+	Log("Ref count was 0 on call - not normal - adjusted to 0\n");
+    }
+    if (!(tempslot.count)) {
+	/* Now free */
+	FDH_SEEK(fdP, sizeof(tempslot), SEEK_SET);
+	FDH_READ(fdP, (char *)&firstslot, sizeof(firstslot));
+	tempslot.next = firstslot.next;
+	firstslot.next = slot;
+	/* write back */
+	FDH_SEEK(fdP, sizeof(tempslot), SEEK_SET);
+	FDH_WRITE(fdP, (char *)&firstslot, sizeof(firstslot));
+    }
+    FDH_SEEK(fdP, offset, SEEK_SET);
+    FDH_WRITE(fdP, (char *)&tempslot, sizeof(tempslot));
+    FDH_CLOSE(fdP);
+    Log("decRefcountACL: slot %d at location %u now has refcount: %d\n", slot, offset, tempslot.count);
+    return tempslot.count;
+}
+
+/* Allocate a free ACL slot */
+afs_int32
+AllocACL(Volume *vp) {
+    afs_int32 slot;
+    struct acl_diskslot tempslot, newslot;
+    int size, code, offset;
+    FdHandle_t *fdP;
+
+    /* Open ACL file */
+    fdP = IH_OPEN(vp->fileACLHandle);
+    if (fdP == NULL) {
+	Log("SetACL: can't open file ACL file!\n");
+	goto error;
+    }
+
+    /* Special case: make sure the file is properly initialized */
+    size = FDH_SIZE(fdP);
+    if (size < 400) {
+	/* growing file - grow in a reasonable increment - 16K */
+	FDH_SEEK(fdP, 200, SEEK_SET);
+	Log("AllocACL: Initializing ACL file: no header record\n");
+	char *buf = (char *)malloc(16 * 1024);
+	if (!buf)
+	    Abort("AllocACL: malloc failed\n");
+	memset(buf, 0, 16 * 1024);
+	(void)FDH_WRITE(fdP, buf, 16 * 1024);
+	free(buf);
+    }
+    /* Retrieve slot 1, next pointer is next free slot */
+    if (FDH_SEEK(fdP, sizeof(tempslot), SEEK_SET) < 0) {
+	Log("AllocACL: SEEK error\n");
+	goto error;
+    }
+    code = FDH_READ(fdP, (char *)&tempslot, sizeof(tempslot));
+    if (code != sizeof(tempslot)) {
+	Log("AllocACL: Short READ!!!!!  Uh oh.\n");
+	goto error;
+    }
+    slot = tempslot.next;
+    /* Special case: on a new volume, this will be 0 */
+    if (!slot) {
+	Log("AllocACL: setting next free to 2 for new volume\n");
+	slot = 2;
+    }
+    Log("AllocACL: next free slot is %d\n", slot);
+
+    /* Need to extend file if necessary */
+    size = FDH_SIZE(fdP);
+
+    offset = ACLSlotOffset(slot);
+    if (FDH_SEEK(fdP, offset, SEEK_SET) < 0) {
+	goto error;
+    }
+    if ((offset + sizeof(newslot)) <= size) {
+	code = FDH_READ(fdP, (char *)&newslot, sizeof(newslot));
+	Log("AllocACL: read in new slot from location %u\n", offset);
+	/* If next pointer is 0, it implies the following slot */
+	if (newslot.next)
+	 tempslot.next = newslot.next;
+	else
+	   tempslot.next = slot + 1;
+    } else {
+	/* growing file - grow in a reasonable increment - 16K */
+	Log("Growing ACL file - filling with nice 0s \n");
+	char *buf = (char *)malloc(16 * 1024);
+	if (!buf)
+	    Abort("AllocACL: malloc failed\n");
+	memset(buf, 0, 16 * 1024);
+	(void)FDH_WRITE(fdP, buf, 16 * 1024);
+	free(buf);
+	tempslot.next = slot + 1;
+    }
+
+    /* Write back next pointer */
+    FDH_SEEK(fdP, sizeof(tempslot), SEEK_SET);
+    code = FDH_WRITE(fdP, (char *)&tempslot, sizeof(tempslot));
+
+    /* Write back new slot - we set the ref count to 1 */
+    newslot.count = 1;
+    FDH_SEEK(fdP, offset, SEEK_SET);
+    code = FDH_WRITE(fdP, (char *)&newslot, sizeof(newslot));
+
+    FDH_CLOSE(fdP);
+    Log("AllocACL: new first free is %d\n", tempslot.next);
+
+    return slot;
+
+error:
+    return 0;
+}
+
+/* Store an ACL to a given disk slot */
+int
+StoreACL(afs_int32 slot, char *ACL, Volume *vp) {
+    int code, offset;
+    FdHandle_t *fdP;
+
+    /* Set ACL value into slot on disk.
+     * Simply copy at the right location on disk */
+    offset = ACLSlotACL(slot); /* skip ref count */
+    fdP = IH_OPEN(vp->fileACLHandle);
+    if (fdP == NULL) {
+	Log("SetACL: can't open file ACL file!\n");
+	goto error;
+    }
+    if (FDH_SEEK(fdP, offset, SEEK_SET) < 0) {
+	Log("SetACL: can't seek on file ACL index file! fdp=0x%x offset=%d, errno=%d\n",
+	     fdP, offset, errno);
+	goto error;
+    }
+    code = FDH_WRITE(fdP, (char *)ACL, VAclSize(vnp));
+    FDH_CLOSE(fdP);
+
+    return 0;
+
+error:
+    return -1;
+}
+
+/* Load an ACL from a disk slot */
+int
+LoadACL(afs_int32 slot, char *ACL, Volume *vp) {
+    int code, offset;
+    FdHandle_t *fdP;
+
+    /* Load ACL value from slot on disk.
+     * Simply read from the right location on disk */
+    offset = ACLSlotACL(slot); /* leave 2 empty slots */
+    fdP = IH_OPEN(vp->fileACLHandle);
+    if (fdP == NULL) {
+	Log("SetACL: can't open file ACL file!\n");
+	goto error;
+    }
+    if (FDH_SEEK(fdP, offset, SEEK_SET) < 0) {
+	Log("SetACL: can't seek on file ACL index file! fdp=0x%x offset=%d, errno=%d\n",
+	     fdP, offset, errno);
+	goto error;
+    }
+    code = FDH_READ(fdP, (byte *)ACL, VAclSize(vnp));
+    FDH_CLOSE(fdP);
+
+    return 0;
+
+error:
+   return errno;
+}
+
 /**
  * load a vnode from disk.
  *
