@@ -19,6 +19,8 @@
 #ifndef _AFS_VOL_VNODE_H
 #define _AFS_VOL_VNODE_H 1
 
+#include <afs/acl.h>
+
 #define Date afs_uint32
 
 struct Volume;			/* Potentially forward definition. */
@@ -195,6 +197,7 @@ typedef struct Vnode {
     VnodeDiskObject disk;	/* The actual disk data for the vnode */
 } Vnode;
 
+#define SIZEOF_FILEACL 192
 #define SIZEOF_LARGEVNODE \
 	(sizeof(struct Vnode) - sizeof(VnodeDiskObject) + SIZEOF_LARGEDISKVNODE)
 #define SIZEOF_SMALLVNODE	(sizeof (struct Vnode))
@@ -276,5 +279,26 @@ extern void AddToVnLRU(struct VnodeClassInfo * vcp, Vnode * vnp);
 extern void DeleteFromVnLRU(struct VnodeClassInfo * vcp, Vnode * vnp);
 extern void AddToVnHash(Vnode * vnp);
 extern void DeleteFromVnHash(Vnode * vnp);
+
+/*
+ * Elements for per-file ACL support 
+ * 
+ * Describes the disk slot format.
+ * Slots 0-1 are unused 
+ * 0: contains the file header/stamp
+ * 1: serves only as an on-disk pointer to the first free slot 
+ */
+struct acl_diskslot {
+    afs_int32 count;           /* Reference count */
+    union {                    /* ACL */
+	struct acl_accessList ACL;
+	char _buf[VAclSize(vnp)]; /* To force correct size */
+    };
+    afs_int32 next;    /* Pointer to next free slot */
+};
+
+#define ACLSlotOffset(s) ((s+1)*sizeof(struct acl_diskslot))
+#define ACLSlotACL(s) ((s+1)*sizeof(struct acl_diskslot) + sizeof(afs_int32)) 
+
 
 #endif /* _AFS_VOL_VNODE_H */
