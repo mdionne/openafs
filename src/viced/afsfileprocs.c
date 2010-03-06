@@ -612,7 +612,8 @@ SetAccessList(Vnode ** targetptr, Volume ** volume,
 	      struct acl_accessList **ACL, int *ACLSize, Vnode ** parent,
 	      AFSFid * Fid, int Lock)
 {
-    if ((*targetptr)->disk.type == vDirectory) {
+    /* If directory, or file with per-file ACLs active, return vnode's ACL */
+    if ((*targetptr)->disk.type == vDirectory || (*targetptr)->volumePtr->fileACLHandle) {
 	*parent = 0;
 	*ACL = VVnodeACL(*targetptr);
 	*ACLSize = VAclSize(*targetptr);
@@ -624,8 +625,6 @@ SetAccessList(Vnode ** targetptr, Volume ** volume,
 	    Error errorCode = 0;
 
 	    parentvnode = (*targetptr)->disk.parent;
-	    VPutVnode(&errorCode, *targetptr);
-	    *targetptr = 0;
 	    if (errorCode)
 		return (errorCode);
 	    *parent = VGetVnode(&errorCode, *volume, parentvnode, READ_LOCK);
@@ -633,6 +632,9 @@ SetAccessList(Vnode ** targetptr, Volume ** volume,
 		return (errorCode);
 	    *ACL = VVnodeACL(*parent);
 	    *ACLSize = VAclSize(*parent);
+/* PERFILE: moved here, but can't remember why */
+	    VPutVnode(&errorCode, *targetptr);
+	    *targetptr = 0;
 	    if ((errorCode = CheckVnode(Fid, volume, targetptr, Lock)) != 0)
 		return (errorCode);
 	    if ((*targetptr)->disk.parent != parentvnode) {
@@ -1056,13 +1058,14 @@ RXFetch_AccessList(Vnode * targetptr, Vnode * parentwhentargetnotdir,
 		   struct AFSOpaque *AccessList)
 {
     char *eACL;			/* External access list placeholder */
+    Vnode *vnp;
 
-    if (acl_Externalize_pr
-	(hpr_IdToName, (targetptr->disk.type ==
-	  vDirectory ? VVnodeACL(targetptr) :
-	  VVnodeACL(parentwhentargetnotdir)), &eACL) != 0) {
+    if (targetptr->disk.type == vDirectory || targetptr->volumePtr->fileACLHandle)
+	vnp = targetptr;
+    else
+	vnp = parentwhentargetnotdir;
+    if (acl_Externalize_pr(hpr_IdToName, VVnodeACL(vnp), &eACL) != 0)
 	return EIO;
-    }
     if ((strlen(eACL) + 1) > AFSOPAQUEMAX) {
 	acl_FreeExternalACL(&eACL);
 	return (E2BIG);
@@ -2080,6 +2083,9 @@ static
 GetStatus(Vnode * targetptr, AFSFetchStatus * status, afs_int32 rights,
 	  afs_int32 anyrights, Vnode * parentptr)
 {
+    int gotparent = 0;
+    Error  errorCode;
+
     /* initialize return status from a vnode  */
     status->InterfaceVersion = 1;
     status->SyncCounter = status->dataVersionHigh = status->lockCount =
@@ -2106,6 +2112,13 @@ GetStatus(Vnode * targetptr, AFSFetchStatus * status, afs_int32 rights,
     status->AnonymousAccess = anyrights;
     status->UnixModeBits = targetptr->disk.modeBits;
     status->ClientModTime = targetptr->disk.unixModifyTime;	/* This might need rework */
+    /* In case we get called with no parent pointer */
+    if (status->FileType != Directory && !parentptr) {
+/* PERFILE: check error code here */
+	parentptr = VGetVnode(&errorCode, targetptr->volumePtr, targetptr->disk.parent, READ_LOCK);
+	gotparent = 1;
+    }
+
     status->ParentVnode =
 	(status->FileType ==
 	 Directory ? targetptr->vnodeNumber : parentptr->vnodeNumber);
@@ -2116,6 +2129,9 @@ GetStatus(Vnode * targetptr, AFSFetchStatus * status, afs_int32 rights,
     status->Group = targetptr->disk.group;
     status->lockCount = targetptr->disk.lock.lockCount;
     status->errorCode = 0;
+    /* Put parent pointer if we got it here */
+    if (gotparent)
+	VPutVnode(&errorCode, parentptr);
 
 }				/*GetStatus */
 
@@ -3278,8 +3294,10 @@ SRXAFS_StoreACL(struct rx_call * acall, struct AFSFid * Fid,
      * Get associated volume/vnode for the target dir; caller's rights
      * are also returned.
      */
+    /* With per-file ACLs this is allowed on files.  But temporarily,
+     * until we introduce the new RPC */
     if ((errorCode =
-	 GetVolumePackage(tcon, Fid, &volptr, &targetptr, MustBeDIR,
+	 GetVolumePackage(tcon, Fid, &volptr, &targetptr, DONTCHECK,
 			  &parentwhentargetnotdir, &client, WRITE_LOCK,
 			  &rights, &anyrights))) {
 	goto Bad_StoreACL;
@@ -3718,6 +3736,13 @@ SAFSS_CreateFile(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
 			vFile, nBlocks(0)))) {
 	goto Bad_CreateFile;
     }
+
+    /* For a new file, use the parent ACL slot as a hint for a slot to use.
+     * A negative slot number is a hint - we don't hold a reference to the slot */
+    targetptr->disk.fileACL = -parentptr->disk.fileACL;
+
+    /* Copy in-memory parent ACL to the new vnode */
+    memcpy((char *)VVnodeACL(targetptr), (char *)VVnodeACL(parentptr), VAclSize(parentptr));
 
     /* update the status of the parent vnode */
 #if FS_STATS_DETAILED
@@ -4441,6 +4466,12 @@ SAFSS_Symlink(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
 	goto Bad_SymLink;
     }
 
+    /* Use parent ACL slot if possible  - negative number is a hint */
+    targetptr->disk.fileACL = -parentptr->disk.fileACL;
+
+    /* Copy in-memory parent ACL to the new vnode */
+    memcpy((char *)VVnodeACL(targetptr), (char *)VVnodeACL(parentptr), VAclSize(parentptr));
+
     /* update the status of the parent vnode */
 #if FS_STATS_DETAILED
     Update_ParentVnodeStatus(parentptr, volptr, &dir, client->ViceId,
@@ -4864,6 +4895,9 @@ SAFSS_MakeDir(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
 	     &parentwhentargetnotdir, (AFSFid *) 0, 0)) == 0);
     assert(parentwhentargetnotdir == 0);
     memcpy((char *)newACL, (char *)VVnodeACL(parentptr), VAclSize(parentptr));
+
+    /* Point to parent ACL slot.  Use as hint (negative), since we don't have a real reference yet */
+    targetptr->disk.fileACL = -parentptr->disk.fileACL;
 
     /* update the status for the target vnode */
     Update_TargetVnodeStatus(targetptr, TVS_MKDIR, client, InStatus,

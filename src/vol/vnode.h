@@ -200,7 +200,7 @@ typedef struct Vnode {
 #define SIZEOF_FILEACL 192
 #define SIZEOF_LARGEVNODE \
 	(sizeof(struct Vnode) - sizeof(VnodeDiskObject) + SIZEOF_LARGEDISKVNODE)
-#define SIZEOF_SMALLVNODE	(sizeof (struct Vnode))
+#define SIZEOF_SMALLVNODE	((sizeof (struct Vnode)) + SIZEOF_FILEACL)
 
 
 /*

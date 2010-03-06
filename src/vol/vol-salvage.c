@@ -2753,7 +2753,6 @@ SalvageIndex(struct SalvInfo *salvinfo, Inode ino, VnodeClass class, int RW,
 		    nInodes--;
 		}
 	    }			/* VNDISK_GET_INO(vnode) != 0 */
-	  vnodeDone:
 	    assert(!(vnodeChanged && check));
 	    if (vnodeChanged && !Testing) {
 		assert(IH_IWRITE

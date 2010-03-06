@@ -847,6 +847,7 @@ VAllocVnode_r(Error * ec, Volume * vp, VnodeType type)
     vnp->handle = NULL;
     vcp->allocs++;
     vp->header->diskstuff.filecount++;
+    vnp->disk.fileACL = 0;
 #ifdef AFS_DEMAND_ATTACH_FS
     VnChangeState_r(vnp, VN_STATE_EXCLUSIVE);
 #endif
@@ -1146,6 +1147,18 @@ VnLoad(Error * ec, Volume * vp, Vnode * vnp,
 	goto error_encountered_nolock;
     }
     FDH_CLOSE(fdP);
+
+   /* Per file ACLs: Also load file ACL, if needed */
+    if (class == vSmall && vp->fileACLHandle) {
+	if (vnp->disk.fileACL > 0) {
+	    LoadACL(vnp->disk.fileACL, (char *)VVnodeACL(vnp), vp);
+	} else {
+/* PERFILE: need to deal here with legacy volumes - they may have "magic" */
+	    Log("Uh oh, ACL pointer is negative (%d)\n", vnp->disk.fileACL);
+	    vnp->disk.fileACL = 0;
+	}
+    }
+
     VOL_LOCK;
 
     /* Quick check to see that the data is reasonable */
@@ -1208,18 +1221,62 @@ VnStore(Error * ec, Volume * vp, Vnode * vnp,
 {
     ssize_t nBytes;
     afs_foff_t offset;
+    int code, count;
     IHandle_t *ihP = vp->vnodeIndex[class].handle;
     FdHandle_t *fdP;
     afs_ino_str_t stmp;
 #ifdef AFS_DEMAND_ATTACH_FS
     VnState vn_state_save;
 #endif
+    char tempACL[VAclSize(vnp)];
 
     *ec = 0;
 
 #ifdef AFS_DEMAND_ATTACH_FS
     vn_state_save = VnChangeState_r(vnp, VN_STATE_STORE);
 #endif
+
+    /* The per-file ACL needs to be stored first, since it can involve a disk slot
+     * allocation and change disk.fileACL, stored later below */
+    if (vp->fileACLHandle != 0) {
+	/* If deleting, remove reference to ACL */
+	if (vnp->delete) {
+	    /* The disk slot for the ACL will be freed when we put the vnode */
+	} else {
+	   /* Step 1, confirm slot to use. */
+	   if (!vnp->disk.fileACL) {
+		/* Never used - allocate now.  Might be an error condition */
+		vnp->disk.fileACL = AllocACL(vp);
+		Log("ACL was 0, allocated slot %d - not normal?\n", vnp->disk.fileACL);
+	   } else if (vnp->disk.fileACL < 0) {
+		/* This is a hint.  We have no reference to this slot yet. */
+		/* Happens for new files and directories */
+		/* Read in existing ACL and compare */
+		LoadACL(-vnp->disk.fileACL, (char *)&tempACL, vp);
+		/* If refcount is 0, slot is unused, so just use it */
+		if (memcmp((char *)&tempACL, VVnodeACL(vnp), VAclSize(vnp))) {
+		   /* Different, so we need to use a new slot */
+		   vnp->disk.fileACL = AllocACL(vp);
+		} else {
+		   /* Use slot from hint, increase ref count */
+		   vnp->disk.fileACL = -vnp->disk.fileACL;
+		   count = incRefcountACL(vnp->disk.fileACL, vp);
+		}
+	   } else {
+		/* Existing pointer - check if we need to COW */
+		if (getRefcountACL(vnp->disk.fileACL, vp) > 1) {
+		    /* We're not the only user - check ACL - need to allocate  a new entry, maybe */
+		   LoadACL(vnp->disk.fileACL, (char *)&tempACL, vp);
+		   if (memcmp((char *)&tempACL, VVnodeACL(vnp), VAclSize(vnp))) {
+			decRefcountACL(vnp->disk.fileACL, vp);
+			vnp->disk.fileACL = AllocACL(vp);
+		   }
+		}
+	    }
+	   /* At this point the refcount should be OK.  Store the ACL. */
+	    StoreACL(vnp->disk.fileACL, (char *)VVnodeACL(vnp), vp);
+	}
+    }
 
     offset = vnodeIndexOffset(vcp, Vn_id(vnp));
     VOL_UNLOCK;
@@ -1556,6 +1613,9 @@ VPutVnode_r(Error * ec, Vnode * vnp)
 	    assert(Vn_cacheCheck(vnp) == vp->cacheCheck);
 
 	    if (vnp->delete) {
+		/* Decrement reference to file ACL.  Will free if 0 */
+		decRefcountACL(vnp->disk.fileACL, vp);
+
 		/* No longer any directory entries for this vnode. Free the Vnode */
 		memset(&vnp->disk, 0, sizeof(vnp->disk));
 		/* delete flag turned off further down */
