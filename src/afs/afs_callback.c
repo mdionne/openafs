@@ -1659,7 +1659,7 @@ SRXAFSCB_TellMeAboutYourself(struct rx_call *a_call,
 
     dataBytes = 1 * sizeof(afs_uint32);
     dataBuffP = (afs_uint32 *) afs_osi_Alloc(dataBytes);
-    dataBuffP[0] = CLIENT_CAPABILITY_ERRORTRANS;
+    dataBuffP[0] = CLIENT_CAPABILITY_ERRORTRANS | CLIENT_CAPABILITY_FILEACLS;
     capabilities->Capabilities_len = dataBytes / sizeof(afs_uint32);
     capabilities->Capabilities_val = dataBuffP;
 

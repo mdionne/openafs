@@ -294,4 +294,5 @@ struct host *(hosttableptrs[h_MAXHOSTTABLES]);	/* Used by h_itoh */
 #define HERRORTRANS                    0x100	/* do error translation */
 #define HWHO_INPROGRESS                0x200    /* set when WhoAreYou running */
 #define HCBREAK                        0x400    /* flag for a multi CB break */
+#define HFILEACLS                      0x800    /* set when client is file ACL aware */
 #endif /* _AFS_VICED_HOST_H */
