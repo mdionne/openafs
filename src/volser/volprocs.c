@@ -390,6 +390,7 @@ ViceCreateRoot(Volume *vp)
     vnode->author = 0;
     vnode->owner = 0;
     vnode->parent = 0;
+    vnode->fileACL = 0;
 
     IH_INIT(h, vp->device, V_parentId(vp),
 	    vp->vnodeIndex[vLarge].handle->ih_ino);
@@ -402,21 +403,6 @@ ViceCreateRoot(Volume *vp)
     VNDISK_GET_LEN(length, vnode);
     V_diskused(vp) = nBlocks(length);
     free(vnode);
-
-    /* PERFILE - write out file ACL for root vnode */
-    if (vp->fileACLHandle) {
-	afs_int32 refcount = 1;
-	afs_int32 next = 0;
-	fdP = IH_OPEN(vp->fileACLHandle);
-	assert(fdP != NULL);
-	assert(FDH_SEEK(fdP, 400, SEEK_SET) >= 0);
-	code = FDH_WRITE(fdP, &refcount, sizeof(afs_int32));
-	assert(code == sizeof(afs_int32));
-	code = FDH_WRITE(fdP, (char *)ACL, 192);
-	assert(code == 192);
-	code = FDH_WRITE(fdP, &next, sizeof(afs_int32));
-	assert(code == sizeof(afs_int32));
-    }
 
     return 1;
 }

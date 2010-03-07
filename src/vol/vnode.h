@@ -116,7 +116,7 @@ typedef struct VnodeDiskObject {
 #define CHECKSIZE_SMALLVNODE\
 	(sizeof(VnodeDiskObject) == SIZEOF_SMALLDISKVNODE)
 #define SIZEOF_LARGEDISKVNODE	256
-
+#define FILEACLALLOC		0x7FFFFFFF
 
 
 #ifdef AFS_DEMAND_ATTACH_FS

@@ -612,8 +612,10 @@ SetAccessList(Vnode ** targetptr, Volume ** volume,
 	      struct acl_accessList **ACL, int *ACLSize, Vnode ** parent,
 	      AFSFid * Fid, int Lock)
 {
-    /* If directory, or file with per-file ACLs active, return vnode's ACL */
-    if ((*targetptr)->disk.type == vDirectory || (*targetptr)->volumePtr->fileACLHandle) {
+    /* If directory, return vnode's ACL */
+    /* With per-file ACLs, return vnode's ACL if an ACL has been set */
+    if ((*targetptr)->disk.type == vDirectory ||
+		((*targetptr)->volumePtr->fileACLHandle && (*targetptr)->disk.fileACL)) {
 	*parent = 0;
 	*ACL = VVnodeACL(*targetptr);
 	*ACLSize = VAclSize(*targetptr);
@@ -1060,7 +1062,8 @@ RXFetch_AccessList(Vnode * targetptr, Vnode * parentwhentargetnotdir,
     char *eACL;			/* External access list placeholder */
     Vnode *vnp;
 
-    if (targetptr->disk.type == vDirectory || targetptr->volumePtr->fileACLHandle)
+    if (targetptr->disk.type == vDirectory ||
+		(targetptr->volumePtr->fileACLHandle && targetptr->disk.fileACL))
 	vnp = targetptr;
     else
 	vnp = parentwhentargetnotdir;
@@ -1095,6 +1098,11 @@ RXStore_AccessList(Vnode * targetptr, struct AFSOpaque *AccessList)
     if ((newACL->size + 4) > VAclSize(targetptr))
 	return (E2BIG);
     memcpy((char *)VVnodeACL(targetptr), (char *)newACL, (int)(newACL->size));
+
+    /* If file and no previous ACL, set pointer to trigger allocation of slot */
+    if (targetptr->disk.type != vDirectory)
+	targetptr->disk.fileACL = FILEACLALLOC;
+
     acl_FreeACL(&newACL);
     return (0);
 
@@ -3737,12 +3745,11 @@ SAFSS_CreateFile(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
 	goto Bad_CreateFile;
     }
 
-    /* For a new file, use the parent ACL slot as a hint for a slot to use.
-     * A negative slot number is a hint - we don't hold a reference to the slot */
-    targetptr->disk.fileACL = -parentptr->disk.fileACL;
-
-    /* Copy in-memory parent ACL to the new vnode */
-    memcpy((char *)VVnodeACL(targetptr), (char *)VVnodeACL(parentptr), VAclSize(parentptr));
+    /*
+     * For a new file, set the ACL pointer to 0.  This indicates that
+     * no specific file ACL has been set, and the parent ACL should apply.
+     */
+    targetptr->disk.fileACL = 0;
 
     /* update the status of the parent vnode */
 #if FS_STATS_DETAILED
@@ -4466,11 +4473,7 @@ SAFSS_Symlink(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
 	goto Bad_SymLink;
     }
 
-    /* Use parent ACL slot if possible  - negative number is a hint */
-    targetptr->disk.fileACL = -parentptr->disk.fileACL;
-
-    /* Copy in-memory parent ACL to the new vnode */
-    memcpy((char *)VVnodeACL(targetptr), (char *)VVnodeACL(parentptr), VAclSize(parentptr));
+    targetptr->disk.fileACL = 0;
 
     /* update the status of the parent vnode */
 #if FS_STATS_DETAILED
@@ -4896,8 +4899,7 @@ SAFSS_MakeDir(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
     assert(parentwhentargetnotdir == 0);
     memcpy((char *)newACL, (char *)VVnodeACL(parentptr), VAclSize(parentptr));
 
-    /* Point to parent ACL slot.  Use as hint (negative), since we don't have a real reference yet */
-    targetptr->disk.fileACL = -parentptr->disk.fileACL;
+    targetptr->disk.fileACL = 0;
 
     /* update the status for the target vnode */
     Update_TargetVnodeStatus(targetptr, TVS_MKDIR, client, InStatus,
