@@ -304,6 +304,16 @@ DoCloneIndex(Volume * rwvp, Volume * clvp, VnodeClass class, int reclone)
 
 	/* Overwrite the vnode entry in the clone volume */
 	rwvnode->cloned = 0;
+	/* Also copy ACL if needed - here */
+	if (rwvnode->fileACL) {
+	    char buf[192];
+	    struct acl_accessList *acl = (struct acl_accessList *)buf;
+	    LoadACL(rwvnode->fileACL, buf, rwvp);
+	    if (!reclone || !clvnode->fileACL)
+		clvnode->fileACL = AllocACL(clvp);
+	    StoreACL(clvnode->fileACL, buf, clvp);
+	    rwvnode->fileACL = clvnode->fileACL;
+	}
 	code = STREAM_WRITE(rwvnode, vcp->diskSize, 1, clfileout);
 	if (code != 1) {
 	  clonefailed:

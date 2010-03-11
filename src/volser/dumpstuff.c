@@ -52,6 +52,10 @@
 #include "volint.h"
 #include "dumpstuff.h"
 
+extern int LoadACL(afs_int32 slot, char *ACL, Volume *vp);
+extern int StoreACL(afs_int32 slot, char *ACL, Volume *vp);
+extern int AllocACL(Volume *vp);
+
 #ifndef AFS_NT40_ENV
 #ifdef O_LARGEFILE
 #define afs_stat	stat64
@@ -76,7 +80,7 @@ static int DumpVnodeIndex(struct iod *iodp, Volume * vp,
 			  VnodeClass class, afs_int32 fromtime,
 			  int forcedump);
 static int DumpVnode(struct iod *iodp, struct VnodeDiskObject *v,
-		     int volid, int vnodeNumber, int dumpEverything);
+		     Volume *vp, int vnodeNumber, int dumpEverything);
 static int ReadDumpHeader(struct iod *iodp, struct DumpHeader *hp);
 static int ReadVnodes(struct iod *iodp, Volume * vp, int incremental,
 		      afs_int32 * Lbuf, afs_int32 s1, afs_int32 * Sbuf,
@@ -1009,7 +1013,7 @@ DumpVnodeIndex(struct iod *iodp, Volume * vp, VnodeClass class,
 	 * does dump the file! */
 	if (!code)
 	    code =
-		DumpVnode(iodp, vnode, V_id(vp),
+		DumpVnode(iodp, vnode, vp,
 			  bitNumberToVnodeNumber(vnodeIndex, class), flag);
 #ifndef AFS_PTHREAD_ENV
 	if (!flag)
@@ -1047,12 +1051,17 @@ DumpDumpHeader(struct iod *iodp, Volume * vp,
 }
 
 static int
+<<<<<<< HEAD
 DumpVnode(struct iod *iodp, struct VnodeDiskObject *v, int volid,
+=======
+DumpVnode(register struct iod *iodp, struct VnodeDiskObject *v, Volume *vp,
+>>>>>>> 3bbdd57... Per-file ACLs: Dump and volume move support
 	  int vnodeNumber, int dumpEverything)
 {
     int code = 0;
     IHandle_t *ihP;
     FdHandle_t *fdP;
+    char buf[192];
 
     if (!v || v->type == vNull)
 	return code;
@@ -1087,11 +1096,19 @@ DumpVnode(struct iod *iodp, struct VnodeDiskObject *v, int volid,
 		DumpByteString(iodp, 'A', (byte *) VVnodeDiskACL(v),
 			       VAclDiskSize(v));
     }
+    /* Dump file ACL if there is one */
+    if (v->type == vFile) {
+	if (!code && v->fileACL) {
+	    LoadACL(v->fileACL, buf, vp);
+	    acl_HtonACL((struct acl_accessList *)buf);
+	    code = DumpByteString(iodp, 'c', (byte *) buf, VAclDiskSize(v));
+	}
+    }
     if (VNDISK_GET_INO(v)) {
 	IH_INIT(ihP, iodp->device, iodp->parentId, VNDISK_GET_INO(v));
 	fdP = IH_OPEN(ihP);
 	if (fdP == NULL) {
-	    Log("1 Volser: DumpVnode: dump: Unable to open inode %llu for vnode %u (volume %i); not dumped, error %d\n", (afs_uintmax_t) VNDISK_GET_INO(v), vnodeNumber, volid, errno);
+	    Log("1 Volser: DumpVnode: dump: Unable to open inode %llu for vnode %u (volume %i); not dumped, error %d\n", (afs_uintmax_t) VNDISK_GET_INO(v), vnodeNumber, V_id(vp), errno);
 	    IH_RELEASE(ihP);
 	    return VOLSERREAD_DUMPERROR;
 	}
@@ -1388,6 +1405,12 @@ ReadVnodes(struct iod *iodp, Volume * vp, int incremental,
 		ReadByteString(iodp, (byte *) VVnodeDiskACL(vnode),
 			       VAclDiskSize(vnode));
 		acl_NtohACL(VVnodeDiskACL(vnode));
+		break;
+	    case 'c':
+		ReadByteString(iodp, (byte *) VVnodeDiskACL(vnode), VAclDiskSize(vnode));
+		acl_NtohACL(VVnodeDiskACL(vnode));
+		vnode->fileACL = AllocACL(vp);
+		StoreACL(vnode->fileACL, (char *)VVnodeDiskACL(vnode), vp);
 		break;
 	    case 'h':
 	    case 'f':{

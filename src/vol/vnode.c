@@ -1013,7 +1013,6 @@ AllocACL(Volume *vp) {
     code = FDH_WRITE(fdP, (char *)&newslot, sizeof(newslot));
 
     FDH_CLOSE(fdP);
-    Log("AllocACL: new first free is %d\n", tempslot.next);
 
     return slot;
 
@@ -1032,11 +1031,11 @@ StoreACL(afs_int32 slot, char *ACL, Volume *vp) {
     offset = ACLSlotACL(slot); /* skip ref count */
     fdP = IH_OPEN(vp->fileACLHandle);
     if (fdP == NULL) {
-	Log("SetACL: can't open file ACL file!\n");
+	Log("StoreACL: can't open file ACL file!\n");
 	goto error;
     }
     if (FDH_SEEK(fdP, offset, SEEK_SET) < 0) {
-	Log("SetACL: can't seek on file ACL index file! fdp=0x%x offset=%d, errno=%d\n",
+	Log("StoreACL: can't seek on file ACL index file! fdp=0x%x offset=%d, errno=%d\n",
 	     fdP, offset, errno);
 	goto error;
     }
@@ -1060,11 +1059,11 @@ LoadACL(afs_int32 slot, char *ACL, Volume *vp) {
     offset = ACLSlotACL(slot); /* leave 2 empty slots */
     fdP = IH_OPEN(vp->fileACLHandle);
     if (fdP == NULL) {
-	Log("SetACL: can't open file ACL file!\n");
+	Log("LoadACL: can't open file ACL file!\n");
 	goto error;
     }
-    if (FDH_SEEK(fdP, offset, SEEK_SET) < 0) {
-	Log("SetACL: can't seek on file ACL index file! fdp=0x%x offset=%d, errno=%d\n",
+    if (code = FDH_SEEK(fdP, offset, SEEK_SET) < 0) {
+	Log("LoadACL: can't seek on file ACL index file! fdp=0x%x offset=%d, errno=%d\n",
 	     fdP, offset, errno);
 	goto error;
     }
@@ -1238,7 +1237,6 @@ VnStore(Error * ec, Volume * vp, Vnode * vnp,
 
     /* The per-file ACL needs to be stored first, since it can involve a disk slot
      * allocation and change disk.fileACL, stored later below */
-Log("VnStore: Slot pointer is %d\n", vnp->disk.fileACL);
     if (vp->fileACLHandle != 0 && vnp->disk.fileACL) {
 	/* If deleting, remove reference to ACL */
 	if (vnp->delete) {
