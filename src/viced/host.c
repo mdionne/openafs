@@ -1909,11 +1909,17 @@ h_GetHost_r(struct rx_connection *tcon)
 		host->hostFlags |= VENUSDOWN;
 	    }
 	}
-	if (caps.Capabilities_val
-	    && (caps.Capabilities_val[0] & CLIENT_CAPABILITY_ERRORTRANS))
-	    host->hostFlags |= HERRORTRANS;
-	else
-	    host->hostFlags &= ~(HERRORTRANS);
+	if (caps.Capabilities_val) {
+	    if (caps.Capabilities_val[0] & CLIENT_CAPABILITY_ERRORTRANS)
+		host->hostFlags |= HERRORTRANS;
+	    else
+		host->hostFlags &= ~(HERRORTRANS);
+	    if (caps.Capabilities_val[0] & CLIENT_CAPABILITY_FILEACLS)
+		host->hostFlags |= HFILEACLS;
+	    else
+		host->hostFlags &= ~(HFILEACLS);
+	}
+
 	host->hostFlags |= ALTADDR;
 	host->hostFlags &= ~HWHO_INPROGRESS;
 	h_Unlock_r(host);
