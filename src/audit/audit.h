@@ -161,10 +161,12 @@
 
 #define FetchDataEvent		"AFS_SRX_FchData"
 #define FetchACLEvent		"AFS_SRX_FchACL"
+#define FetchACL2Event		"AFS_SRX_FchACL2"
 #define BulkFetchStatusEvent	"AFS_SRX_BFchSta"
 #define FetchStatusEvent	"AFS_SRX_FchStat"
 #define StoreDataEvent		"AFS_SRX_StData"
 #define StoreACLEvent		"AFS_SRX_StACL"
+#define StoreACL2Event		"AFS_SRX_StACL2"
 #define StoreStatusEvent	"AFS_SRX_StStat"
 #define RemoveFileEvent		"AFS_SRX_RmFile"
 #define CreateFileEvent		"AFS_SRX_CrFile"

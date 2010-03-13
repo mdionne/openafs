@@ -88,9 +88,11 @@ struct AFSCallStatistics {
     /* References to AFS interface calls */
     afs_uint32 FetchData;
     afs_uint32 FetchACL;
+    afs_uint32 FetchACL2;
     afs_uint32 FetchStatus;
     afs_uint32 StoreData;
     afs_uint32 StoreACL;
+    afs_uint32 StoreACL2;
     afs_uint32 StoreStatus;
     afs_uint32 RemoveFile;
     afs_uint32 CreateFile;

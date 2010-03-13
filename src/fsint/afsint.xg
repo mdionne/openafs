@@ -783,3 +783,18 @@ GetOsdMetadata(
   IN AFSFid *Fid
 ) split = 65562;
 */
+
+StoreACL2(
+  IN  AFSFid *Fid,
+  AFSOpaque *AccessList,
+  OUT AFSFetchStatus *OutStatus,
+  AFSVolSync *Sync
+) = 65563;
+
+FetchACL2(
+  IN  AFSFid *Fid,
+  OUT AFSOpaque *AccessList,
+  AFSFetchStatus *OutStatus,
+  AFSVolSync *Sync
+) = 65564;
+

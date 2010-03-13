@@ -610,12 +610,12 @@ CheckVnode(AFSFid * fid, Volume ** volptr, Vnode ** vptr, int lock)
 static afs_int32
 SetAccessList(Vnode ** targetptr, Volume ** volume,
 	      struct acl_accessList **ACL, int *ACLSize, Vnode ** parent,
-	      AFSFid * Fid, int Lock)
+	      AFSFid * Fid, int Lock, int fileacl)
 {
     /* If directory, return vnode's ACL */
     /* With per-file ACLs, return vnode's ACL if an ACL has been set */
     if ((*targetptr)->disk.type == vDirectory ||
-		((*targetptr)->volumePtr->fileACLHandle && (*targetptr)->disk.fileACL)) {
+		(fileacl && (*targetptr)->volumePtr->fileACLHandle && (*targetptr)->disk.fileACL)) {
 	*parent = 0;
 	*ACL = VVnodeACL(*targetptr);
 	*ACLSize = VAclSize(*targetptr);
@@ -763,6 +763,7 @@ GetVolumePackage(struct rx_connection *tcon, AFSFid * Fid, Volume ** volptr,
     struct acl_accessList *aCL;	/* Internal access List */
     int aCLSize;		/* size of the access list */
     Error errorCode = 0;		/* return code to caller */
+    int fileacl = 0;		/* Flag to indicate client is file ACL aware */
 
     if ((errorCode = CheckVnode(Fid, volptr, targetptr, locktype)))
 	return (errorCode);
@@ -774,19 +775,21 @@ GetVolumePackage(struct rx_connection *tcon, AFSFid * Fid, Volume ** volptr,
 		 && ((*targetptr)->disk.type != vDirectory))
 	    return (ENOTDIR);
     }
-    if ((errorCode =
-	 SetAccessList(targetptr, volptr, &aCL, &aCLSize, parent,
-		       (chkforDir == MustBeDIR ? (AFSFid *) 0 : Fid),
-		       (chkforDir == MustBeDIR ? 0 : locktype))) != 0)
-	return (errorCode);
-    if (chkforDir == MustBeDIR)
-	assert((*parent) == 0);
     if (!(*client)) {
 	if ((errorCode = GetClient(tcon, client)) != 0)
 	    return (errorCode);
 	if (!(*client))
 	    return (EINVAL);
     }
+    if ((*client)->host->hostFlags & HFILEACLS)
+	fileacl = 1;
+    if ((errorCode =
+	 SetAccessList(targetptr, volptr, &aCL, &aCLSize, parent,
+		       (chkforDir == MustBeDIR ? (AFSFid *) 0 : Fid),
+		       (chkforDir == MustBeDIR ? 0 : locktype), fileacl)) != 0)
+	return (errorCode);
+    if (chkforDir == MustBeDIR)
+	assert((*parent) == 0);
     GetRights(*client, aCL, rights, anyrights);
     /* ok, if this is not a dir, set the PRSFS_ADMINISTER bit iff we're the owner */
     if ((*targetptr)->disk.type != vDirectory) {
@@ -1057,13 +1060,13 @@ Check_PermissionRights(Vnode * targetptr, struct client *client,
  */
 static afs_int32
 RXFetch_AccessList(Vnode * targetptr, Vnode * parentwhentargetnotdir,
-		   struct AFSOpaque *AccessList)
+		   struct AFSOpaque *AccessList, int fileacl)
 {
     char *eACL;			/* External access list placeholder */
     Vnode *vnp;
 
     if (targetptr->disk.type == vDirectory ||
-		(targetptr->volumePtr->fileACLHandle && targetptr->disk.fileACL))
+		(fileacl && targetptr->volumePtr->fileACLHandle && targetptr->disk.fileACL))
 	vnp = targetptr;
     else
 	vnp = parentwhentargetnotdir;
@@ -2173,6 +2176,7 @@ common_FetchData64(struct rx_call *acall, struct AFSFid *Fid,
     afs_sfsize_t bytesXferred;	/* # bytes actually xferred */
     int readIdx;		/* Index of read stats array to bump */
     static afs_int32 tot_bytesXferred;	/* shared access protected by FS_LOCK */
+    int fileacl = 0;
 
     /*
      * Set our stats pointers, remember when the RPC operation started, and
@@ -2202,6 +2206,8 @@ common_FetchData64(struct rx_call *acall, struct AFSFid *Fid,
 	    ("SRXAFS_FetchData, Fid = %u.%u.%u, Host %s:%d, Id %d\n",
 	     Fid->Volume, Fid->Vnode, Fid->Unique, inet_ntoa(logHostAddr),
 	     ntohs(rxr_PortOf(tcon)), t_client->ViceId));
+    if (t_client->host->hostFlags & HFILEACLS)
+	fileacl = 1;
     /*
      * Get volume/vnode for the fetched file; caller's access rights to
      * it are also returned
@@ -2408,10 +2414,12 @@ SRXAFS_FetchData64(struct rx_call * acall, struct AFSFid * Fid, afs_int64 Pos,
     return code;
 }
 
+/* Common code called by the old and new FetchACL RPCs */
 afs_int32
-SRXAFS_FetchACL(struct rx_call * acall, struct AFSFid * Fid,
+DoFetchACL(struct rx_call * acall, struct AFSFid * Fid,
 		struct AFSOpaque * AccessList,
-		struct AFSFetchStatus * OutStatus, struct AFSVolSync * Sync)
+		struct AFSFetchStatus * OutStatus, struct AFSVolSync * Sync,
+		int fileacl)
 {
     Vnode *targetptr = 0;	/* pointer to vnode to fetch */
     Vnode *parentwhentargetnotdir = 0;	/* parent vnode if targetptr is a file */
@@ -2482,7 +2490,7 @@ SRXAFS_FetchACL(struct rx_call * acall, struct AFSFid * Fid,
 
     /* Get the Access List from the dir's vnode */
     if ((errorCode =
-	 RXFetch_AccessList(targetptr, parentwhentargetnotdir, AccessList)))
+	 RXFetch_AccessList(targetptr, parentwhentargetnotdir, AccessList, fileacl)))
 	goto Bad_FetchACL;
 
     /* Get OutStatus back From the target Vnode  */
@@ -2523,6 +2531,22 @@ SRXAFS_FetchACL(struct rx_call * acall, struct AFSFid * Fid,
     return errorCode;
 }				/*SRXAFS_FetchACL */
 
+afs_int32
+SRXAFS_FetchACL(struct rx_call * acall, struct AFSFid * Fid,
+		struct AFSOpaque * AccessList,
+		struct AFSFetchStatus * OutStatus, struct AFSVolSync * Sync)
+{
+    return DoFetchACL(acall, Fid, AccessList, OutStatus, Sync, 1);
+}
+
+/* This new RPC allows operations on files.  Otherwise identical to old RPC */
+afs_int32
+SRXAFS_FetchACL2(struct rx_call * acall, struct AFSFid * Fid,
+		struct AFSOpaque * AccessList,
+		struct AFSFetchStatus * OutStatus, struct AFSVolSync * Sync)
+{
+    return DoFetchACL(acall, Fid, AccessList, OutStatus, Sync, 1);
+}				/*SRXAFS_FetchACL2 */
 
 /*
  * This routine is called exclusively by SRXAFS_FetchStatus(), and should be
@@ -3253,9 +3277,10 @@ SRXAFS_StoreData64(struct rx_call * acall, struct AFSFid * Fid,
 }
 
 afs_int32
-SRXAFS_StoreACL(struct rx_call * acall, struct AFSFid * Fid,
+DoStoreACL(struct rx_call * acall, struct AFSFid * Fid,
 		struct AFSOpaque * AccessList,
-		struct AFSFetchStatus * OutStatus, struct AFSVolSync * Sync)
+		struct AFSFetchStatus * OutStatus, struct AFSVolSync * Sync,
+		int fileacl)
 {
     Vnode *targetptr = 0;	/* pointer to input fid */
     Vnode *parentwhentargetnotdir = 0;	/* parent of Fid to get ACL */
@@ -3302,10 +3327,8 @@ SRXAFS_StoreACL(struct rx_call * acall, struct AFSFid * Fid,
      * Get associated volume/vnode for the target dir; caller's rights
      * are also returned.
      */
-    /* With per-file ACLs this is allowed on files.  But temporarily,
-     * until we introduce the new RPC */
     if ((errorCode =
-	 GetVolumePackage(tcon, Fid, &volptr, &targetptr, DONTCHECK,
+	 GetVolumePackage(tcon, Fid, &volptr, &targetptr, fileacl ? DONTCHECK : MustBeDIR,
 			  &parentwhentargetnotdir, &client, WRITE_LOCK,
 			  &rights, &anyrights))) {
 	goto Bad_StoreACL;
@@ -3368,8 +3391,28 @@ SRXAFS_StoreACL(struct rx_call * acall, struct AFSFid * Fid,
                AUD_FID, Fid, AUD_ACL, AccessList->AFSOpaque_val, AUD_END);
     return errorCode;
 
-}				/*SRXAFS_StoreACL */
+}				/*DoStoreACL */
 
+afs_int32
+SRXAFS_StoreACL(struct rx_call * acall, struct AFSFid * Fid,
+		struct AFSOpaque * AccessList,
+		struct AFSFetchStatus * OutStatus, struct AFSVolSync * Sync)
+{
+    return DoStoreACL(acall, Fid, AccessList, OutStatus, Sync, 1);
+}				/*SRXAFS_StoreACL */
+/*
+ * New RPC deals with file ACLs
+ *   Return an error if called on a file with no ACL
+ *   Return stored ACL for a file if there is one
+ *   For directories, nochange
+ */
+afs_int32
+SRXAFS_StoreACL2(struct rx_call * acall, struct AFSFid * Fid,
+		struct AFSOpaque * AccessList,
+		struct AFSFetchStatus * OutStatus, struct AFSVolSync * Sync)
+{
+    return DoStoreACL(acall, Fid, AccessList, OutStatus, Sync, 1);
+}				/*SRXAFS_StoreACL2 */
 
 /*
  * Note: This routine is called exclusively from SRXAFS_StoreStatus(), and
@@ -4895,7 +4938,7 @@ SAFSS_MakeDir(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
     /* Point to target's ACL buffer and copy the parent's ACL contents to it */
     assert((SetAccessList
 	    (&targetptr, &volptr, &newACL, &newACLSize,
-	     &parentwhentargetnotdir, (AFSFid *) 0, 0)) == 0);
+	     &parentwhentargetnotdir, (AFSFid *) 0, 0, 0)) == 0);
     assert(parentwhentargetnotdir == 0);
     memcpy((char *)newACL, (char *)VVnodeACL(parentptr), VAclSize(parentptr));
 
