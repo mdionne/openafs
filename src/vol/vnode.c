@@ -1062,7 +1062,7 @@ LoadACL(afs_int32 slot, char *ACL, Volume *vp) {
 	Log("LoadACL: can't open file ACL file!\n");
 	goto error;
     }
-    if (code = FDH_SEEK(fdP, offset, SEEK_SET) < 0) {
+    if ((code = FDH_SEEK(fdP, offset, SEEK_SET)) < 0) {
 	Log("LoadACL: can't seek on file ACL index file! fdp=0x%x offset=%d, errno=%d\n",
 	     fdP, offset, errno);
 	goto error;
@@ -1152,9 +1152,14 @@ VnLoad(Error * ec, Volume * vp, Vnode * vnp,
 	if (vnp->disk.fileACL > 0) {
 	    LoadACL(vnp->disk.fileACL, (char *)VVnodeACL(vnp), vp);
 	} else {
-/* PERFILE: need to deal here with legacy volumes - they may have "magic" */
-	    Log("Uh oh, ACL pointer is negative (%d)\n", vnp->disk.fileACL);
+	    /* Probably a legacy volume with the magic value - zap it. */
+	    Log("ACL pointer is negative (%x)\n", vnp->disk.fileACL);
 	    vnp->disk.fileACL = 0;
+	    /* 
+	     * Should flag for writeback here, but that won't work
+	     * if we're not write-locked.  At least in-memory we set
+	     * it to 0.
+	     */
 	}
     }
 
@@ -1238,26 +1243,21 @@ VnStore(Error * ec, Volume * vp, Vnode * vnp,
     /* The per-file ACL needs to be stored first, since it can involve a disk slot
      * allocation and change disk.fileACL, stored later below */
     if (vp->fileACLHandle != 0 && vnp->disk.fileACL) {
-	/* If deleting, remove reference to ACL */
-	if (vnp->delete) {
-	    /* The disk slot for the ACL will be freed when we put the vnode */
+	if (vnp->disk.fileACL == FILEACLALLOC) {
+	    vnp->disk.fileACL = AllocACL(vp);
 	} else {
-	    if (vnp->disk.fileACL == FILEACLALLOC) {
-		vnp->disk.fileACL = AllocACL(vp);
-	    } else {
-		/* Existing pointer - check if we need to COW */
-		if (getRefcountACL(vnp->disk.fileACL, vp) > 1) {
-		    /* We're not the only user - check ACL - need to allocate  a new entry, maybe */
-		    LoadACL(vnp->disk.fileACL, (char *)&tempACL, vp);
-		    if (memcmp((char *)&tempACL, VVnodeACL(vnp), VAclSize(vnp))) {
-			decRefcountACL(vnp->disk.fileACL, vp);
-			vnp->disk.fileACL = AllocACL(vp);
-		    }
+	    /* Existing pointer - check if we need to COW */
+	    if (getRefcountACL(vnp->disk.fileACL, vp) > 1) {
+		/* We're not the only user - check ACL - need to allocate  a new entry, maybe */
+		LoadACL(vnp->disk.fileACL, (char *)&tempACL, vp);
+		if (memcmp((char *)&tempACL, VVnodeACL(vnp), VAclSize(vnp))) {
+		    decRefcountACL(vnp->disk.fileACL, vp);
+		    vnp->disk.fileACL = AllocACL(vp);
 		}
 	    }
-	    /* At this point the refcount should be OK.  Store the ACL. */
-	    StoreACL(vnp->disk.fileACL, (char *)VVnodeACL(vnp), vp);
 	}
+	/* At this point the refcount should be OK.  Store the ACL. */
+	StoreACL(vnp->disk.fileACL, (char *)VVnodeACL(vnp), vp);
     }
 
     offset = vnodeIndexOffset(vcp, Vn_id(vnp));
