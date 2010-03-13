@@ -117,7 +117,9 @@ afs_AccessOK(struct vcache *avc, afs_int32 arights, struct vrequest *areq,
 
     AFS_STATCNT(afs_AccessOK);
 
-    if ((vType(avc) == VDIR) || (avc->f.states & CForeign)) {
+    /* When capabilities of server are known, use them here.  1 = server file ACL support */
+    if ((vType(avc) == VDIR) || (avc->f.states & CForeign) ||
+		(1)) {
 	/* rights are just those from acl */
 	if (afs_InReadDir(avc)) {
 	    /* if we are already in readdir, then they may have read and
