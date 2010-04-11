@@ -117,9 +117,8 @@ afs_AccessOK(struct vcache *avc, afs_int32 arights, struct vrequest *areq,
 
     AFS_STATCNT(afs_AccessOK);
 
-    /* When capabilities of server are known, use them here.  1 = server file ACL support */
     if ((vType(avc) == VDIR) || (avc->f.states & CForeign) ||
-		(1)) {
+		(avc->callback && (avc->callback->capabilities & VICED_CAPABILITY_FILEACLS))) {
 	/* rights are just those from acl */
 	if (afs_InReadDir(avc)) {
 	    /* if we are already in readdir, then they may have read and
@@ -140,29 +139,32 @@ afs_AccessOK(struct vcache *avc, afs_int32 arights, struct vrequest *areq,
 	 * if you have I and A rights to a file, we throw in R and W
 	 * rights for free. These rights will then be restricted by
 	 * the access mask. */
-	dirBits = 0;
-	if (avc->f.parent.vnode) {
-	    dirFid.Cell = avc->f.fid.Cell;
-	    dirFid.Fid.Volume = avc->f.fid.Fid.Volume;
-	    dirFid.Fid.Vnode = avc->f.parent.vnode;
-	    dirFid.Fid.Unique = avc->f.parent.unique;
-	    /* Avoid this GetVCache call */
-	    tvc = afs_GetVCache(&dirFid, areq, NULL, NULL);
-	    if (tvc) {
-		dirBits = afs_GetAccessBits(tvc, arights, areq);
-		afs_PutVCache(tvc);
-	    }
-	} else
-	    dirBits = 0xffffffff;	/* assume OK; this is a race condition */
-	if (arights & PRSFS_ADMINISTER)
+	if (vType(avc) != VDIR && avc->callback && (avc->callback->capabilities & VICED_CAPABILITY_FILEACLS)) {
 	    fileBits = afs_GetAccessBits(avc, arights, areq);
-	else
-	    fileBits = 0;	/* don't make call if results don't matter */
+	} else {
+	    dirBits = 0;
+	    if (avc->f.parent.vnode) {
+		dirFid.Cell = avc->f.fid.Cell;
+		dirFid.Fid.Volume = avc->f.fid.Fid.Volume;
+		dirFid.Fid.Vnode = avc->f.parent.vnode;
+		dirFid.Fid.Unique = avc->f.parent.unique;
+		/* Avoid this GetVCache call */
+		tvc = afs_GetVCache(&dirFid, areq, NULL, NULL);
+		if (tvc) {
+		    dirBits = afs_GetAccessBits(tvc, arights, areq);
+		    afs_PutVCache(tvc);
+		}
+	    } else
+		dirBits = 0xffffffff;	/* assume OK; this is a race condition */
+	    if (arights & PRSFS_ADMINISTER)
+		fileBits = afs_GetAccessBits(avc, arights, areq);
+	    else
+		fileBits = 0;	/* don't make call if results don't matter */
 
-	/* compute basic rights in fileBits, taking A from file bits */
-	fileBits =
-	    (fileBits & PRSFS_ADMINISTER) | (dirBits & ~PRSFS_ADMINISTER);
-
+	    /* compute basic rights in fileBits, taking A from file bits */
+	    fileBits =
+		(fileBits & PRSFS_ADMINISTER) | (dirBits & ~PRSFS_ADMINISTER);
+	}
 	/* for files, throw in R and W if have I and A (owner).  This makes
 	 * insert-only dirs work properly */
 	if (vType(avc) != VDIR
