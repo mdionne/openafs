@@ -307,7 +307,6 @@ DoCloneIndex(Volume * rwvp, Volume * clvp, VnodeClass class, int reclone)
 	/* Also copy ACL if needed - here */
 	if (rwvnode->fileACL) {
 	    char buf[192];
-	    struct acl_accessList *acl = (struct acl_accessList *)buf;
 	    LoadACL(rwvnode->fileACL, buf, rwvp);
 	    if (!reclone || !clvnode->fileACL)
 		clvnode->fileACL = AllocACL(clvp);

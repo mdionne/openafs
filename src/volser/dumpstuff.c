@@ -52,10 +52,6 @@
 #include "volint.h"
 #include "dumpstuff.h"
 
-extern int LoadACL(afs_int32 slot, char *ACL, Volume *vp);
-extern int StoreACL(afs_int32 slot, char *ACL, Volume *vp);
-extern int AllocACL(Volume *vp);
-
 #ifndef AFS_NT40_ENV
 #ifdef O_LARGEFILE
 #define afs_stat	stat64

@@ -300,5 +300,8 @@ struct acl_diskslot {
 #define ACLSlotOffset(s) ((s+1)*sizeof(struct acl_diskslot))
 #define ACLSlotACL(s) ((s+1)*sizeof(struct acl_diskslot) + sizeof(afs_int32)) 
 
+extern int LoadACL(afs_int32 slot, char *ACL, struct Volume *vp);
+extern int StoreACL(afs_int32 slot, char *ACL, struct Volume *vp);
+extern int AllocACL(struct Volume *vp);
 
 #endif /* _AFS_VOL_VNODE_H */
