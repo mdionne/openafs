@@ -2848,7 +2848,6 @@ attach_volume_header(Error *ec, Volume *vp, struct DiskPartition64 *partp,
 	vp->fileACLHandle = 0;
     } else {
 	IH_INIT(vp->fileACLHandle, partp->device, header.parent, header.fileACL);
-
     }
 
     if (first_try) {

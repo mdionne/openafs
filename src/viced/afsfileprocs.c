@@ -615,7 +615,7 @@ SetAccessList(Vnode ** targetptr, Volume ** volume,
     /* If directory, return vnode's ACL */
     /* With per-file ACLs, return vnode's ACL if an ACL has been set */
     if ((*targetptr)->disk.type == vDirectory ||
-		(fileacl && (*targetptr)->volumePtr->fileACLHandle && (*targetptr)->disk.fileACL)) {
+		(fileacl && hasFileACLs((*targetptr)->volumePtr) && (*targetptr)->disk.fileACL)) {
 	*parent = 0;
 	*ACL = VVnodeACL(*targetptr);
 	*ACLSize = VAclSize(*targetptr);
@@ -1066,7 +1066,7 @@ RXFetch_AccessList(Vnode * targetptr, Vnode * parentwhentargetnotdir,
     Vnode *vnp;
 
     if (targetptr->disk.type == vDirectory ||
-		(fileacl && targetptr->volumePtr->fileACLHandle && targetptr->disk.fileACL))
+		(fileacl && hasFileACLs(targetptr->volumePtr) && targetptr->disk.fileACL))
 	vnp = targetptr;
     else
 	vnp = parentwhentargetnotdir;

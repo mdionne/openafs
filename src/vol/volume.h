@@ -326,6 +326,7 @@ typedef struct VolumeHeader {
     Inode fileACL;
 } VolumeHeader_t;
 
+#define hasFileACLs(volptr) (volptr->fileACLHandle != NULL)
 
 typedef struct VolumeDiskHeader {
     struct versionStamp stamp;	/* Must be first field */
