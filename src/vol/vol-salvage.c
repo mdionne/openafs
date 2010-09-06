@@ -3149,7 +3149,8 @@ JudgeEntry(void *arock, char *name, afs_int32 vnodeNumber,
 	 * directory: hardlinks to the same vnode are not allowed
 	 * from different directories.
 	 */
-	if (vnodeEssence->parent != dir->vnodeNumber) {
+	/* With per-file ACLs and cross-directory hard-links, parent might be 0 */
+	if (vnodeEssence->parent != dir->vnodeNumber && vnodeEssence->parent != 0) {
 	    if (!vnodeEssence->claimed && !dirOrphaned && vnodeNumber != 1) {
 		/* Vnode does not point back to this directory.
 		 * Orphaned dirs cannot claim a file (it may belong to

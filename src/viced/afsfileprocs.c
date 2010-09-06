@@ -781,7 +781,10 @@ GetVolumePackage(struct rx_connection *tcon, AFSFid * Fid, Volume ** volptr,
 	if (!(*client))
 	    return (EINVAL);
     }
+/* For now, assume file CLS are on for all clients - so we can test with a mainline client */
+/*
     if ((*client)->host->hostFlags & HFILEACLS)
+*/
 	fileacl = 1;
     if ((errorCode =
 	 SetAccessList(targetptr, volptr, &aCL, &aCLSize, parent,
@@ -2124,18 +2127,21 @@ GetStatus(Vnode * targetptr, AFSFetchStatus * status, afs_int32 rights,
     status->UnixModeBits = targetptr->disk.modeBits;
     status->ClientModTime = targetptr->disk.unixModifyTime;	/* This might need rework */
     /* In case we get called with no parent pointer */
-    if (status->FileType != Directory && !parentptr) {
-/* PERFILE: check error code here */
+    if (status->FileType != Directory && !parentptr && targetptr->disk.parent) {
+	/* PERFILE: need to check error code here */
 	parentptr = VGetVnode(&errorCode, targetptr->volumePtr, targetptr->disk.parent, READ_LOCK);
 	gotparent = 1;
     }
-
-    status->ParentVnode =
-	(status->FileType ==
-	 Directory ? targetptr->vnodeNumber : parentptr->vnodeNumber);
-    status->ParentUnique =
-	(status->FileType ==
-	 Directory ? targetptr->disk.uniquifier : parentptr->disk.uniquifier);
+    /* This will be true if the parent pointer in the vnode is 0 (a hard link) */
+    if (!parentptr && status->FileType != Directory) {
+	status->ParentVnode = 0;
+	status->ParentUnique = 1;
+    } else {
+	status->ParentVnode =
+	    (status->FileType == Directory ? targetptr->vnodeNumber : parentptr->vnodeNumber);
+	status->ParentUnique = (status->FileType ==
+		 Directory ? targetptr->disk.uniquifier : parentptr->disk.uniquifier);
+    }
     status->ServerModTime = targetptr->disk.serverModifyTime;
     status->Group = targetptr->disk.group;
     status->lockCount = targetptr->disk.lock.lockCount;
@@ -4073,8 +4079,12 @@ SAFSS_Rename(struct rx_call *acall, struct AFSFid *OldDirFid, char *OldName,
 	 * reason that links cannot be made across directories, i.e.
 	 * access lists)
 	 */
+	/* With per-file ACLs, this is allowed */
+	ViceLog(0, ("Rename: detecting move of file with multiple links\n"));
+/*
 	errorCode = EXDEV;
 	goto Bad_Rename;
+*/
     }
 
     /* Lookup the new file  */
@@ -4719,9 +4729,29 @@ SAFSS_Link(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
 	errorCode = EISDIR;
 	goto Bad_Link;
     }
+    /* Allow cross directory hard links */
+    /* Need to make this conditional on file ACLs */
     if (targetptr->disk.parent != DirFid->Vnode) {
-	errorCode = EXDEV;
-	goto Bad_Link;
+	/*
+	 * We used to error out here with no file ACLs.  Now we can allow
+	 * a cross-directory link, but we have to ensure that the effecive
+	 * ACL is the same for all links.  If the target file has no file
+	 * ACL, set one copied from the parent dir before creating the
+	 * link.
+	 * XXX should error here as before if ACLs not active for this volume 
+	 */
+	Vnode *oldparentptr;
+	Error vcode = 0;
+	/* Copy ACL, only if no file ACL, and not already a link. */
+	/* Link with no ACL shold not happen */
+	if (targetptr->disk.parent && !targetptr->disk.fileACL) {
+            oldparentptr = VGetVnode(&vcode, volptr, targetptr->disk.parent, READ_LOCK);
+	    memcpy((char *)VVnodeACL(targetptr), (char *)VVnodeACL(oldparentptr), VAclSize(oldparentptr));
+	    (void)VPutVnode(&vcode, oldparentptr);
+	    targetptr->disk.fileACL = FILEACLALLOC;
+	}
+	/* Zap the parent pointer, since it will no longer be reliable */
+	targetptr->disk.parent = 0;
     }
     if (parentptr->disk.cloned) {
 	ViceLog(25, ("Link : calling CopyOnWrite on  target dir\n"));
