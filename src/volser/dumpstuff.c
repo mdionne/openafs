@@ -1047,11 +1047,7 @@ DumpDumpHeader(struct iod *iodp, Volume * vp,
 }
 
 static int
-<<<<<<< HEAD
-DumpVnode(struct iod *iodp, struct VnodeDiskObject *v, int volid,
-=======
-DumpVnode(register struct iod *iodp, struct VnodeDiskObject *v, Volume *vp,
->>>>>>> 3bbdd57... Per-file ACLs: Dump and volume move support
+DumpVnode(struct iod *iodp, struct VnodeDiskObject *v, Volume *vp,
 	  int vnodeNumber, int dumpEverything)
 {
     int code = 0;
