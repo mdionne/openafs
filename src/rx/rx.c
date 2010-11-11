@@ -3612,7 +3612,7 @@ rxi_ReceiveDataPacket(struct rx_call *call,
 	    if (call->flags & RX_CALL_HAVE_LAST) {
 		struct rx_packet *p;
 		p = queue_Last(&call->receiveBuffer, rx_packet);
-		if (p->flags & RX_LAST_PACKET) 
+		if (p->header.flags & RX_LAST_PACKET) 
 		    call->flags |= RX_CALL_RECEIVE_DONE;
 	    }
 
