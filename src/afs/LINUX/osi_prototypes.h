@@ -87,6 +87,8 @@ extern void osi_linux_free_inode_pages(void);
 
 /* osi_vnodeops.c */
 extern void afs_fill_inode(struct inode *ip, struct vattr *vattr);
+extern void osi_set_readahead(int max_ra);
+extern int osi_get_readahead(void);
 
 /* osi_groups.c */
 extern void osi_keyring_init(void);

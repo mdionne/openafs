@@ -71,6 +71,7 @@ static int RxStatPeerCmd(struct cmd_syndesc *, void *);
 static int GetFidCmd(struct cmd_syndesc *, void *);
 static int UuidCmd(struct cmd_syndesc *, void *);
 static int MaxConnsCmd(struct cmd_syndesc *, void *);
+static int MaxReadaheadCmd(struct cmd_syndesc *, void *);
 
 static char pn[] = "fs";
 static int rxInitDone = 0;
@@ -3713,8 +3714,11 @@ main(int argc, char **argv)
 #endif
 
     ts = cmd_CreateSyntax("maxconns", MaxConnsCmd, 0,
-		"get/set maximum RX connections per security context");
+		"get/set maximum rx connections per security context");
     cmd_AddParm(ts, "-conns", CMD_SINGLE, CMD_OPTIONAL, "maximum number");
+    ts = cmd_CreateSyntax("readahead", MaxReadaheadCmd, 0,
+		"get/set maximum readahead pages (Linux only)");
+    cmd_AddParm(ts, "-pages", CMD_SINGLE, CMD_OPTIONAL, "maximum number");
 /*
 
 defect 3069
@@ -4344,7 +4348,57 @@ MaxConnsCmd(struct cmd_syndesc *as, void *arock)
 	Die(errno, NULL);
 	return 1;
     } else {
-	printf("Max RX connections: %d\n", max_conns_o);
+	printf("Max rx connections: %d\n", max_conns_o);
+    }
+
+    return 0;
+}
+
+static int
+MaxReadaheadCmd(struct cmd_syndesc *as, void *arock)
+{
+    afs_int32 code;
+    struct ViceIoctl blob;
+    afs_int32 max_ra_i, max_ra_o;
+    char *tp;
+
+    if (as->parms[0].items) {
+	int digit, ix, len;
+
+	tp = as->parms[0].items->data;
+	len = strlen(tp);
+
+        digit = 1;
+        for (ix = 0; ix < len; ++ix) {
+            if (!isdigit(tp[0])) {
+		digit = 0;
+		break;
+            }
+        }
+        if (digit == 0) {
+            fprintf(stderr, "fs maxconn: %s must be an integer between 0 and 1024\n", tp);
+            return EINVAL;
+        }
+        max_ra_i = atoi(tp);
+        if (max_ra_i > 1024) {
+            fprintf(stderr, "fs maxconn: %s must be an integer between 0 and 1024\n", tp);
+            return EINVAL;
+        }
+        blob.in = (char *)&max_ra_i;
+        blob.in_size = sizeof(max_ra_i);
+    } else {
+	blob.in = NULL;
+	blob.in_size = 0;
+    }
+
+    blob.out = (char *) &max_ra_o;
+    blob.out_size = sizeof(max_ra_o);
+    code = pioctl(0, VIOC_READAHEAD, &blob, 1);
+    if (code) {
+	Die(errno, NULL);
+	return 1;
+    } else {
+	printf("Max readahead pages: %d\n", max_ra_o);
     }
 
     return 0;

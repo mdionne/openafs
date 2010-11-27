@@ -112,5 +112,6 @@ struct cm_initparams {
 #define VIOC_SETBYPASS_THRESH	_OVICEIOCTL(2) /* cache-bypass size thresh */
 #endif
 #define VIOC_MAXCONNS	_OVICEIOCTL(3) /* Maximum RX connections per security context */
+#define VIOC_READAHEAD	_OVICEIOCTL(4) /* Maximum readahead pages for Linux */
 
 #endif /* AFS_VENUS_H */

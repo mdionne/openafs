@@ -2456,3 +2456,13 @@ afs_fill_inode(struct inode *ip, struct vattr *vattr)
     }
 
 }
+
+int
+osi_get_readahead(void) {
+    return afs_backing_dev_info->ra_pages;
+}
+
+void
+osi_set_readahead(int max_ra) {
+    afs_backing_dev_info->ra_pages = max_ra;
+}
