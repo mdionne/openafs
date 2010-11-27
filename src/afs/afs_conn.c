@@ -71,8 +71,6 @@ do { \
 
 #define struct_conn(s) ((struct afs_conn *)(s))
 
-#define REPORT_CONNECTIONS_ISSUED 1 /* enable to see utilization */
-
 /**
  * Find a connection with call slots available, allocating one
  * if nothing is available and we find an allocated slot
