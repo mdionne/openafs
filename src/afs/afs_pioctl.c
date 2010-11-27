@@ -29,6 +29,7 @@
 #include "rx/rx_globals.h"
 #include "token.h"
 
+extern int cvec_len;
 struct VenusFid afs_rootFid;
 afs_int32 afs_waitForever = 0;
 short afs_waitForeverCount = 0;
@@ -305,6 +306,7 @@ DECL_PIOCTL(PGetPAG);
 #if defined(AFS_CACHE_BYPASS) && defined(AFS_LINUX24_ENV)
 DECL_PIOCTL(PSetCachingThreshold);
 #endif
+DECL_PIOCTL(PSetMaxConns);
 
 /*
  * A macro that says whether we're going to need HandleClientContext().
@@ -425,11 +427,12 @@ static pioctlFunction CpioctlSw[] = {
 static pioctlFunction OpioctlSw[]  = {
     PBogus,			/* 0 */
     PNFSNukeCreds,		/* 1 -- nuke all creds for NFS client */
-#if defined(AFS_CACHE_BYPASS) && defined(AFS_LINUX24_ENV)
-    PSetCachingThreshold        /* 2 -- get/set cache-bypass size threshold */
+#if defined(AFS_CACHE_BYPASS)
+    PSetCachingThreshold,       /* 2 -- get/set cache-bypass size threshold */
 #else
-    PNoop                       /* 2 -- get/set cache-bypass size threshold */
+    PNoop,                      /* 2 -- get/set cache-bypass size threshold */
 #endif
+    PSetMaxConns,
 };
 
 #define PSetClientContext 99	/*  Special pioctl to setup caller's creds  */
@@ -5078,6 +5081,35 @@ DECL_PIOCTL(PSetCachingThreshold)
 }
 
 #endif /* defined(AFS_CACHE_BYPASS) */
+
+DECL_PIOCTL(PSetMaxConns)
+{
+    afs_int32 getting = 1;
+    afs_int32 setting = 1;
+    afs_int32 max = 1;
+
+    if (afs_pd_getInt(ain, &max) != 0)
+	setting = 0;
+
+    if (aout == NULL)
+	getting = 0;
+
+    if (setting == 0 && getting == 0)
+	return EINVAL;
+
+    if (setting) {
+	if (!afs_osi_suser(*acred))
+	    return EPERM;
+	cvec_len = max;
+        afs_warn("afs: Maximum RX connections set to: %d\n", max);
+    }
+
+    /* Return the current size threshold */
+    if (getting)
+	return afs_pd_putInt(aout, cvec_len);
+
+    return(0);
+}
 
 DECL_PIOCTL(PCallBackAddr)
 {

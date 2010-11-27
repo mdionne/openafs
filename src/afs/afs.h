@@ -385,6 +385,8 @@ struct afs_conn {
    connections to AFS servers.
 */
 
+#define MAX_CVEC_LEN 10
+
 struct sa_conn_vector {
     /* linked-list machinery */
     struct sa_conn_vector *next;
@@ -399,7 +401,7 @@ struct sa_conn_vector {
     int select_index; 
     
     /* connections vector */
-    struct afs_conn cvec[CVEC_LEN];
+    struct afs_conn cvec[MAX_CVEC_LEN];
 };
 
 #define SQNULL -1

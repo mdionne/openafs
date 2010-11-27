@@ -111,5 +111,6 @@ struct cm_initparams {
 /* Uncoordinated 'O' pioctls */
 #define VIOC_SETBYPASS_THRESH	_OVICEIOCTL(2) /* cache-bypass size thresh */
 #endif
+#define VIOC_MAXCONNS	_OVICEIOCTL(3) /* Maximum RX connections per security context */
 
 #endif /* AFS_VENUS_H */

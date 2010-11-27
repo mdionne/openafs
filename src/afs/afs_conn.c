@@ -47,6 +47,7 @@
 afs_rwlock_t afs_xconn;		/* allocation lock for new things */
 afs_rwlock_t afs_xinterface;	/* for multiple client address */
 afs_int32 cryptall = 0;		/* encrypt all communications */
+int cvec_len = 3;		/* max RX connections per security context */
 
 /* some connection macros */
 
@@ -64,7 +65,7 @@ do { \
  * than any other) */
 #define conn_vec_select_conn(xcv, bix, conn) \
 do { \
-    (bix) = (xcv)->select_index = ((xcv)->select_index)++ % CVEC_LEN; \
+    (bix) = ((xcv)->select_index)++ % cvec_len; \
     (conn) = &((xcv)->cvec[bix]); \
 } while (0);
 
@@ -85,7 +86,7 @@ find_preferred_connection(struct sa_conn_vector *xcv, int create)
     struct afs_conn *tc = NULL;
 
     bix = -1;
-    for(cix = 0; cix < CVEC_LEN; ++cix) {
+    for(cix = 0; cix < cvec_len; ++cix) {
         tc = &(xcv->cvec[cix]);
         if (!tc->id) {
             if (create) {
@@ -99,10 +100,10 @@ find_preferred_connection(struct sa_conn_vector *xcv, int create)
             if (tc->refCount < (RX_MAXCALLS-1)) {
                 bix = cix;
                 goto f_conn;
-            } else if (cix == (CVEC_LEN-1))
+            } else if (cix == (cvec_len-1))
                 conn_vec_select_conn(xcv, bix, tc);
         } /* tc->id */
-    } /* for cix < CVEC_LEN */
+    } /* for cix < cvec_len */
 
     if (bix < 0) {
         afs_warn("find_preferred_connection: no connection and !create\n");
@@ -146,7 +147,7 @@ release_conns_user_server(struct unixuser *xu, struct server *xs)
                 glocked = ISAFS_GLOCK();
                 if (glocked)
                     AFS_GUNLOCK();
-                for(cix = 0; cix < CVEC_LEN; ++cix) {
+                for(cix = 0; cix < MAX_CVEC_LEN; ++cix) {
                     tc = &(tcv->cvec[cix]);
                     if (tc->activated)
                         rx_DestroyConnection(tc->id);
@@ -175,7 +176,7 @@ release_conns_vector(struct sa_conn_vector *xcv)
         glocked = ISAFS_GLOCK();
         if (glocked)
             AFS_GUNLOCK(); \
-        for(cix = 0; cix < CVEC_LEN; ++cix) {
+        for(cix = 0; cix < MAX_CVEC_LEN; ++cix) {
             tc = &(tcv->cvec[cix]);
             if (tc->activated)
                 rx_DestroyConnection( tc->id );
@@ -635,7 +636,7 @@ ForceNewConnections(struct srvAddr *sap)
 
     ObtainWriteLock(&afs_xconn, 413);
     for (tcv = sap->conns; tcv; tcv = tcv->next) {
-        for(cix = 0; cix < CVEC_LEN; ++cix) {
+        for(cix = 0; cix < cvec_len; ++cix) {
             tc = &(tcv->cvec[cix]);
             if (tc->activated)
                 tc->forceConnectFS = 1;

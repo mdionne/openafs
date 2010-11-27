@@ -70,6 +70,7 @@ static int RxStatProcCmd(struct cmd_syndesc *, void *);
 static int RxStatPeerCmd(struct cmd_syndesc *, void *);
 static int GetFidCmd(struct cmd_syndesc *, void *);
 static int UuidCmd(struct cmd_syndesc *, void *);
+static int MaxConnsCmd(struct cmd_syndesc *, void *);
 
 static char pn[] = "fs";
 static int rxInitDone = 0;
@@ -3711,6 +3712,9 @@ main(int argc, char **argv)
 	cmd_AddParm(ts, "-size", CMD_SINGLE, CMD_OPTIONAL, "file size");
 #endif
 
+    ts = cmd_CreateSyntax("maxconns", MaxConnsCmd, 0,
+		"get/set maximum RX connections per security context");
+    cmd_AddParm(ts, "-conns", CMD_SINGLE, CMD_OPTIONAL, "maximum number");
 /*
 
 defect 3069
@@ -4296,3 +4300,52 @@ GetFidCmd(struct cmd_syndesc *as, void *arock)
     return error;
 }
 
+static int
+MaxConnsCmd(struct cmd_syndesc *as, void *arock)
+{
+    afs_int32 code;
+    struct ViceIoctl blob;
+    afs_int32 max_conns_i, max_conns_o;
+    char *tp;
+
+    if (as->parms[0].items) {
+	int digit, ix, len;
+
+	tp = as->parms[0].items->data;
+	len = strlen(tp);
+
+        digit = 1;
+        for (ix = 0; ix < len; ++ix) {
+            if (!isdigit(tp[0])) {
+		digit = 0;
+		break;
+            }
+        }
+        if (digit == 0) {
+            fprintf(stderr, "fs maxconn: %s must be an integer between 1 and 10\n", tp);
+            return EINVAL;
+        }
+        max_conns_i = atoi(tp);
+        if (max_conns_i > 10) {
+            fprintf(stderr, "fs maxconn: %s must be an integer between 1 and 10\n", tp);
+            return EINVAL;
+        }
+        blob.in = (char *)&max_conns_i;
+        blob.in_size = sizeof(max_conns_i);
+    } else {
+	blob.in = NULL;
+	blob.in_size = 0;
+    }
+
+    blob.out = (char *) &max_conns_o;
+    blob.out_size = sizeof(max_conns_o);
+    code = pioctl(0, VIOC_MAXCONNS, &blob, 1);
+    if (code) {
+	Die(errno, NULL);
+	return 1;
+    } else {
+	printf("Max RX connections: %d\n", max_conns_o);
+    }
+
+    return 0;
+}
