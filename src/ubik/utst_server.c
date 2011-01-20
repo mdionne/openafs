@@ -28,6 +28,7 @@
 #include <rx/rx.h>
 #include <lock.h>
 #include <afs/afsutil.h>
+#include <afs/cellconfig.h>
 #include "ubik.h"
 #include "utst_int.h"
 
