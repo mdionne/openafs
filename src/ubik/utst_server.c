@@ -280,6 +280,7 @@ main(int argc, char **argv)
     afs_int32 code, i;
     afs_uint32 serverList[MAXSERVERS];
     afs_uint32 myHost;
+    struct afsconf_dir *tdir;
     struct rx_service *tservice;
     struct rx_securityClass *sc[2];
     char dbfileName[128];
@@ -318,6 +319,8 @@ main(int argc, char **argv)
      * dbase), which is required for creating new transactions */
 
     sprintf(dbfileName, "%s/testdb", gettmpdir());
+    tdir = afsconf_Open("/etc/openafs");
+    ubik_CRXSecurityRock = (char *)tdir;
 
     code =
 	ubik_ServerInit(myHost, htons(3000), serverList, dbfileName, &dbase);
