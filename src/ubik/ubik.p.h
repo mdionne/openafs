@@ -420,6 +420,7 @@ extern void *ubeacon_Interact(void *);
 /*\}*/
 
 /*! \name disk.c */
+extern int udisk_Init(int nBUffers);
 extern void udisk_Debug(struct ubik_debug *aparm);
 extern int udisk_Invalidate(struct ubik_dbase *adbase, afs_int32 afid);
 extern int udisk_read(struct ubik_trans *atrans, afs_int32 afile,
@@ -436,6 +437,7 @@ extern int udisk_end(struct ubik_trans *atrans);
 /*\}*/
 
 /*! \name lock.c */
+extern void ulock_Init(void);
 extern int  ulock_getLock(struct ubik_trans *atrans, int atype, int await);
 extern void ulock_relLock(struct ubik_trans *atrans);
 extern void ulock_Debug(struct ubik_debug *aparm);
