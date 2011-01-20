@@ -121,7 +121,6 @@ ulock_getLock(struct ubik_trans *atrans, int atype, int await)
     }
     DBHOLD(dbase);
     atrans->locktype = atype;
-    atrans->flags &= ~TRSETLOCK;
 
 /*
  *ubik_print("Ubik: DEBUG: Thread 0x%x took %s lock\n", lwp_cpptr,
