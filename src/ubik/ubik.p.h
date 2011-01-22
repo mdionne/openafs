@@ -336,6 +336,18 @@ extern int ubikPrimaryAddrOnly;	/* use only primary address */
 
 /* this extern gives the sync site's db version, with epoch of 0 if none yet */
 
+/*!
+ * \brief Global beacon data.  All values are protected by ubik_beacon_mutex
+ */
+struct beacon_data {
+   pthread_mutex_t ubik_beacon_mutex;
+   int ubik_amSyncSite;			/*!< flag telling if I'm sync site */
+   afs_int32 syncSiteUntil;		/*!< valid only if amSyncSite */
+} beacon_globals;
+
+#define UBIK_BEACON_LOCK MUTEX_ENTER(&beacon_globals.ubik_beacon_mutex)
+#define UBIK_BEACON_UNLOCK MUTEX_EXIT(&beacon_globals.ubik_beacon_mutex)
+
 /* phys.c */
 extern int uphys_close(int afd);
 extern int uphys_stat(struct ubik_dbase *adbase, afs_int32 afid,
@@ -417,6 +429,8 @@ extern int ubeacon_InitServerListByInfo(afs_uint32 ame,
 					char clones[]);
 extern int ubeacon_InitServerList(afs_uint32 ame, afs_uint32 aservers[]);
 extern void *ubeacon_Interact(void *);
+extern struct beacon_data beacon_globals;
+
 /*\}*/
 
 /*! \name disk.c */

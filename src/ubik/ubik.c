@@ -149,10 +149,13 @@ ContactQuorum_NoArguments(afs_int32 (*proc)(struct rx_connection *, ubik_tid *),
     okcalls = 0;
     for (ts = ubik_servers; ts; ts = ts->next) {
 	/* for each server */
+	UBIK_BEACON_LOCK;
 	if (!ts->up || !ts->currentDB) {
+	    UBIK_BEACON_UNLOCK;
 	    ts->currentDB = 0;	/* db is no longer current; we just missed an update */
 	    continue;		/* not up-to-date, don't bother */
 	}
+	UBIK_BEACON_UNLOCK;
 
 	conn = Quorum_StartIO(atrans, ts);
 
@@ -163,9 +166,11 @@ ContactQuorum_NoArguments(afs_int32 (*proc)(struct rx_connection *, ubik_tid *),
 
 	if (code) {		/* failure */
 	    rcode = code;
+	    UBIK_BEACON_LOCK;
 	    ts->up = 0;		/* mark as down now; beacons will no longer be sent */
-	    ts->currentDB = 0;
 	    ts->beaconSinceDown = 0;
+	    UBIK_BEACON_UNLOCK;
+	    ts->currentDB = 0;
 	    urecovery_LostServer(ts);	/* tell recovery to try to resend dbase later */
 	} else {		/* success */
 	    if (!ts->isClone)
@@ -195,10 +200,13 @@ ContactQuorum_DISK_Lock(struct ubik_trans *atrans, int aflags,afs_int32 file,
     okcalls = 0;
     for (ts = ubik_servers; ts; ts = ts->next) {
 	/* for each server */
+	UBIK_BEACON_LOCK;
 	if (!ts->up || !ts->currentDB) {
+	    UBIK_BEACON_UNLOCK;
 	    ts->currentDB = 0;	/* db is no longer current; we just missed an update */
 	    continue;		/* not up-to-date, don't bother */
 	}
+	UBIK_BEACON_UNLOCK;
 
 	conn = Quorum_StartIO(atrans, ts);
 
@@ -209,9 +217,11 @@ ContactQuorum_DISK_Lock(struct ubik_trans *atrans, int aflags,afs_int32 file,
 
 	if (code) {		/* failure */
 	    rcode = code;
+	    UBIK_BEACON_LOCK;
 	    ts->up = 0;		/* mark as down now; beacons will no longer be sent */
-	    ts->currentDB = 0;
 	    ts->beaconSinceDown = 0;
+	    UBIK_BEACON_UNLOCK;
+	    ts->currentDB = 0;
 	    urecovery_LostServer(ts);	/* tell recovery to try to resend dbase later */
 	} else {		/* success */
 	    if (!ts->isClone)
@@ -241,10 +251,13 @@ ContactQuorum_DISK_Write(struct ubik_trans *atrans, int aflags,
     okcalls = 0;
     for (ts = ubik_servers; ts; ts = ts->next) {
 	/* for each server */
+	UBIK_BEACON_LOCK;
 	if (!ts->up || !ts->currentDB) {
+	    UBIK_BEACON_UNLOCK;
 	    ts->currentDB = 0;	/* db is no longer current; we just missed an update */
 	    continue;		/* not up-to-date, don't bother */
 	}
+	UBIK_BEACON_UNLOCK;
 
 	conn = Quorum_StartIO(atrans, ts);
 
@@ -255,9 +268,11 @@ ContactQuorum_DISK_Write(struct ubik_trans *atrans, int aflags,
 
 	if (code) {		/* failure */
 	    rcode = code;
+	    UBIK_BEACON_LOCK;
 	    ts->up = 0;		/* mark as down now; beacons will no longer be sent */
-	    ts->currentDB = 0;
 	    ts->beaconSinceDown = 0;
+	    UBIK_BEACON_UNLOCK;
+	    ts->currentDB = 0;
 	    urecovery_LostServer(ts);	/* tell recovery to try to resend dbase later */
 	} else {		/* success */
 	    if (!ts->isClone)
@@ -287,10 +302,13 @@ ContactQuorum_DISK_Truncate(struct ubik_trans *atrans, int aflags,
     okcalls = 0;
     for (ts = ubik_servers; ts; ts = ts->next) {
 	/* for each server */
+	UBIK_BEACON_LOCK;
 	if (!ts->up || !ts->currentDB) {
+	    UBIK_BEACON_UNLOCK;
 	    ts->currentDB = 0;	/* db is no longer current; we just missed an update */
 	    continue;		/* not up-to-date, don't bother */
 	}
+	UBIK_BEACON_UNLOCK;
 
 	conn = Quorum_StartIO(atrans, ts);
 
@@ -301,9 +319,11 @@ ContactQuorum_DISK_Truncate(struct ubik_trans *atrans, int aflags,
 
 	if (code) {		/* failure */
 	    rcode = code;
+	    UBIK_BEACON_LOCK;
 	    ts->up = 0;		/* mark as down now; beacons will no longer be sent */
-	    ts->currentDB = 0;
 	    ts->beaconSinceDown = 0;
+	    UBIK_BEACON_UNLOCK;
+	    ts->currentDB = 0;
 	    urecovery_LostServer(ts);	/* tell recovery to try to resend dbase later */
 	} else {		/* success */
 	    if (!ts->isClone)
@@ -333,10 +353,13 @@ ContactQuorum_DISK_WriteV(struct ubik_trans *atrans, int aflags,
     okcalls = 0;
     for (ts = ubik_servers; ts; ts = ts->next) {
 	/* for each server */
+	UBIK_BEACON_LOCK;
 	if (!ts->up || !ts->currentDB) {
+	    UBIK_BEACON_UNLOCK;
 	    ts->currentDB = 0;	/* db is no longer current; we just missed an update */
 	    continue;		/* not up-to-date, don't bother */
 	}
+	UBIK_BEACON_UNLOCK;
 
 	conn = Quorum_StartIO(atrans, ts);
 
@@ -382,9 +405,11 @@ ContactQuorum_DISK_WriteV(struct ubik_trans *atrans, int aflags,
 
 	if (code) {		/* failure */
 	    rcode = code;
+	    UBIK_BEACON_LOCK;
 	    ts->up = 0;		/* mark as down now; beacons will no longer be sent */
-	    ts->currentDB = 0;
 	    ts->beaconSinceDown = 0;
+	    UBIK_BEACON_UNLOCK;
+	    ts->currentDB = 0;
 	    urecovery_LostServer(ts);	/* tell recovery to try to resend dbase later */
 	} else {		/* success */
 	    if (!ts->isClone)
@@ -415,10 +440,13 @@ ContactQuorum_DISK_SetVersion(struct ubik_trans *atrans, int aflags,
     okcalls = 0;
     for (ts = ubik_servers; ts; ts = ts->next) {
 	/* for each server */
+	UBIK_BEACON_LOCK;
 	if (!ts->up || !ts->currentDB) {
+	    UBIK_BEACON_UNLOCK;
 	    ts->currentDB = 0;	/* db is no longer current; we just missed an update */
 	    continue;		/* not up-to-date, don't bother */
 	}
+	UBIK_BEACON_UNLOCK;
 
 	conn = Quorum_StartIO(atrans, ts);
 
@@ -429,9 +457,11 @@ ContactQuorum_DISK_SetVersion(struct ubik_trans *atrans, int aflags,
 
 	if (code) {		/* failure */
 	    rcode = code;
+	    UBIK_BEACON_LOCK;
 	    ts->up = 0;		/* mark as down now; beacons will no longer be sent */
-	    ts->currentDB = 0;
 	    ts->beaconSinceDown = 0;
+	    UBIK_BEACON_UNLOCK;
+	    ts->currentDB = 0;
 	    urecovery_LostServer(ts);	/* tell recovery to try to resend dbase later */
 	} else {		/* success */
 	    if (!ts->isClone)
@@ -989,7 +1019,9 @@ ubik_EndTrans(struct ubik_trans *transPtr)
 	    break;
 	}
 	for (ts = ubik_servers; ts; ts = ts->next) {
+	    UBIK_BEACON_LOCK;
 	    if (!ts->beaconSinceDown && now <= ts->lastBeaconSent + BIGTIME) {
+		UBIK_BEACON_UNLOCK;
 
 		/* this guy could have some damaged data, wait for him */
 		code = 1;
@@ -1009,6 +1041,7 @@ ubik_EndTrans(struct ubik_trans *transPtr)
 
 		break;
 	    }
+	    UBIK_BEACON_UNLOCK;
 	}
 	if (code == 0)
 	    break;		/* no down ones still pseudo-active */
