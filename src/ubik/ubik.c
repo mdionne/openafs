@@ -122,6 +122,65 @@ Quorum_EndIO(struct ubik_trans *atrans, struct rx_connection *aconn)
 #endif /* AFS_PTHREAD_ENV */
 }
 
+
+/* Iterate over all servers, returning a connection that can be used to make a call */
+static int
+ContactQuorum_iterate(struct ubik_trans *atrans, int aflags, struct ubik_server **ts,
+		 struct rx_connection **conn, afs_int32 *rcode, afs_int32 *okcalls, afs_int32 *code)
+{
+    /* Initial call - start iterating over servers */
+    if (!*ts)
+	*ts = ubik_servers;
+    else {
+	/* Close up previous connection */
+	if (*conn) {
+	    Quorum_EndIO(atrans, *conn);
+	    *conn = NULL;
+	    if (*code) {		/* failure */
+		*rcode = *code;
+		UBIK_BEACON_LOCK;
+		(*ts)->up = 0;		/* mark as down now; beacons will no longer be sent */
+		(*ts)->beaconSinceDown = 0;
+		UBIK_BEACON_UNLOCK;
+		(*ts)->currentDB = 0;
+		urecovery_LostServer(*ts);	/* tell recovery to try to resend dbase later */
+	    } else {		/* success */
+		if (!(*ts)->isClone)
+		    (*okcalls)++;	/* count up how many worked */
+		if (aflags & CStampVersion) {
+		    (*ts)->version = atrans->dbase->version;
+		}
+	    }
+	}
+	/* Next server */
+	*ts = (*ts)->next;
+    }
+    if (!(*ts))
+	return 1;
+    UBIK_BEACON_LOCK;
+    if (!(*ts)->up || !(*ts)->currentDB) {
+	UBIK_BEACON_UNLOCK;
+	(*ts)->currentDB = 0;	/* db is no longer current; we just missed an update */
+	return 0;		/* not up-to-date, don't bother.  NULL conn will tell caller not to use */
+    }
+    UBIK_BEACON_UNLOCK;
+    *conn = Quorum_StartIO(atrans, *ts);
+    return 0;
+}
+
+static int
+ContactQuorum_rcode(int okcalls, afs_int32 rcode)
+{
+    /*
+     * return 0 if we successfully contacted a quorum, otherwise return error code.
+     * We don't have to contact ourselves (that was done locally)
+     */
+    if (okcalls + 1 >= ubik_quorum)
+	return 0;
+    else
+	return rcode;
+}
+
 /*!
  * \brief Perform an operation at a quorum, handling error conditions.
  * \return 0 if all worked and a quorum was contacted successfully
@@ -140,343 +199,116 @@ afs_int32
 ContactQuorum_NoArguments(afs_int32 (*proc)(struct rx_connection *, ubik_tid *),
 	       		  struct ubik_trans *atrans, int aflags)
 {
-    struct ubik_server *ts;
-    afs_int32 code;
-    afs_int32 rcode, okcalls;
-    struct rx_connection *conn;
+    struct ubik_server *ts = NULL;
+    int ret;
+    afs_int32 code, rcode = 0, okcalls = 0;
+    struct rx_connection *conn = NULL;
 
-    rcode = 0;
-    okcalls = 0;
-    for (ts = ubik_servers; ts; ts = ts->next) {
-	/* for each server */
-	UBIK_BEACON_LOCK;
-	if (!ts->up || !ts->currentDB) {
-	    UBIK_BEACON_UNLOCK;
-	    ts->currentDB = 0;	/* db is no longer current; we just missed an update */
-	    continue;		/* not up-to-date, don't bother */
-	}
-	UBIK_BEACON_UNLOCK;
-
-	conn = Quorum_StartIO(atrans, ts);
-
-	code = (*proc)(conn, &atrans->tid);
-
-	Quorum_EndIO(atrans, conn);
-	conn = NULL;
-
-	if (code) {		/* failure */
-	    rcode = code;
-	    UBIK_BEACON_LOCK;
-	    ts->up = 0;		/* mark as down now; beacons will no longer be sent */
-	    ts->beaconSinceDown = 0;
-	    UBIK_BEACON_UNLOCK;
-	    ts->currentDB = 0;
-	    urecovery_LostServer(ts);	/* tell recovery to try to resend dbase later */
-	} else {		/* success */
-	    if (!ts->isClone)
-		okcalls++;	/* count up how many worked */
-	    if (aflags & CStampVersion) {
-		ts->version = atrans->dbase->version;
-	    }
-	}
+    ret = ContactQuorum_iterate(atrans, aflags, &ts, &conn, &rcode, &okcalls, &code);
+    while (!ret) {
+	if (conn)
+	    code = (*proc)(conn, &atrans->tid);
+	ret = ContactQuorum_iterate(atrans, aflags, &ts, &conn, &rcode, &okcalls, &code);
     }
-    /* return 0 if we successfully contacted a quorum, otherwise return error code.  We don't have to contact ourselves (that was done locally) */
-    if (okcalls + 1 >= ubik_quorum)
-	return 0;
-    else
-	return rcode;
+    return ContactQuorum_rcode(okcalls, rcode);
 }
+
 
 afs_int32
 ContactQuorum_DISK_Lock(struct ubik_trans *atrans, int aflags,afs_int32 file,
 			afs_int32 position, afs_int32 length, afs_int32 type)
 {
-    struct ubik_server *ts;
-    afs_int32 code;
-    afs_int32 rcode, okcalls;
-    struct rx_connection *conn;
+    struct ubik_server *ts = NULL;
+    int ret;
+    afs_int32 code, rcode = 0, okcalls = 0;
+    struct rx_connection *conn = NULL;
 
-    rcode = 0;
-    okcalls = 0;
-    for (ts = ubik_servers; ts; ts = ts->next) {
-	/* for each server */
-	UBIK_BEACON_LOCK;
-	if (!ts->up || !ts->currentDB) {
-	    UBIK_BEACON_UNLOCK;
-	    ts->currentDB = 0;	/* db is no longer current; we just missed an update */
-	    continue;		/* not up-to-date, don't bother */
-	}
-	UBIK_BEACON_UNLOCK;
-
-	conn = Quorum_StartIO(atrans, ts);
-
-	code = DISK_Lock(conn, &atrans->tid, file, position, length, type);
-
-	Quorum_EndIO(atrans, conn);
-	conn = NULL;
-
-	if (code) {		/* failure */
-	    rcode = code;
-	    UBIK_BEACON_LOCK;
-	    ts->up = 0;		/* mark as down now; beacons will no longer be sent */
-	    ts->beaconSinceDown = 0;
-	    UBIK_BEACON_UNLOCK;
-	    ts->currentDB = 0;
-	    urecovery_LostServer(ts);	/* tell recovery to try to resend dbase later */
-	} else {		/* success */
-	    if (!ts->isClone)
-		okcalls++;	/* count up how many worked */
-	    if (aflags & CStampVersion) {
-		ts->version = atrans->dbase->version;
-	    }
-	}
+    ret = ContactQuorum_iterate(atrans, aflags, &ts, &conn, &rcode, &okcalls, &code);
+    while (!ret) {
+	if (conn)
+	    code = DISK_Lock(conn, &atrans->tid, file, position, length, type);
+	ret = ContactQuorum_iterate(atrans, aflags, &ts, &conn, &rcode, &okcalls, &code);
     }
-    /* return 0 if we successfully contacted a quorum, otherwise return error code.  We don't have to contact ourselves (that was done locally) */
-    if (okcalls + 1 >= ubik_quorum)
-	return 0;
-    else
-	return rcode;
+    return ContactQuorum_rcode(okcalls, rcode);
 }
+
 
 afs_int32
 ContactQuorum_DISK_Write(struct ubik_trans *atrans, int aflags,
 			 afs_int32 file, afs_int32 position, bulkdata *data)
 {
-    struct ubik_server *ts;
-    afs_int32 code;
-    afs_int32 rcode, okcalls;
-    struct rx_connection *conn;
+    struct ubik_server *ts = NULL;
+    int ret;
+    afs_int32 code, rcode = 0, okcalls = 0;
+    struct rx_connection *conn = NULL;
 
-    rcode = 0;
-    okcalls = 0;
-    for (ts = ubik_servers; ts; ts = ts->next) {
-	/* for each server */
-	UBIK_BEACON_LOCK;
-	if (!ts->up || !ts->currentDB) {
-	    UBIK_BEACON_UNLOCK;
-	    ts->currentDB = 0;	/* db is no longer current; we just missed an update */
-	    continue;		/* not up-to-date, don't bother */
-	}
-	UBIK_BEACON_UNLOCK;
-
-	conn = Quorum_StartIO(atrans, ts);
-
-	code = DISK_Write(conn, &atrans->tid, file, position, data);
-
-	Quorum_EndIO(atrans, conn);
-	conn = NULL;
-
-	if (code) {		/* failure */
-	    rcode = code;
-	    UBIK_BEACON_LOCK;
-	    ts->up = 0;		/* mark as down now; beacons will no longer be sent */
-	    ts->beaconSinceDown = 0;
-	    UBIK_BEACON_UNLOCK;
-	    ts->currentDB = 0;
-	    urecovery_LostServer(ts);	/* tell recovery to try to resend dbase later */
-	} else {		/* success */
-	    if (!ts->isClone)
-		okcalls++;	/* count up how many worked */
-	    if (aflags & CStampVersion) {
-		ts->version = atrans->dbase->version;
-	    }
-	}
+    ret = ContactQuorum_iterate(atrans, aflags, &ts, &conn, &rcode, &okcalls, &code);
+    while (!ret) {
+	if (conn)
+	    code = DISK_Write(conn, &atrans->tid, file, position, data);
+	ret = ContactQuorum_iterate(atrans, aflags, &ts, &conn, &rcode, &okcalls, &code);
     }
-    /* return 0 if we successfully contacted a quorum, otherwise return error code.  We don't have to contact ourselves (that was done locally) */
-    if (okcalls + 1 >= ubik_quorum)
-	return 0;
-    else
-	return rcode;
+    return ContactQuorum_rcode(okcalls, rcode);
 }
+
 
 afs_int32
 ContactQuorum_DISK_Truncate(struct ubik_trans *atrans, int aflags,
 			    afs_int32 file, afs_int32 length)
 {
-    struct ubik_server *ts;
-    afs_int32 code;
-    afs_int32 rcode, okcalls;
-    struct rx_connection *conn;
+    struct ubik_server *ts = NULL;
+    int ret;
+    afs_int32 code, rcode = 0, okcalls = 0;
+    struct rx_connection *conn = NULL;
 
-    rcode = 0;
-    okcalls = 0;
-    for (ts = ubik_servers; ts; ts = ts->next) {
-	/* for each server */
-	UBIK_BEACON_LOCK;
-	if (!ts->up || !ts->currentDB) {
-	    UBIK_BEACON_UNLOCK;
-	    ts->currentDB = 0;	/* db is no longer current; we just missed an update */
-	    continue;		/* not up-to-date, don't bother */
-	}
-	UBIK_BEACON_UNLOCK;
-
-	conn = Quorum_StartIO(atrans, ts);
-
-	code = DISK_Truncate(conn, &atrans->tid, file, length);
-
-	Quorum_EndIO(atrans, conn);
-	conn = NULL;
-
-	if (code) {		/* failure */
-	    rcode = code;
-	    UBIK_BEACON_LOCK;
-	    ts->up = 0;		/* mark as down now; beacons will no longer be sent */
-	    ts->beaconSinceDown = 0;
-	    UBIK_BEACON_UNLOCK;
-	    ts->currentDB = 0;
-	    urecovery_LostServer(ts);	/* tell recovery to try to resend dbase later */
-	} else {		/* success */
-	    if (!ts->isClone)
-		okcalls++;	/* count up how many worked */
-	    if (aflags & CStampVersion) {
-		ts->version = atrans->dbase->version;
-	    }
-	}
+    ret = ContactQuorum_iterate(atrans, aflags, &ts, &conn, &rcode, &okcalls, &code);
+    while (!ret) {
+	if (conn)
+	    code = DISK_Truncate(conn, &atrans->tid, file, length);
+	ret = ContactQuorum_iterate(atrans, aflags, &ts, &conn, &rcode, &okcalls, &code);
     }
-    /* return 0 if we successfully contacted a quorum, otherwise return error code.  We don't have to contact ourselves (that was done locally) */
-    if (okcalls + 1 >= ubik_quorum)
-	return 0;
-    else
-	return rcode;
+    return ContactQuorum_rcode(okcalls, rcode);
 }
+
 
 afs_int32
 ContactQuorum_DISK_WriteV(struct ubik_trans *atrans, int aflags,
 			  iovec_wrt * io_vector, iovec_buf *io_buffer)
 {
-    struct ubik_server *ts;
-    afs_int32 code;
-    afs_int32 rcode, okcalls;
-    struct rx_connection *conn;
+    struct ubik_server *ts = NULL;
+    int ret;
+    afs_int32 code, rcode = 0, okcalls = 0;
+    struct rx_connection *conn = NULL;
 
-    rcode = 0;
-    okcalls = 0;
-    for (ts = ubik_servers; ts; ts = ts->next) {
-	/* for each server */
-	UBIK_BEACON_LOCK;
-	if (!ts->up || !ts->currentDB) {
-	    UBIK_BEACON_UNLOCK;
-	    ts->currentDB = 0;	/* db is no longer current; we just missed an update */
-	    continue;		/* not up-to-date, don't bother */
-	}
-	UBIK_BEACON_UNLOCK;
-
-	conn = Quorum_StartIO(atrans, ts);
-
-	code = DISK_WriteV(conn, &atrans->tid, io_vector, io_buffer);
-
-	Quorum_EndIO(atrans, conn);
-	conn = NULL;
-
-	if ((code <= -450) && (code > -500)) {
-	    /* An RPC interface mismatch (as defined in comerr/error_msg.c).
-	     * Un-bulk the entries and do individual DISK_Write calls
-	     * instead of DISK_WriteV.
-	     */
-	    struct ubik_iovec *iovec =
-		(struct ubik_iovec *)io_vector->iovec_wrt_val;
-	    char *iobuf = (char *)io_buffer->iovec_buf_val;
-	    bulkdata tcbs;
-	    afs_int32 i, offset;
-
-	    conn = Quorum_StartIO(atrans, ts);
-
-	    for (i = 0, offset = 0; i < io_vector->iovec_wrt_len; i++) {
-		/* Sanity check for going off end of buffer */
-		if ((offset + iovec[i].length) > io_buffer->iovec_buf_len) {
-		    code = UINTERNAL;
-		    break;
-		}
-		tcbs.bulkdata_len = iovec[i].length;
-		tcbs.bulkdata_val = &iobuf[offset];
-
-		code =
-		    DISK_Write(conn, &atrans->tid, iovec[i].file,
-			       iovec[i].position, &tcbs);
-		if (code)
-		    break;
-
-		offset += iovec[i].length;
-	    }
-
-	    Quorum_EndIO(atrans, conn);
-	    conn = NULL;
-	}
-
-	if (code) {		/* failure */
-	    rcode = code;
-	    UBIK_BEACON_LOCK;
-	    ts->up = 0;		/* mark as down now; beacons will no longer be sent */
-	    ts->beaconSinceDown = 0;
-	    UBIK_BEACON_UNLOCK;
-	    ts->currentDB = 0;
-	    urecovery_LostServer(ts);	/* tell recovery to try to resend dbase later */
-	} else {		/* success */
-	    if (!ts->isClone)
-		okcalls++;	/* count up how many worked */
-	    if (aflags & CStampVersion) {
-		ts->version = atrans->dbase->version;
-	    }
-	}
+    ret = ContactQuorum_iterate(atrans, aflags, &ts, &conn, &rcode, &okcalls, &code);
+    while (!ret) {
+	if (conn)
+	    code = DISK_WriteV(conn, &atrans->tid, io_vector, io_buffer);
+	ret = ContactQuorum_iterate(atrans, aflags, &ts, &conn, &rcode, &okcalls, &code);
     }
-    /* return 0 if we successfully contacted a quorum, otherwise return error code.  We don't have to contact ourselves (that was done locally) */
-    if (okcalls + 1 >= ubik_quorum)
-	return 0;
-    else
-	return rcode;
+    return ContactQuorum_rcode(okcalls, rcode);
 }
+
 
 afs_int32
 ContactQuorum_DISK_SetVersion(struct ubik_trans *atrans, int aflags,
 			      ubik_version *OldVersion,
 			      ubik_version *NewVersion)
 {
-    struct ubik_server *ts;
-    afs_int32 code;
-    afs_int32 rcode, okcalls;
-    struct rx_connection *conn;
+    struct ubik_server *ts = NULL;
+    int ret;
+    afs_int32 code, rcode = 0, okcalls = 0;
+    struct rx_connection *conn = NULL;
 
-    rcode = 0;
-    okcalls = 0;
-    for (ts = ubik_servers; ts; ts = ts->next) {
-	/* for each server */
-	UBIK_BEACON_LOCK;
-	if (!ts->up || !ts->currentDB) {
-	    UBIK_BEACON_UNLOCK;
-	    ts->currentDB = 0;	/* db is no longer current; we just missed an update */
-	    continue;		/* not up-to-date, don't bother */
-	}
-	UBIK_BEACON_UNLOCK;
-
-	conn = Quorum_StartIO(atrans, ts);
-
-	code = DISK_SetVersion(conn, &atrans->tid, OldVersion, NewVersion);
-
-	Quorum_EndIO(atrans, conn);
-	conn = NULL;
-
-	if (code) {		/* failure */
-	    rcode = code;
-	    UBIK_BEACON_LOCK;
-	    ts->up = 0;		/* mark as down now; beacons will no longer be sent */
-	    ts->beaconSinceDown = 0;
-	    UBIK_BEACON_UNLOCK;
-	    ts->currentDB = 0;
-	    urecovery_LostServer(ts);	/* tell recovery to try to resend dbase later */
-	} else {		/* success */
-	    if (!ts->isClone)
-		okcalls++;	/* count up how many worked */
-	    if (aflags & CStampVersion) {
-		ts->version = atrans->dbase->version;
-	    }
-	}
+    ret = ContactQuorum_iterate(atrans, aflags, &ts, &conn, &rcode, &okcalls, &code);
+    while (!ret) {
+	if (conn)
+	    code = DISK_SetVersion(conn, &atrans->tid, OldVersion, NewVersion);
+	ret = ContactQuorum_iterate(atrans, aflags, &ts, &conn, &rcode, &okcalls, &code);
     }
-    /* return 0 if we successfully contacted a quorum, otherwise return error code.  We don't have to contact ourselves (that was done locally) */
-    if (okcalls + 1 >= ubik_quorum)
-	return 0;
-    else
-	return rcode;
+    return ContactQuorum_rcode(okcalls, rcode);
 }
+
 
 /*!
  * \brief This routine initializes the ubik system for a set of servers.
