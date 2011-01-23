@@ -645,6 +645,7 @@ SDISK_UpdateInterfaceAddr(struct rx_call *rxcall,
     int i, j, found = 0, probableMatch = 0;
     char hoststr[16];
 
+    UBIK_ADDR_LOCK;
     /* copy the output parameters */
     for (i = 0; i < UBIK_MAX_INTERFACE_ADDR; i++)
 	outAddr->hostAddr[i] = ntohl(ubik_host[i]);
@@ -686,6 +687,7 @@ SDISK_UpdateInterfaceAddr(struct rx_call *rxcall,
 	fflush(stdout);
 	fflush(stderr);
 	printServerInfo();
+	UBIK_ADDR_UNLOCK;
 	return UBADHOST;
     }
 
@@ -698,6 +700,7 @@ SDISK_UpdateInterfaceAddr(struct rx_call *rxcall,
 	ubik_print("%s ", afs_inet_ntoa_r(ts->addr[i], hoststr));
     ubik_print("\n");
 
+    UBIK_ADDR_UNLOCK;
     return 0;
 }
 

@@ -103,11 +103,15 @@ Quorum_StartIO(struct ubik_trans *atrans, struct ubik_server *as)
 {
     struct rx_connection *conn;
 
+    UBIK_ADDR_LOCK;
     conn = as->disk_rxcid;
 
 #ifdef AFS_PTHREAD_ENV
     rx_GetConnection(conn);
+    UBIK_ADDR_UNLOCK;
     DBRELE(atrans->dbase);
+#else
+    UBIK_ADDR_UNLOCK;
 #endif /* AFS_PTHREAD_ENV */
 
     return conn;
@@ -1345,9 +1349,13 @@ ubikGetPrimaryInterfaceAddr(afs_uint32 addr)
     struct ubik_server *ts;
     int j;
 
+    UBIK_ADDR_LOCK;
     for (ts = ubik_servers; ts; ts = ts->next)
 	for (j = 0; j < UBIK_MAX_INTERFACE_ADDR; j++)
-	    if (ts->addr[j] == addr)
+	    if (ts->addr[j] == addr) {
+		UBIK_ADDR_UNLOCK;
 		return ts->addr[0];	/* net byte order */
+	    }
+    UBIK_ADDR_UNLOCK;
     return 0;			/* if not in server database, return error */
 }
