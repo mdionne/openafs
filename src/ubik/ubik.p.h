@@ -330,7 +330,6 @@ extern struct ubik_stats {	/* random stats */
 extern afs_int32 ubik_epochTime;	/* time when this site started */
 extern afs_int32 urecovery_state;	/* sync site recovery process state */
 extern struct ubik_trans *ubik_currentTrans;	/* current trans */
-extern struct ubik_version ubik_dbVersion;	/* sync site's dbase version */
 extern afs_int32 ubik_debugFlag;	/* ubik debug flag */
 extern int ubikPrimaryAddrOnly;	/* use only primary address */
 
@@ -343,10 +342,31 @@ struct beacon_data {
    pthread_mutex_t ubik_beacon_mutex;
    int ubik_amSyncSite;			/*!< flag telling if I'm sync site */
    afs_int32 syncSiteUntil;		/*!< valid only if amSyncSite */
-} beacon_globals;
+};
 
 #define UBIK_BEACON_LOCK MUTEX_ENTER(&beacon_globals.ubik_beacon_mutex)
 #define UBIK_BEACON_UNLOCK MUTEX_EXIT(&beacon_globals.ubik_beacon_mutex)
+
+/*!
+ * \brief Global vote data.  All values are protected by ubik_vote_mutex
+ */
+struct vote_data {
+    pthread_mutex_t ubik_vote_mutex;
+    struct ubik_version ubik_dbVersion;	/* sync site's dbase version */
+    struct ubik_tid ubik_dbTid;		/* sync site's tid, or 0 if none */
+    afs_int32 ubik_lastYesTime;		/* time we sent the last yes vote */
+    afs_uint32 lastYesHost;		/* host to which we sent yes vote */
+    afs_int32 lastYesClaim;
+    int lastYesState;			/* did last site we voted for claim to be sync site? */
+    afs_int32 lowestTime;
+    afs_uint32 lowestHost;
+    afs_int32 syncTime;
+    afs_int32 syncHost;
+};
+
+#define UBIK_VOTE_INIT MUTEX_INIT(&vote_globals.ubik_vote_mutex, "vote lock", MUTEX_DEFAULT, 0)
+#define UBIK_VOTE_LOCK MUTEX_ENTER(&vote_globals.ubik_vote_mutex)
+#define UBIK_VOTE_UNLOCK MUTEX_EXIT(&vote_globals.ubik_vote_mutex)
 
 /* phys.c */
 extern int uphys_close(int afd);
@@ -472,6 +492,9 @@ extern void ubik_dprint(const char *format, ...)
 
 extern void ubik_dprint_25(const char *format, ...)
     AFS_ATTRIBUTE_FORMAT(__printf__, 1, 2);
+extern struct vote_data vote_globals;
+extern int uvote_set_dbVersion(struct ubik_version);
+extern int uvote_eq_dbVersion(struct ubik_version);
 /*\}*/
 
 #endif /* UBIK_INTERNALS */
