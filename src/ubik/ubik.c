@@ -1345,13 +1345,9 @@ ubikGetPrimaryInterfaceAddr(afs_uint32 addr)
     struct ubik_server *ts;
     int j;
 
-printf("Looking for primary addr for %x\n", addr);
     for (ts = ubik_servers; ts; ts = ts->next)
 	for (j = 0; j < UBIK_MAX_INTERFACE_ADDR; j++)
-	    if (ts->addr[j] == addr) {
-		printf("Primary addr for %x:  %x\n", addr, ts->addr[0]);
+	    if (ts->addr[j] == addr)
 		return ts->addr[0];	/* net byte order */
-	    }
-printf("Primary addr for %x NOT FOUND!!!\n", addr);
     return 0;			/* if not in server database, return error */
 }
