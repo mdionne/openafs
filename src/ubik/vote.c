@@ -628,8 +628,12 @@ uvote_set_dbVersion(struct ubik_version version) {
 /* Compare given version to current DB version.  Return true if equal. */
 int
 uvote_eq_dbVersion(struct ubik_version version) {
+    int ret;
     UBIK_VOTE_LOCK;
     if (vote_globals.ubik_dbVersion.epoch == version.epoch && vote_globals.ubik_dbVersion.counter == version.counter)
-	return 1;
+	ret = 1;
+    else
+	ret = 0;
     UBIK_VOTE_UNLOCK;
+    return ret;
 }
