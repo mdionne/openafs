@@ -510,7 +510,7 @@ urecovery_Interact(void *dummy)
 		} else {
 		    UBIK_BEACON_UNLOCK;
 		    DBHOLD(ubik_dbase);
-		    if (!ts->currentDB) {
+		    if (!ts->currentDB)
 			urecovery_state &= ~UBIK_RECFOUNDDB;
 		    DBRELE(ubik_dbase);
 		}
