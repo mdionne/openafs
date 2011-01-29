@@ -388,7 +388,6 @@ struct addr_data {
 #define UBIK_ADDR_UNLOCK MUTEX_EXIT(&addr_globals.ubik_addr_mutex)
 
 /* phys.c */
-extern int uphys_close(int afd);
 extern int uphys_stat(struct ubik_dbase *adbase, afs_int32 afid,
 		      struct ubik_stat *astat);
 extern int uphys_read(struct ubik_dbase *adbase, afs_int32 afile,
