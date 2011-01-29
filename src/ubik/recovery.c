@@ -408,10 +408,13 @@ urecovery_Initialize(struct ubik_dbase *adbase)
 {
     afs_int32 code;
 
+    DBHOLD(adbase);
     code = ReplayLog(adbase);
     if (code)
-	return code;
+	goto done;
     code = InitializeDB(adbase);
+done:
+    DBRELE(adbase);
     return code;
 }
 
@@ -490,26 +493,28 @@ urecovery_Interact(void *dummy)
 	 */
 	if ((now = FT_ApproxTime()) > 30 + lastProbeTime) {
 
-#ifdef AFS_PTHREAD_ENV
-	    DBHOLD(ubik_dbase);
-#endif
-
 	    for (ts = ubik_servers, doingRPC = 0; ts; ts = ts->next) {
+		UBIK_BEACON_LOCK;
 		if (!ts->up) {
+		    UBIK_BEACON_UNLOCK;
 		    doingRPC = 1;
 		    code = DoProbe(ts);
 		    if (code == 0) {
+			UBIK_BEACON_LOCK;
 			ts->up = 1;
+			UBIK_BEACON_UNLOCK;
+			DBHOLD(ubik_dbase);
 			urecovery_state &= ~UBIK_RECFOUNDDB;
+			DBRELE(ubik_dbase);
 		    }
-		} else if (!ts->currentDB) {
-		    urecovery_state &= ~UBIK_RECFOUNDDB;
+		} else {
+		    UBIK_BEACON_UNLOCK;
+		    DBHOLD(ubik_dbase);
+		    if (!ts->currentDB) {
+			urecovery_state &= ~UBIK_RECFOUNDDB;
+		    DBRELE(ubik_dbase);
 		}
 	    }
-
-#ifdef AFS_PTHREAD_ENV
-	    DBRELE(ubik_dbase);
-#endif
 
 	    if (doingRPC)
 		now = FT_ApproxTime();
@@ -517,6 +522,7 @@ urecovery_Interact(void *dummy)
 	}
 
 	/* Mark whether we are the sync site */
+	DBHOLD(ubik_dbase);
 	if (!ubeacon_AmSyncSite()) {
 	    urecovery_state &= ~UBIK_RECSYNCSITE;
 	    continue;		/* nothing to do */
@@ -527,12 +533,17 @@ urecovery_Interact(void *dummy)
 	 * most current database, then go find the most current db.
 	 */
 	if (!(urecovery_state & UBIK_RECFOUNDDB)) {
+	    DBRELE(ubik_dbase);
 	    bestServer = (struct ubik_server *)0;
 	    bestDBVersion.epoch = 0;
 	    bestDBVersion.counter = 0;
 	    for (ts = ubik_servers; ts; ts = ts->next) {
-		if (!ts->up)
+		UBIK_BEACON_LOCK;
+		if (!ts->up) {
+		    UBIK_BEACON_UNLOCK;
 		    continue;	/* don't bother with these guys */
+		}
+		UBIK_BEACON_UNLOCK;
 		if (ts->isClone)
 		    continue;
 		UBIK_ADDR_LOCK;
@@ -551,6 +562,7 @@ urecovery_Interact(void *dummy)
 	     * the sync site, have the best version. Also note that
 	     * we may need to send the best version out.
 	     */
+	    DBHOLD(ubik_dbase);
 	    if (vcmp(ubik_dbase->version, bestDBVersion) >= 0) {
 		bestDBVersion = ubik_dbase->version;
 		bestServer = (struct ubik_server *)0;
@@ -580,7 +592,9 @@ urecovery_Interact(void *dummy)
 	    /* Rx code to do the Bulk fetch */
 	    file = 0;
 	    offset = 0;
+	    UBIK_ADDR_LOCK;
 	    rxcall = rx_NewCall(bestServer->disk_rxcid);
+	    UBIK_ADDR_UNLOCK;
 
 	    ubik_print("Ubik: Synchronize database with server %s\n",
 		       afs_inet_ntoa_r(bestServer->addr[0], hoststr));
