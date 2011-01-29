@@ -1034,9 +1034,9 @@ ubik_Write(struct ubik_trans *transPtr, void *vbuffer,
     /* If this write won't fit in the structure, then flush it out and start anew */
     if ((transPtr->iovec_info.iovec_wrt_len >= IOVEC_MAXWRT)
 	|| ((length + transPtr->iovec_data.iovec_buf_len) > IOVEC_MAXBUF)) {
+	DBRELE(transPtr->dbase);
 	code = ubik_Flush(transPtr);
 	if (code) {
-	    DBRELE(transPtr->dbase);
 	    return (code);
 	}
     }
