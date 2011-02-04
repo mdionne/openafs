@@ -510,21 +510,23 @@ SDISK_SendFile(struct rx_call *rxcall, afs_int32 file,
 	       afs_inet_ntoa_r(otherHost, hoststr));
 
     offset = 0;
+    UBIK_VERSION_LOCK;
     epoch = tversion.epoch = 0;		/* start off by labelling in-transit db as invalid */
     (*dbase->setlabel) (dbase, file, &tversion);	/* setlabel does sync */
     afs_snprintf(pbuffer, sizeof(pbuffer), "%s.DB%s%d.TMP", ubik_dbase->pathName, (file<0)?"SYS":"", (file<0)?-file:file);
     fd = open(pbuffer, O_CREAT | O_RDWR | O_TRUNC, 0600);
     if (fd < 0) {
 	code = errno;
-	goto failed;
+	goto failed_locked;
     }
     code = lseek(fd, HDRSIZE, 0);
     if (code != HDRSIZE) {
 	close(fd);
-	goto failed;
+	goto failed_locked;
     }
     pass = 0;
     memcpy(&ubik_dbase->version, &tversion, sizeof(struct ubik_version));
+    UBIK_VERSION_UNLOCK;
     while (length > 0) {
 	tlen = (length > sizeof(tbuffer) ? sizeof(tbuffer) : length);
 #if !defined(AFS_PTHREAD_ENV)
@@ -565,6 +567,7 @@ SDISK_SendFile(struct rx_call *rxcall, afs_int32 file,
 #endif
     if (!code)
 	code = rename(pbuffer, tbuffer);
+    UBIK_VERSION_LOCK;
     if (!code) {
 	(*ubik_dbase->open) (ubik_dbase, file);
 	code = (*ubik_dbase->setlabel) (dbase, file, avers);
@@ -581,13 +584,18 @@ SDISK_SendFile(struct rx_call *rxcall, afs_int32 file,
     LWP_NoYieldSignal(&dbase->version);
 #endif
 
+failed_locked:
+    UBIK_VERSION_UNLOCK;
+
 failed:
     if (code) {
 	unlink(pbuffer);
 	/* Failed to sync. Allow reads again for now. */
 	if (dbase != NULL) {
+	    UBIK_VERSION_LOCK;
 	    tversion.epoch = epoch;
 	    (*dbase->setlabel) (dbase, file, &tversion);
+	    UBIK_VERSION_UNLOCK;
 	}
 	ubik_print
 	    ("Ubik: Synchronize database with server %s failed (error = %d)\n",
@@ -732,11 +740,13 @@ SDISK_SetVersion(struct rx_call *rxcall, struct ubik_tid *atid,
 
     /* Set the label if its version matches the sync-site's */
     if (uvote_eq_dbVersion(*oldversionp)) {
+	UBIK_VERSION_LOCK;
 	code = (*dbase->setlabel) (ubik_dbase, 0, newversionp);
 	if (!code) {
 	    ubik_dbase->version = *newversionp;
 	    uvote_set_dbVersion(*newversionp);
 	}
+	UBIK_VERSION_UNLOCK;
     } else {
 	code = USYNC;
     }

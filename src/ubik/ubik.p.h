@@ -327,13 +327,24 @@ extern int ubik_amSyncSite;	/* sleep on this waiting to be sync site */
 extern struct ubik_stats {	/* random stats */
     afs_int32 escapes;
 } ubik_stats;
-extern afs_int32 ubik_epochTime;	/* time when this site started */
 extern afs_int32 urecovery_state;	/* sync site recovery process state */
 extern struct ubik_trans *ubik_currentTrans;	/* current trans */
 extern afs_int32 ubik_debugFlag;	/* ubik debug flag */
 extern int ubikPrimaryAddrOnly;	/* use only primary address */
 
 /* this extern gives the sync site's db version, with epoch of 0 if none yet */
+
+/*!
+ * \brief The version lock protects the structure member, as well as
+ * the database version, flags, tidCounter, writeTidCounter
+ */
+struct version_data {
+   pthread_mutex_t ubik_version_mutex;
+    afs_int32 ubik_epochTime;	/* time when this site started */
+};
+
+#define UBIK_VERSION_LOCK MUTEX_ENTER(&version_globals.ubik_version_mutex)
+#define UBIK_VERSION_UNLOCK MUTEX_EXIT(&version_globals.ubik_version_mutex)
 
 /*!
  * \brief Global beacon data.  All values are protected by ubik_beacon_mutex
@@ -564,6 +575,7 @@ extern int ubik_GetVersion(struct ubik_trans *atrans,
 extern int ubik_CheckCache(struct ubik_trans *atrans,
                            ubik_updatecache_func check,
                            void *rock);
+extern struct version_data version_globals;
 /*\}*/
 
 /*! \name ubikclient.c */

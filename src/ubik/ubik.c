@@ -96,6 +96,8 @@ static int BeginTrans(struct ubik_dbase *dbase, afs_int32 transMode,
 
 struct rx_securityClass *ubik_sc[3];
 
+struct version_data version_globals;
+
 #define	CStampVersion	    1	/* meaning set ts->version */
 
 static_inline struct rx_connection *
@@ -612,6 +614,7 @@ BeginTrans(struct ubik_dbase *dbase, afs_int32 transMode,
 	DBRELE(dbase);
 	return code;
     }
+    UBIK_VERSION_LOCK;
     if (readAny) {
 	tt->flags |= TRREADANY;
 	if (readAny > 1) {
@@ -634,12 +637,14 @@ BeginTrans(struct ubik_dbase *dbase, afs_int32 transMode,
 	    udisk_abort(tt);
 	    ContactQuorum_NoArguments(DISK_Abort, tt, 0); /* force aborts to the others */
 	    udisk_end(tt);
+	    UBIK_VERSION_UNLOCK;
 	    DBRELE(dbase);
 	    return code;
 	}
     }
 
     *transPtr = tt;
+    UBIK_VERSION_UNLOCK;
     DBRELE(dbase);
     return 0;
 }
