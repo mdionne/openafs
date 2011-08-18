@@ -9,7 +9,7 @@
 
 prefix S
 
-typedef afs_uint64 AFSTimestamp;
+typedef afs_uint64 AFSAbsTime;
 
 struct BDesc {
     afs_int32 host;
