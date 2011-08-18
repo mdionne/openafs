@@ -99,7 +99,7 @@ struct ubik_trans {
     afs_int32 locktype;		/*!< transaction lock */
     struct ubik_trunc *activeTruncs;	/*!< queued truncates */
     struct ubik_ntid tid;	/*!< transaction id of this trans (if write trans.) */
-    afs_int32 minCommitTime;	/*!< time before which this trans can't commit */
+    AFSAbsTime minCommitTime;	/*!< time before which this trans can't commit */
     afs_int32 seekFile;		/*!< seek ptr: file number */
     afs_int32 seekPos;		/*!< seek ptr: offset therein */
     short flags;		/*!< trans flag bits */
@@ -290,8 +290,8 @@ extern int (*ubik_SyncWriterCacheProc) (void);
 struct ubik_server {
     struct ubik_server *next;	/*!< next ptr */
     afs_uint32 addr[UBIK_MAX_INTERFACE_ADDR];	/*!< network order, addr[0] is primary */
-    afs_int32 lastVoteTime;	/*!< last time yes vote received */
-    afs_int32 lastBeaconSent;	/*!< last time beacon attempted */
+    AFSAbsTime lastVoteTime;	/*!< last time yes vote received */
+    AFSAbsTime lastBeaconSent;	/*!< last time beacon attempted */
     struct ubik_nversion version;	/*!< version, only used during recovery */
     struct rx_connection *vote_rxcid;	/*!< cid to use to contact dude for votes */
     struct rx_connection *disk_rxcid;	/*!< cid to use to contact dude for disk reqs */
@@ -388,15 +388,15 @@ struct vote_data {
     struct ubik_nversion ubik_dbVersion;	/* sync site's dbase version */
     struct ubik_ntid ubik_dbTid;		/* sync site's tid, or 0 if none */
     /* Used by all sites in nominating new sync sites */
-    afs_int32 ubik_lastYesTime;		/* time we sent the last yes vote */
+    AFSAbsTime ubik_lastYesTime;		/* time we sent the last yes vote */
     afs_uint32 lastYesHost;		/* host to which we sent yes vote */
     /* Next is time sync site began this vote: guarantees sync site until this + SMALLTIME */
-    afs_int32 lastYesClaim;
+    AFSAbsTime lastYesClaim;
     int lastYesState;			/* did last site we voted for claim to be sync site? */
     /* Used to guarantee that nomination process doesn't loop */
-    afs_int32 lowestTime;
+    AFSAbsTime lowestTime;
     afs_uint32 lowestHost;
-    afs_int32 syncTime;
+    AFSAbsTime syncTime;
     afs_int32 syncHost;
 };
 
@@ -429,7 +429,7 @@ struct version_data {
 #ifdef AFS_PTHREAD_ENV
     pthread_mutex_t version_lock;
 #endif
-    afs_int32 ubik_epochTime;	/* time when this site started */
+    AFSAbsTime ubik_epochTime;	/* time when this site started */
 };
 
 #define UBIK_VERSION_LOCK MUTEX_ENTER(&version_globals.version_lock)
@@ -470,7 +470,7 @@ extern int DoProbe(struct ubik_server *server);
 /*! \name ubik.c */
 extern afs_int32 ContactQuorum_NoArguments(afs_int32 (*proc)
 						       (struct rx_connection *,
-							ubik_ntid *),
+							ubik_tid *),
 					   struct ubik_trans *atrans,
 					   int aflags);
 
