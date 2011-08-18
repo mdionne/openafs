@@ -320,3 +320,5 @@ WriteV2		(IN ubik_ntid *tid,
 		afs_int32 file,
 		afs_int64 position,
 		bulkdata *data) = DISK_WRITE_V2;
+
+GetVersionV2	(OUT ubik_nversion *Version) = DISK_GETVERSION_V2;

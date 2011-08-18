@@ -388,6 +388,18 @@ SDISK_GetVersion(struct rx_call *rxcall,
 
     nversion.epoch = aversion->epoch;
     nversion.counter = aversion->counter;
+    code = SDISK_GetVersionV2(rxcall, &nversion);
+    aversion->epoch = nversion.epoch;
+    aversion->counter = nversion.counter;
+
+    return code;
+}
+
+afs_int32
+SDISK_GetVersionV2(struct rx_call *rxcall,
+		 struct ubik_nversion *aversion)
+{
+    afs_int32 code;
 
     if ((code = ubik_CheckAuth(rxcall))) {
 	return code;
@@ -411,15 +423,12 @@ SDISK_GetVersion(struct rx_call *rxcall,
 	return UDEADLOCK;
     }
 
-    code = (*ubik_dbase->getlabel) (ubik_dbase, 0, &nversion);
+    code = (*ubik_dbase->getlabel) (ubik_dbase, 0, aversion);
     DBRELE(ubik_dbase);
     if (code) {
 	/* tell other side there's no dbase */
 	aversion->epoch = 0;
 	aversion->counter = 0;
-    } else {
-	aversion->epoch = nversion.epoch;
-	aversion->counter = nversion.counter;
     }
     return 0;
 }
