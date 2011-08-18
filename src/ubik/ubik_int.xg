@@ -190,6 +190,9 @@ statindex 11
 #define VOTE_SDEBUG		10005
 #define VOTE_XDEBUG             10006
 #define VOTE_XSDEBUG            10007
+#define	VOTE_BEACON_V2		10008
+#define	VOTE_GETSYNCSITE_V2	10009
+
 
 /* Vote package interface calls */
 Beacon		(IN afs_int32 state,
@@ -235,6 +238,25 @@ statindex 12
 #define	DISK_WRITEV		20011
 #define DISK_INTERFACEADDR	20012
 #define	DISK_SETVERSION		20013
+#define	DISK_BEGIN_V2		20014
+#define	DISK_COMMIT_V2		20015
+#define	DISK_LOCK_V2		20016
+#define	DISK_WRITE_V2		20017
+#define	DISK_GETVERSION_V2	20018
+#define	DISK_GETFILE_V2		20019
+#define	DISK_SENDFILE_V2	20020
+#define	DISK_ABORT_V2		20021
+#define	DISK_RELEASELOCKS_V2	20022
+#define	DISK_TRUNCATE_V2	20023
+#define	DISK_SNAPVERSION_V2	20024
+#define	DISK_DROPSNAP_V2	20025
+#define	DISK_GETFILEDIFF_V2	20026
+#define	DISK_SENDFILEDIFF_V2	20027
+#define	DISK_GETCAPABILITIES_V2	20028
+#define	DISK_INTERFACEADDR_V2	20029
+#define	DISK_FINALIZE_V2	20030
+#define	DISK_WRITEV_V2		20031
+#define	DISK_SETVERSION_V2	20032
 
 /* Disk package interface calls - the order of
  * these declarations is important.
