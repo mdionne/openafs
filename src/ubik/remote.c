@@ -46,20 +46,7 @@ SDISK_Begin(struct rx_call *rxcall, struct ubik_tid *atid)
 
     ntid.epoch = atid->epoch;
     ntid.counter = atid->counter;
-
-    if ((code = ubik_CheckAuth(rxcall))) {
-	return code;
-    }
-    DBHOLD(ubik_dbase);
-    urecovery_CheckTid(&ntid, 1);
-    code = udisk_begin(ubik_dbase, UBIK_WRITETRANS, &ubik_currentTrans);
-    if (!code && ubik_currentTrans) {
-	/* label this trans with the right trans id */
-	ubik_currentTrans->tid.epoch = ntid.epoch;
-	ubik_currentTrans->tid.counter = ntid.counter;
-    }
-    DBRELE(ubik_dbase);
-    return code;
+    return SDISK_BeginV2(rxcall, &ntid);
 }
 
 
@@ -788,6 +775,26 @@ SDISK_SetVersion(struct rx_call *rxcall, struct ubik_tid *atid,
 	code = USYNC;
     }
 done:
+    DBRELE(ubik_dbase);
+    return code;
+}
+
+afs_int32
+SDISK_BeginV2(struct rx_call *rxcall, struct ubik_ntid *ntid)
+{
+    afs_int32 code;
+
+    if ((code = ubik_CheckAuth(rxcall))) {
+	return code;
+    }
+    DBHOLD(ubik_dbase);
+    urecovery_CheckTid(ntid, 1);
+    code = udisk_begin(ubik_dbase, UBIK_WRITETRANS, &ubik_currentTrans);
+    if (!code && ubik_currentTrans) {
+	/* label this trans with the right trans id */
+	ubik_currentTrans->tid.epoch = ntid->epoch;
+	ubik_currentTrans->tid.counter = ntid->counter;
+    }
     DBRELE(ubik_dbase);
     return code;
 }
