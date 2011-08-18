@@ -42,17 +42,21 @@ afs_int32
 SDISK_Begin(struct rx_call *rxcall, struct ubik_tid *atid)
 {
     afs_int32 code;
+    struct ubik_ntid ntid;
+
+    ntid.epoch = atid->epoch;
+    ntid.counter = atid->counter;
 
     if ((code = ubik_CheckAuth(rxcall))) {
 	return code;
     }
     DBHOLD(ubik_dbase);
-    urecovery_CheckTid(atid, 1);
+    urecovery_CheckTid(&ntid, 1);
     code = udisk_begin(ubik_dbase, UBIK_WRITETRANS, &ubik_currentTrans);
     if (!code && ubik_currentTrans) {
 	/* label this trans with the right trans id */
-	ubik_currentTrans->tid.epoch = atid->epoch;
-	ubik_currentTrans->tid.counter = atid->counter;
+	ubik_currentTrans->tid.epoch = ntid.epoch;
+	ubik_currentTrans->tid.counter = ntid.counter;
     }
     DBRELE(ubik_dbase);
     return code;
@@ -63,6 +67,10 @@ afs_int32
 SDISK_Commit(struct rx_call *rxcall, struct ubik_tid *atid)
 {
     afs_int32 code;
+    struct ubik_ntid ntid;
+
+    ntid.epoch = atid->epoch;
+    ntid.counter = atid->counter;
 
     if ((code = ubik_CheckAuth(rxcall))) {
 	return code;
@@ -81,7 +89,7 @@ SDISK_Commit(struct rx_call *rxcall, struct ubik_tid *atid)
 	goto done;
     }
 
-    urecovery_CheckTid(atid, 0);
+    urecovery_CheckTid(&ntid, 0);
     if (!ubik_currentTrans) {
 	code = USYNC;
 	goto done;
@@ -102,6 +110,10 @@ afs_int32
 SDISK_ReleaseLocks(struct rx_call *rxcall, struct ubik_tid *atid)
 {
     afs_int32 code;
+    struct ubik_ntid ntid;
+
+    ntid.epoch = atid->epoch;
+    ntid.counter = atid->counter;
 
     if ((code = ubik_CheckAuth(rxcall))) {
 	return code;
@@ -119,7 +131,7 @@ SDISK_ReleaseLocks(struct rx_call *rxcall, struct ubik_tid *atid)
 	goto done;
     }
 
-    urecovery_CheckTid(atid, 0);
+    urecovery_CheckTid(&ntid, 0);
     if (!ubik_currentTrans) {
 	code = USYNC;
 	goto done;
@@ -139,6 +151,10 @@ afs_int32
 SDISK_Abort(struct rx_call *rxcall, struct ubik_tid *atid)
 {
     afs_int32 code;
+    struct ubik_ntid ntid;
+
+    ntid.epoch = atid->epoch;
+    ntid.counter = atid->counter;
 
     if ((code = ubik_CheckAuth(rxcall))) {
 	return code;
@@ -154,7 +170,7 @@ SDISK_Abort(struct rx_call *rxcall, struct ubik_tid *atid)
 	goto done;
     }
 
-    urecovery_CheckTid(atid, 0);
+    urecovery_CheckTid(&ntid, 0);
     if (!ubik_currentTrans) {
 	code = USYNC;
 	goto done;
@@ -178,6 +194,10 @@ SDISK_Lock(struct rx_call *rxcall, struct ubik_tid *atid,
 {
     afs_int32 code;
     struct ubik_trans *ubik_thisTrans;
+    struct ubik_ntid ntid;
+
+    ntid.epoch = atid->epoch;
+    ntid.counter = atid->counter;
 
     if ((code = ubik_CheckAuth(rxcall))) {
 	return code;
@@ -196,7 +216,7 @@ SDISK_Lock(struct rx_call *rxcall, struct ubik_tid *atid,
 	code = UBADLOCK;
 	goto done;
     }
-    urecovery_CheckTid(atid, 0);
+    urecovery_CheckTid(&ntid, 0);
     if (!ubik_currentTrans) {
 	code = USYNC;
 	goto done;
@@ -228,6 +248,10 @@ SDISK_WriteV(struct rx_call *rxcall, struct ubik_tid *atid,
     afs_int32 code, i, offset;
     struct ubik_iovec *iovec;
     char *iobuf;
+    struct ubik_ntid ntid;
+
+    ntid.epoch = atid->epoch;
+    ntid.counter = atid->counter;
 
     if ((code = ubik_CheckAuth(rxcall))) {
 	return code;
@@ -243,7 +267,7 @@ SDISK_WriteV(struct rx_call *rxcall, struct ubik_tid *atid,
 	goto done;
     }
 
-    urecovery_CheckTid(atid, 0);
+    urecovery_CheckTid(&ntid, 0);
     if (!ubik_currentTrans) {
 	code = USYNC;
 	goto done;
@@ -275,6 +299,10 @@ SDISK_Write(struct rx_call *rxcall, struct ubik_tid *atid,
 	    afs_int32 afile, afs_int32 apos, bulkdata *adata)
 {
     afs_int32 code;
+    struct ubik_ntid ntid;
+
+    ntid.epoch = atid->epoch;
+    ntid.counter = atid->counter;
 
     if ((code = ubik_CheckAuth(rxcall))) {
 	return code;
@@ -290,7 +318,7 @@ SDISK_Write(struct rx_call *rxcall, struct ubik_tid *atid,
 	goto done;
     }
 
-    urecovery_CheckTid(atid, 0);
+    urecovery_CheckTid(&ntid, 0);
     if (!ubik_currentTrans) {
 	code = USYNC;
 	goto done;
@@ -308,6 +336,10 @@ SDISK_Truncate(struct rx_call *rxcall, struct ubik_tid *atid,
 	       afs_int32 afile, afs_int32 alen)
 {
     afs_int32 code;
+    struct ubik_ntid ntid;
+
+    ntid.epoch = atid->epoch;
+    ntid.counter = atid->counter;
 
     if ((code = ubik_CheckAuth(rxcall))) {
 	return code;
@@ -323,7 +355,7 @@ SDISK_Truncate(struct rx_call *rxcall, struct ubik_tid *atid,
 	goto done;
     }
 
-    urecovery_CheckTid(atid, 0);
+    urecovery_CheckTid(&ntid, 0);
     if (!ubik_currentTrans) {
 	code = USYNC;
 	goto done;
@@ -707,6 +739,10 @@ SDISK_SetVersion(struct rx_call *rxcall, struct ubik_tid *atid,
 {
     afs_int32 code = 0;
     struct ubik_nversion old_nversion, new_nversion;
+    struct ubik_ntid ntid;
+
+    ntid.epoch = atid->epoch;
+    ntid.counter = atid->counter;
 
     new_nversion.epoch = newversionp->epoch;
     new_nversion.counter = newversionp->counter;
@@ -733,7 +769,7 @@ SDISK_SetVersion(struct rx_call *rxcall, struct ubik_tid *atid,
 	goto done;
     }
 
-    urecovery_CheckTid(atid, 0);
+    urecovery_CheckTid(&ntid, 0);
     if (!ubik_currentTrans) {
 	code = USYNC;
 	goto done;

@@ -98,7 +98,7 @@ struct ubik_trans {
     struct ubik_trans *next;	/*!< in the list */
     afs_int32 locktype;		/*!< transaction lock */
     struct ubik_trunc *activeTruncs;	/*!< queued truncates */
-    struct ubik_tid tid;	/*!< transaction id of this trans (if write trans.) */
+    struct ubik_ntid tid;	/*!< transaction id of this trans (if write trans.) */
     afs_int32 minCommitTime;	/*!< time before which this trans can't commit */
     afs_int32 seekFile;		/*!< seek ptr: file number */
     afs_int32 seekPos;		/*!< seek ptr: offset therein */
@@ -145,8 +145,8 @@ struct ubik_dbase {
 #else				/* defined(UKERNEL) */
     struct Lock versionLock;	/*!< lock on version number */
 #endif				/* defined(UKERNEL) */
-    afs_int32 tidCounter;	/*!< last RW or RO trans tid counter */
-    afs_int32 writeTidCounter;	/*!< last write trans tid counter */
+    afs_int64 tidCounter;	/*!< last RW or RO trans tid counter */
+    afs_int64 writeTidCounter;	/*!< last write trans tid counter */
     afs_int32 flags;		/*!< flags */
     /* physio procedures */
     int (*read) (struct ubik_dbase * adbase, afs_int32 afile, void *abuffer,
@@ -386,7 +386,7 @@ struct vote_data {
     pthread_mutex_t vote_lock;
 #endif
     struct ubik_nversion ubik_dbVersion;	/* sync site's dbase version */
-    struct ubik_tid ubik_dbTid;		/* sync site's tid, or 0 if none */
+    struct ubik_ntid ubik_dbTid;		/* sync site's tid, or 0 if none */
     /* Used by all sites in nominating new sync sites */
     afs_int32 ubik_lastYesTime;		/* time we sent the last yes vote */
     afs_uint32 lastYesHost;		/* host to which we sent yes vote */
@@ -461,7 +461,7 @@ extern int urecovery_LostServer(struct ubik_server *server);
 extern int urecovery_AllBetter(struct ubik_dbase *adbase,
 			       int areadAny);
 extern int urecovery_AbortAll(struct ubik_dbase *adbase);
-extern int urecovery_CheckTid(struct ubik_tid *atid, int abortalways);
+extern int urecovery_CheckTid(struct ubik_ntid *atid, int abortalways);
 extern int urecovery_Initialize(struct ubik_dbase *adbase);
 extern void *urecovery_Interact(void *);
 extern int DoProbe(struct ubik_server *server);
@@ -470,7 +470,7 @@ extern int DoProbe(struct ubik_server *server);
 /*! \name ubik.c */
 extern afs_int32 ContactQuorum_NoArguments(afs_int32 (*proc)
 						       (struct rx_connection *,
-							ubik_tid *),
+							ubik_ntid *),
 					   struct ubik_trans *atrans,
 					   int aflags);
 

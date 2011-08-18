@@ -319,10 +319,11 @@ SVOTE_Beacon(struct rx_call * rxcall, afs_int32 astate,
 	vote_globals.lastYesState = astate;	/* remember if site is a sync site */
 	vote_globals.ubik_dbVersion.epoch = avers->epoch;	/* resync value */
 	vote_globals.ubik_dbVersion.counter = avers->counter;	/* resync value */
-	vote_globals.ubik_dbTid = *atid;	/* transaction id, if any, of active trans */
+	vote_globals.ubik_dbTid.epoch = atid->epoch;	/* transaction id, if any, of active trans */
+	vote_globals.ubik_dbTid.counter = atid->counter;	/* transaction id, if any, of active trans */
 	UBIK_VOTE_UNLOCK;
 	DBHOLD(ubik_dbase);
-	urecovery_CheckTid(atid, 0);	/* check if current write trans needs aborted */
+	urecovery_CheckTid(&vote_globals.ubik_dbTid, 0);	/* check if current write trans needs aborted */
 	DBRELE(ubik_dbase);
     } else {
 	UBIK_VOTE_UNLOCK;

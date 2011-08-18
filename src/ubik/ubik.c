@@ -219,11 +219,16 @@ ContactQuorum_NoArguments(afs_int32 (*proc)(struct rx_connection *, ubik_tid *),
     afs_int32 code = 0, rcode, okcalls;
     struct rx_connection *conn;
     int done;
+    struct ubik_tid old_tid;
+
 
     done = ContactQuorum_iterate(atrans, aflags, &ts, &conn, &rcode, &okcalls, code);
     while (!done) {
-	if (conn)
-	    code = (*proc)(conn, &atrans->tid);
+	if (conn) {
+	    old_tid.epoch = atrans->tid.epoch;
+	    old_tid.counter = atrans->tid.counter;
+	    code = (*proc)(conn, &old_tid);
+	}
 	done = ContactQuorum_iterate(atrans, aflags, &ts, &conn, &rcode, &okcalls, code);
     }
     return ContactQuorum_rcode(okcalls, rcode);
@@ -238,11 +243,15 @@ ContactQuorum_DISK_Lock(struct ubik_trans *atrans, int aflags,afs_int32 file,
     afs_int32 code = 0, rcode, okcalls;
     struct rx_connection *conn;
     int done;
+    struct ubik_tid old_tid;
 
     done = ContactQuorum_iterate(atrans, aflags, &ts, &conn, &rcode, &okcalls, code);
     while (!done) {
-	if (conn)
-	    code = DISK_Lock(conn, &atrans->tid, file, position, length, type);
+	if (conn) {
+	    old_tid.epoch = atrans->tid.epoch;
+	    old_tid.counter = atrans->tid.counter;
+	    code = DISK_Lock(conn, &old_tid, file, position, length, type);
+	}
 	done = ContactQuorum_iterate(atrans, aflags, &ts, &conn, &rcode, &okcalls, code);
     }
     return ContactQuorum_rcode(okcalls, rcode);
@@ -257,11 +266,15 @@ ContactQuorum_DISK_Write(struct ubik_trans *atrans, int aflags,
     afs_int32 code = 0, rcode, okcalls;
     struct rx_connection *conn;
     int done;
+    struct ubik_tid old_tid;
 
     done = ContactQuorum_iterate(atrans, aflags, &ts, &conn, &rcode, &okcalls, code);
     while (!done) {
-	if (conn)
-	    code = DISK_Write(conn, &atrans->tid, file, position, data);
+	if (conn) {
+	    old_tid.epoch = atrans->tid.epoch;
+	    old_tid.counter = atrans->tid.counter;
+	    code = DISK_Write(conn, &old_tid, file, position, data);
+	}
 	done = ContactQuorum_iterate(atrans, aflags, &ts, &conn, &rcode, &okcalls, code);
     }
     return ContactQuorum_rcode(okcalls, rcode);
@@ -276,11 +289,15 @@ ContactQuorum_DISK_Truncate(struct ubik_trans *atrans, int aflags,
     afs_int32 code = 0, rcode, okcalls;
     struct rx_connection *conn;
     int done;
+    struct ubik_tid old_tid;
 
     done = ContactQuorum_iterate(atrans, aflags, &ts, &conn, &rcode, &okcalls, code);
     while (!done) {
-	if (conn)
-	    code = DISK_Truncate(conn, &atrans->tid, file, length);
+	if (conn) {
+	    old_tid.epoch = atrans->tid.epoch;
+	    old_tid.counter = atrans->tid.counter;
+	    code = DISK_Truncate(conn, &old_tid, file, length);
+	}
 	done = ContactQuorum_iterate(atrans, aflags, &ts, &conn, &rcode, &okcalls, code);
     }
     return ContactQuorum_rcode(okcalls, rcode);
@@ -295,11 +312,14 @@ ContactQuorum_DISK_WriteV(struct ubik_trans *atrans, int aflags,
     afs_int32 code = 0, rcode, okcalls;
     struct rx_connection *conn;
     int done;
+    struct ubik_tid old_tid;
 
     done = ContactQuorum_iterate(atrans, aflags, &ts, &conn, &rcode, &okcalls, code);
     while (!done) {
 	if (conn) {
-	    code = DISK_WriteV(conn, &atrans->tid, io_vector, io_buffer);
+	    old_tid.epoch = atrans->tid.epoch;
+	    old_tid.counter = atrans->tid.counter;
+	    code = DISK_WriteV(conn, &old_tid, io_vector, io_buffer);
 	    if ((code <= -450) && (code > -500)) {
 		/* An RPC interface mismatch (as defined in comerr/error_msg.c).
 		 * Un-bulk the entries and do individual DISK_Write calls
@@ -319,7 +339,7 @@ ContactQuorum_DISK_WriteV(struct ubik_trans *atrans, int aflags,
 		    }
 		    tcbs.bulkdata_len = iovec[i].length;
 		    tcbs.bulkdata_val = &iobuf[offset];
-		    code = DISK_Write(conn, &atrans->tid, iovec[i].file,
+		    code = DISK_Write(conn, &old_tid, iovec[i].file,
 			   iovec[i].position, &tcbs);
 		    if (code)
 			break;
@@ -343,6 +363,7 @@ ContactQuorum_DISK_SetVersion(struct ubik_trans *atrans, int aflags,
     struct rx_connection *conn;
     int done;
     struct ubik_version old_vers, new_vers;
+    struct ubik_tid old_tid;
 
     old_vers.epoch = OldVersion->epoch;
     old_vers.counter = OldVersion->counter;
@@ -351,8 +372,11 @@ ContactQuorum_DISK_SetVersion(struct ubik_trans *atrans, int aflags,
 
     done = ContactQuorum_iterate(atrans, aflags, &ts, &conn, &rcode, &okcalls, code);
     while (!done) {
-	if (conn)
-	    code = DISK_SetVersion(conn, &atrans->tid, &old_vers, &new_vers);
+	if (conn) {
+	    old_tid.epoch = atrans->tid.epoch;
+	    old_tid.counter = atrans->tid.counter;
+	    code = DISK_SetVersion(conn, &old_tid, &old_vers, &new_vers);
+	}
 	done = ContactQuorum_iterate(atrans, aflags, &ts, &conn, &rcode, &okcalls, code);
     }
     return ContactQuorum_rcode(okcalls, rcode);

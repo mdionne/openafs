@@ -144,7 +144,7 @@ urecovery_AbortAll(struct ubik_dbase *adbase)
  * \brief this routine aborts the current remote transaction, if any, if the tid is wrong
  */
 int
-urecovery_CheckTid(struct ubik_tid *atid, int abortalways)
+urecovery_CheckTid(struct ubik_ntid *atid, int abortalways)
 {
     if (ubik_currentTrans) {
 	/* there is remote write trans, see if we match, see if this
