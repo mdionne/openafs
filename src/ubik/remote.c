@@ -299,6 +299,18 @@ afs_int32
 SDISK_Write(struct rx_call *rxcall, struct ubik_tid *atid,
 	    afs_int32 afile, afs_int32 apos, bulkdata *adata)
 {
+    struct ubik_ntid ntid;
+
+    ntid.epoch = atid->epoch;
+    ntid.counter = atid->counter;
+
+    return SDISK_WriteV2(rxcall, &ntid, afile, apos, adata);
+}
+
+afs_int32
+SDISK_WriteV2(struct rx_call *rxcall, struct ubik_ntid *atid,
+	    afs_int32 afile, afs_int64 apos, bulkdata *adata)
+{
     afs_int32 code;
     struct ubik_ntid ntid;
 

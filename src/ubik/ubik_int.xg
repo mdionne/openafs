@@ -315,3 +315,8 @@ LockV2		(IN ubik_ntid *tid,
 		afs_int64 position,
 		afs_int64 length,
 		afs_int32 type) = DISK_LOCK_V2;
+
+WriteV2		(IN ubik_ntid *tid,
+		afs_int32 file,
+		afs_int64 position,
+		bulkdata *data) = DISK_WRITE_V2;
