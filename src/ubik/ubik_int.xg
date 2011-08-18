@@ -9,6 +9,8 @@
 
 prefix S
 
+typedef afs_uint64 AFSTimestamp;
+
 struct BDesc {
     afs_int32 host;
     short portal;
@@ -25,7 +27,26 @@ struct ubik_tid {
     afs_int32 counter;
 };
 
+struct ubik_nversion {
+    afs_int64 epoch;
+    afs_int64 counter;
+};
+
+struct ubik_ntid {
+    afs_int64 epoch;
+    afs_int64 counter;
+};
+
 const UBIK_MAX_INTERFACE_ADDR =	256; /* max interfaces per server */
+
+const UBIKCAPABILITIESMAX = 196;
+
+struct UbikInterfaceInfo {
+    afsUUID uuid;
+    afs_int32 hostAddr[UBIK_MAX_INTERFACE_ADDR];
+};
+
+typedef afs_uint32 UbikCapabilities<UBIKCAPABILITIESMAX>;
 
 struct ubik_debug {
     /* variables from basic voting module */
