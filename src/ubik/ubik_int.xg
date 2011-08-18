@@ -307,3 +307,5 @@ SetVersion      (IN ubik_tid     *tid,
                  IN ubik_version *NewVersion) = DISK_SETVERSION;
 
 BeginV2		(IN ubik_ntid *tid) = DISK_BEGIN_V2;
+
+CommitV2	(IN ubik_ntid *tid) = DISK_COMMIT_V2;

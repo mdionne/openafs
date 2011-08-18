@@ -41,7 +41,6 @@ struct ubik_trans *ubik_currentTrans = 0;
 afs_int32
 SDISK_Begin(struct rx_call *rxcall, struct ubik_tid *atid)
 {
-    afs_int32 code;
     struct ubik_ntid ntid;
 
     ntid.epoch = atid->epoch;
@@ -53,11 +52,17 @@ SDISK_Begin(struct rx_call *rxcall, struct ubik_tid *atid)
 afs_int32
 SDISK_Commit(struct rx_call *rxcall, struct ubik_tid *atid)
 {
-    afs_int32 code;
     struct ubik_ntid ntid;
 
     ntid.epoch = atid->epoch;
     ntid.counter = atid->counter;
+    return SDISK_CommitV2(rxcall, &ntid);
+}
+
+afs_int32
+SDISK_CommitV2(struct rx_call *rxcall, struct ubik_ntid *ntid)
+{
+    afs_int32 code;
 
     if ((code = ubik_CheckAuth(rxcall))) {
 	return code;
@@ -76,7 +81,7 @@ SDISK_Commit(struct rx_call *rxcall, struct ubik_tid *atid)
 	goto done;
     }
 
-    urecovery_CheckTid(&ntid, 0);
+    urecovery_CheckTid(ntid, 0);
     if (!ubik_currentTrans) {
 	code = USYNC;
 	goto done;
