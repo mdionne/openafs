@@ -184,12 +184,21 @@ afs_int32
 SDISK_Lock(struct rx_call *rxcall, struct ubik_tid *atid,
 	   afs_int32 afile, afs_int32 apos, afs_int32 alen, afs_int32 atype)
 {
-    afs_int32 code;
-    struct ubik_trans *ubik_thisTrans;
     struct ubik_ntid ntid;
 
     ntid.epoch = atid->epoch;
     ntid.counter = atid->counter;
+
+    return SDISK_LockV2(rxcall, &ntid, afile, apos, alen, atype);
+}
+
+/* apos and alen are not used */
+afs_int32
+SDISK_LockV2(struct rx_call *rxcall, struct ubik_ntid *ntid,
+	   afs_int32 afile, afs_int64 apos, afs_int64 alen, afs_int32 atype)
+{
+    afs_int32 code;
+    struct ubik_trans *ubik_thisTrans;
 
     if ((code = ubik_CheckAuth(rxcall))) {
 	return code;
@@ -208,7 +217,7 @@ SDISK_Lock(struct rx_call *rxcall, struct ubik_tid *atid,
 	code = UBADLOCK;
 	goto done;
     }
-    urecovery_CheckTid(&ntid, 0);
+    urecovery_CheckTid(ntid, 0);
     if (!ubik_currentTrans) {
 	code = USYNC;
 	goto done;

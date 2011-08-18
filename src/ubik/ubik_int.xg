@@ -309,3 +309,9 @@ SetVersion      (IN ubik_tid     *tid,
 BeginV2		(IN ubik_ntid *tid) = DISK_BEGIN_V2;
 
 CommitV2	(IN ubik_ntid *tid) = DISK_COMMIT_V2;
+
+LockV2		(IN ubik_ntid *tid,
+		afs_int32 file,
+		afs_int64 position,
+		afs_int64 length,
+		afs_int32 type) = DISK_LOCK_V2;
