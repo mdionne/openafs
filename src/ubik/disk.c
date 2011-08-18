@@ -77,7 +77,7 @@ udisk_Debug(struct ubik_debug *aparm)
     int i;
 
     memcpy(&aparm->localVersion, &ubik_dbase->version,
-	   sizeof(struct ubik_version));
+	   sizeof(struct ubik_nversion));
     aparm->lockedPages = 0;
     aparm->writeLockedPages = 0;
     tb = Buffers;
@@ -136,7 +136,7 @@ udisk_LogOpcode(struct ubik_dbase *adbase, afs_int32 aopcode, int async)
  * \brief Log a commit, never syncing.
  */
 int
-udisk_LogEnd(struct ubik_dbase *adbase, struct ubik_version *aversion)
+udisk_LogEnd(struct ubik_dbase *adbase, struct ubik_nversion *aversion)
 {
     afs_int32 code;
     afs_int32 data[3];
@@ -864,7 +864,7 @@ udisk_commit(struct ubik_trans *atrans)
 {
     struct ubik_dbase *dbase;
     afs_int32 code = 0;
-    struct ubik_version oldversion, newversion;
+    struct ubik_nversion oldversion, newversion;
 
     if (atrans->flags & TRDONE)
 	return (UTWOENDS);

@@ -335,18 +335,24 @@ ContactQuorum_DISK_WriteV(struct ubik_trans *atrans, int aflags,
 
 afs_int32
 ContactQuorum_DISK_SetVersion(struct ubik_trans *atrans, int aflags,
-			      ubik_version *OldVersion,
-			      ubik_version *NewVersion)
+			      ubik_nversion *OldVersion,
+			      ubik_nversion *NewVersion)
 {
     struct ubik_server *ts = NULL;
     afs_int32 code = 0, rcode, okcalls;
     struct rx_connection *conn;
     int done;
+    struct ubik_version old_vers, new_vers;
+
+    old_vers.epoch = OldVersion->epoch;
+    old_vers.counter = OldVersion->counter;
+    new_vers.epoch = NewVersion->epoch;
+    new_vers.counter = NewVersion->counter;
 
     done = ContactQuorum_iterate(atrans, aflags, &ts, &conn, &rcode, &okcalls, code);
     while (!done) {
 	if (conn)
-	    code = DISK_SetVersion(conn, &atrans->tid, OldVersion, NewVersion);
+	    code = DISK_SetVersion(conn, &atrans->tid, &old_vers, &new_vers);
 	done = ContactQuorum_iterate(atrans, aflags, &ts, &conn, &rcode, &okcalls, code);
     }
     return ContactQuorum_rcode(okcalls, rcode);
@@ -1245,7 +1251,7 @@ ubik_SetLock(struct ubik_trans *atrans, afs_int32 apos, afs_int32 alen,
  */
 int
 ubik_WaitVersion(struct ubik_dbase *adatabase,
-		 struct ubik_version *aversion)
+		 struct ubik_nversion *aversion)
 {
     DBHOLD(adatabase);
     while (1) {
@@ -1269,7 +1275,7 @@ ubik_WaitVersion(struct ubik_dbase *adatabase,
  */
 int
 ubik_GetVersion(struct ubik_trans *atrans,
-		struct ubik_version *avers)
+		struct ubik_nversion *avers)
 {
     DBHOLD(atrans->dbase);
     *avers = atrans->dbase->version;

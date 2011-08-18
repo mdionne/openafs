@@ -339,6 +339,10 @@ SDISK_GetVersion(struct rx_call *rxcall,
 		 struct ubik_version *aversion)
 {
     afs_int32 code;
+    struct ubik_nversion nversion;
+
+    nversion.epoch = aversion->epoch;
+    nversion.counter = aversion->counter;
 
     if ((code = ubik_CheckAuth(rxcall))) {
 	return code;
@@ -362,12 +366,15 @@ SDISK_GetVersion(struct rx_call *rxcall,
 	return UDEADLOCK;
     }
 
-    code = (*ubik_dbase->getlabel) (ubik_dbase, 0, aversion);
+    code = (*ubik_dbase->getlabel) (ubik_dbase, 0, &nversion);
     DBRELE(ubik_dbase);
     if (code) {
 	/* tell other side there's no dbase */
 	aversion->epoch = 0;
 	aversion->counter = 0;
+    } else {
+	aversion->epoch = nversion.epoch;
+	aversion->counter = nversion.counter;
     }
     return 0;
 }
@@ -383,6 +390,10 @@ SDISK_GetFile(struct rx_call *rxcall, afs_int32 file,
     char tbuffer[256];
     afs_int32 tlen;
     afs_int32 length;
+    struct ubik_nversion nversion;
+
+    nversion.epoch = version->epoch;
+    nversion.counter = version->counter;
 
     if ((code = ubik_CheckAuth(rxcall))) {
 	return code;
@@ -420,7 +431,9 @@ SDISK_GetFile(struct rx_call *rxcall, afs_int32 file,
 	length -= tlen;
 	offset += tlen;
     }
-    code = (*dbase->getlabel) (dbase, file, version);	/* return the dbase, too */
+    code = (*dbase->getlabel) (dbase, file, &nversion);	/* return the dbase, too */
+    version->epoch = nversion.epoch;
+    version->counter = nversion.counter;
     DBRELE(dbase);
     return code;
 }
@@ -433,7 +446,7 @@ SDISK_SendFile(struct rx_call *rxcall, afs_int32 file,
     struct ubik_dbase *dbase = NULL;
     char tbuffer[1024];
     afs_int32 offset;
-    struct ubik_version tversion;
+    struct ubik_nversion tversion, nversion;
     int tlen;
     struct rx_peer *tpeer;
     struct rx_connection *tconn;
@@ -443,6 +456,9 @@ SDISK_SendFile(struct rx_call *rxcall, afs_int32 file,
     int fd = -1;
     afs_int32 epoch = 0;
     afs_int32 pass;
+
+    nversion.epoch = avers->epoch;
+    nversion.counter = avers->counter;
 
     /* send the file back to the requester */
 
@@ -500,7 +516,7 @@ SDISK_SendFile(struct rx_call *rxcall, afs_int32 file,
 	goto failed_locked;
     }
     pass = 0;
-    memcpy(&ubik_dbase->version, &tversion, sizeof(struct ubik_version));
+    memcpy(&ubik_dbase->version, &tversion, sizeof(struct ubik_nversion));
     UBIK_VERSION_UNLOCK;
     while (length > 0) {
 	tlen = (length > sizeof(tbuffer) ? sizeof(tbuffer) : length);
@@ -548,14 +564,14 @@ SDISK_SendFile(struct rx_call *rxcall, afs_int32 file,
     UBIK_VERSION_LOCK;
     if (!code) {
 	(*ubik_dbase->open) (ubik_dbase, file);
-	code = (*ubik_dbase->setlabel) (dbase, file, avers);
+	code = (*ubik_dbase->setlabel) (dbase, file, &nversion);
     }
 #ifdef AFS_NT40_ENV
     snprintf(pbuffer, sizeof(pbuffer), "%s.DB%s%d.OLD",
 	     ubik_dbase->pathName, (file<0)?"SYS":"", (file<0)?-file:file);
     unlink(pbuffer);
 #endif
-    memcpy(&ubik_dbase->version, avers, sizeof(struct ubik_version));
+    memcpy(&ubik_dbase->version, &nversion, sizeof(struct ubik_nversion));
     udisk_Invalidate(dbase, file);	/* new dbase, flush disk buffers */
 #ifdef AFS_PTHREAD_ENV
     assert(pthread_cond_broadcast(&dbase->version_cond) == 0);
@@ -690,6 +706,12 @@ SDISK_SetVersion(struct rx_call *rxcall, struct ubik_tid *atid,
 		 struct ubik_version *newversionp)
 {
     afs_int32 code = 0;
+    struct ubik_nversion old_nversion, new_nversion;
+
+    new_nversion.epoch = newversionp->epoch;
+    new_nversion.counter = newversionp->counter;
+    old_nversion.epoch = oldversionp->epoch;
+    old_nversion.counter = oldversionp->counter;
 
     if ((code = ubik_CheckAuth(rxcall))) {
 	return (code);
@@ -718,12 +740,12 @@ SDISK_SetVersion(struct rx_call *rxcall, struct ubik_tid *atid,
     }
 
     /* Set the label if its version matches the sync-site's */
-    if (uvote_eq_dbVersion(*oldversionp)) {
+    if (uvote_eq_dbVersion(old_nversion)) {
 	UBIK_VERSION_LOCK;
-	code = (*ubik_dbase->setlabel) (ubik_dbase, 0, newversionp);
+	code = (*ubik_dbase->setlabel) (ubik_dbase, 0, &new_nversion);
 	if (!code) {
-	    ubik_dbase->version = *newversionp;
-	    uvote_set_dbVersion(*newversionp);
+	    ubik_dbase->version = new_nversion;
+	    uvote_set_dbVersion(new_nversion);
 	}
 	UBIK_VERSION_UNLOCK;
     } else {

@@ -218,8 +218,8 @@ readUbikHeader(struct misc_data *misc)
 	printf("Ubik Header\n");
 	printf("   Magic           = 0x%x\n", uheader.magic);
 	printf("   Size            = %u\n", uheader.size);
-	printf("   Version.epoch   = %u\n", uheader.version.epoch);
-	printf("   Version.counter = %u\n", uheader.version.counter);
+	printf("   Version.epoch   = %lu\n", (long)uheader.version.epoch);
+	printf("   Version.counter = %lu\n", (long)uheader.version.counter);
     }
 
     if (uheader.size != UBIK_HEADERSIZE)

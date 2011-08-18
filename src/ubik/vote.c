@@ -317,7 +317,8 @@ SVOTE_Beacon(struct rx_call * rxcall, afs_int32 astate,
 	vote_globals.lastYesClaim = astart;	/* remember for computing when sync site expires */
 	vote_globals.lastYesHost = otherHost;	/* and who for */
 	vote_globals.lastYesState = astate;	/* remember if site is a sync site */
-	vote_globals.ubik_dbVersion = *avers;	/* resync value */
+	vote_globals.ubik_dbVersion.epoch = avers->epoch;	/* resync value */
+	vote_globals.ubik_dbVersion.counter = avers->counter;	/* resync value */
 	vote_globals.ubik_dbTid = *atid;	/* transaction id, if any, of active trans */
 	UBIK_VOTE_UNLOCK;
 	DBHOLD(ubik_dbase);
@@ -604,7 +605,7 @@ uvote_Init(void)
 }
 
 void
-uvote_set_dbVersion(struct ubik_version version) {
+uvote_set_dbVersion(struct ubik_nversion version) {
     UBIK_VOTE_LOCK;
     vote_globals.ubik_dbVersion = version;
     UBIK_VOTE_UNLOCK;
@@ -612,7 +613,7 @@ uvote_set_dbVersion(struct ubik_version version) {
 
 /* Compare given version to current DB version.  Return true if equal. */
 int
-uvote_eq_dbVersion(struct ubik_version version) {
+uvote_eq_dbVersion(struct ubik_nversion version) {
     int ret = 0;
 
     UBIK_VOTE_LOCK;
@@ -630,7 +631,7 @@ uvote_eq_dbVersion(struct ubik_version version) {
  */
 
 int
-uvote_HaveSyncAndVersion(struct ubik_version version)
+uvote_HaveSyncAndVersion(struct ubik_nversion version)
 {
     afs_int32 now;
     int code;

@@ -86,7 +86,7 @@ ubik_SetLock(struct ubik_trans *atrans, afs_int32 apos, afs_int32 alen,
 
 int
 ubik_WaitVersion(struct ubik_dbase *adatabase,
-                 struct ubik_version *aversion)
+                 struct ubik_nversion *aversion)
 {
     return (0);
 }
@@ -112,9 +112,9 @@ panic(char *format, ...)
 }
 
 int
-ubik_GetVersion(struct ubik_trans *dummy, struct ubik_version *ver)
+ubik_GetVersion(struct ubik_trans *dummy, struct ubik_nversion *ver)
 {
-    memset(ver, 0, sizeof(struct ubik_version));
+    memset(ver, 0, sizeof(struct ubik_nversion));
     return (0);
 }
 

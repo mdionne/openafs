@@ -87,7 +87,7 @@ struct ubik_hdr {
     afs_int32 magic;		/*!< magic number */
     short pad1;			/*!< some 0-initd padding */
     short size;			/*!< header allocation size */
-    struct ubik_version version;	/*!< the version for this file */
+    struct ubik_nversion version;	/*!< the version for this file */
 };
 
 /*!
@@ -137,7 +137,7 @@ struct ubik_stat {
 struct ubik_dbase {
     char *pathName;		/*!< root name for dbase */
     struct ubik_trans *activeTrans;	/*!< active transaction list */
-    struct ubik_version version;	/*!< version number */
+    struct ubik_nversion version;	/*!< version number */
 #ifdef AFS_PTHREAD_ENV
     pthread_mutex_t versionLock;	/*!< lock on version number */
 #elif defined(UKERNEL)
@@ -159,11 +159,11 @@ struct ubik_dbase {
     int (*stat) (struct ubik_dbase * adbase, afs_int32 afid,
 		 struct ubik_stat * astat);
     void (*open) (struct ubik_dbase * adbase, afs_int32 afid);
-    int (*setlabel) (struct ubik_dbase * adbase, afs_int32 afile, struct ubik_version * aversion);	/*!< set the version label */
-    int (*getlabel) (struct ubik_dbase * adbase, afs_int32 afile, struct ubik_version * aversion);	/*!< retrieve the version label */
+    int (*setlabel) (struct ubik_dbase * adbase, afs_int32 afile, struct ubik_nversion * aversion);	/*!< set the version label */
+    int (*getlabel) (struct ubik_dbase * adbase, afs_int32 afile, struct ubik_nversion * aversion);	/*!< retrieve the version label */
     int (*getnfiles) (struct ubik_dbase * adbase);	/*!< find out number of files */
     short readers;		/*!< number of current read transactions */
-    struct ubik_version cachedVersion;	/*!< version of caller's cached data */
+    struct ubik_nversion cachedVersion;	/*!< version of caller's cached data */
 #ifdef UKERNEL
     struct afs_lock cache_lock;
 #else
@@ -292,7 +292,7 @@ struct ubik_server {
     afs_uint32 addr[UBIK_MAX_INTERFACE_ADDR];	/*!< network order, addr[0] is primary */
     afs_int32 lastVoteTime;	/*!< last time yes vote received */
     afs_int32 lastBeaconSent;	/*!< last time beacon attempted */
-    struct ubik_version version;	/*!< version, only used during recovery */
+    struct ubik_nversion version;	/*!< version, only used during recovery */
     struct rx_connection *vote_rxcid;	/*!< cid to use to contact dude for votes */
     struct rx_connection *disk_rxcid;	/*!< cid to use to contact dude for disk reqs */
     char lastVote;		/*!< true if last vote was yes */
@@ -385,7 +385,7 @@ struct vote_data {
 #ifdef AFS_PTHREAD_ENV
     pthread_mutex_t vote_lock;
 #endif
-    struct ubik_version ubik_dbVersion;	/* sync site's dbase version */
+    struct ubik_nversion ubik_dbVersion;	/* sync site's dbase version */
     struct ubik_tid ubik_dbTid;		/* sync site's tid, or 0 if none */
     /* Used by all sites in nominating new sync sites */
     afs_int32 ubik_lastYesTime;		/* time we sent the last yes vote */
@@ -448,9 +448,9 @@ extern int uphys_truncate(struct ubik_dbase *adbase, afs_int32 afile,
 			  afs_int32 asize);
 extern int uphys_getnfiles(struct ubik_dbase *adbase);
 extern int uphys_getlabel(struct ubik_dbase *adbase, afs_int32 afile,
-			  struct ubik_version *aversion);
+			  struct ubik_nversion *aversion);
 extern int uphys_setlabel(struct ubik_dbase *adbase, afs_int32 afile,
-			  struct ubik_version *aversion);
+			  struct ubik_nversion *aversion);
 extern int uphys_sync(struct ubik_dbase *adbase, afs_int32 afile);
 extern void uphys_invalidate(struct ubik_dbase *adbase,
 			     afs_int32 afid);
@@ -495,8 +495,8 @@ extern afs_int32 ContactQuorum_DISK_WriteV(struct ubik_trans *atrans,
 
 extern afs_int32 ContactQuorum_DISK_SetVersion(struct ubik_trans *atrans,
 					       int aflags,
-					       ubik_version *OldVersion,
-					       ubik_version *NewVersion);
+					       ubik_nversion *OldVersion,
+					       ubik_nversion *NewVersion);
 
 extern void panic(char *format, ...)
     AFS_ATTRIBUTE_FORMAT(__printf__, 1, 2);
@@ -564,9 +564,9 @@ extern void ubik_dprint(const char *format, ...)
 extern void ubik_dprint_25(const char *format, ...)
     AFS_ATTRIBUTE_FORMAT(__printf__, 1, 2);
 extern struct vote_data vote_globals;
-extern void uvote_set_dbVersion(struct ubik_version);
-extern int uvote_eq_dbVersion(struct ubik_version);
-extern int uvote_HaveSyncAndVersion(struct ubik_version);
+extern void uvote_set_dbVersion(struct ubik_nversion);
+extern int uvote_eq_dbVersion(struct ubik_nversion);
+extern int uvote_HaveSyncAndVersion(struct ubik_nversion);
 /*\}*/
 
 #endif /* UBIK_INTERNALS */
@@ -611,9 +611,9 @@ extern int ubik_Truncate(struct ubik_trans *transPtr,
 extern int ubik_SetLock(struct ubik_trans *atrans, afs_int32 apos,
 			afs_int32 alen, int atype);
 extern int ubik_WaitVersion(struct ubik_dbase *adatabase,
-			    struct ubik_version *aversion);
+			    struct ubik_nversion *aversion);
 extern int ubik_GetVersion(struct ubik_trans *atrans,
-			   struct ubik_version *avers);
+			   struct ubik_nversion *avers);
 extern int ubik_CheckCache(struct ubik_trans *atrans,
                            ubik_updatecache_func check,
                            void *rock);

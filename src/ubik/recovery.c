@@ -261,7 +261,7 @@ ReplayLog(struct ubik_dbase *adbase)
 	    } else if (opcode == LOGABORT)
 		panic("log abort\n");
 	    else if (opcode == LOGEND) {
-		struct ubik_version version;
+		struct ubik_nversion version;
 		tpos += 4;
 		code =
 		    (*adbase->read) (adbase, LOGFILE, (char *)buffer, tpos,
@@ -445,8 +445,8 @@ urecovery_Interact(void *dummy)
     int dbok, doingRPC, now;
     afs_int32 lastProbeTime;
     /* if we're the sync site, the best db version we've found yet */
-    static struct ubik_version bestDBVersion;
-    struct ubik_version tversion;
+    static struct ubik_nversion bestDBVersion;
+    struct ubik_nversion tversion;
     struct timeval tv;
     int length, tlen, offset, file, nbytes;
     struct rx_call *rxcall;
@@ -457,6 +457,7 @@ urecovery_Interact(void *dummy)
     char pbuffer[1028];
     int fd = -1;
     afs_int32 pass;
+    struct ubik_version tvers_old;
 
     afs_pthread_setname_self("recovery");
 
@@ -537,8 +538,10 @@ urecovery_Interact(void *dummy)
 		if (ts->isClone)
 		    continue;
 		UBIK_ADDR_LOCK;
-		code = DISK_GetVersion(ts->disk_rxcid, &ts->version);
+		code = DISK_GetVersion(ts->disk_rxcid, &tvers_old);
 		UBIK_ADDR_UNLOCK;
+		ts->version.epoch = tvers_old.epoch;
+		ts->version.counter = tvers_old.counter;
 		if (code == 0) {
 		    /* perhaps this is the best version */
 		    if (vcmp(ts->version, bestDBVersion) > 0) {
@@ -653,7 +656,9 @@ urecovery_Interact(void *dummy)
 	    code = close(fd);
 	    if (code)
 		goto FetchEndCall;
-	    code = EndDISK_GetFile(rxcall, &tversion);
+	    code = EndDISK_GetFile(rxcall, &tvers_old);
+	    tversion.epoch = tvers_old.epoch;
+	    tversion.counter = tvers_old.counter;
 	  FetchEndCall:
 	    tcode = rx_EndCall(rxcall, code);
 	    if (!code)
@@ -663,7 +668,7 @@ urecovery_Interact(void *dummy)
 		urecovery_state |= UBIK_RECHAVEDB;
 		UBIK_VERSION_LOCK;
 		memcpy(&ubik_dbase->version, &tversion,
-		       sizeof(struct ubik_version));
+		       sizeof(struct ubik_nversion));
 		snprintf(tbuffer, sizeof(tbuffer), "%s.DB%s%d",
 			 ubik_dbase->pathName, (file<0)?"SYS":"",
 			 (file<0)?-file:file);
@@ -807,9 +812,11 @@ urecovery_Interact(void *dummy)
 			UBIK_ADDR_LOCK;
 			rxcall = rx_NewCall(ts->disk_rxcid);
 			UBIK_ADDR_UNLOCK;
+			tvers_old.epoch = ubik_dbase->version.epoch;
+			tvers_old.counter = ubik_dbase->version.counter;
 			code =
 			    StartDISK_SendFile(rxcall, file, length,
-					       &ubik_dbase->version);
+					       &tvers_old);
 			if (code) {
 			    ubik_dprint("StartDiskSendFile failed=%d\n",
 					code);

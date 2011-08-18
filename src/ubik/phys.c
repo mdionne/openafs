@@ -242,7 +242,7 @@ uphys_getnfiles(struct ubik_dbase *adbase)
  */
 int
 uphys_getlabel(struct ubik_dbase *adbase, afs_int32 afile,
-	       struct ubik_version *aversion)
+	       struct ubik_nversion *aversion)
 {
     struct ubik_hdr thdr;
     afs_int32 code, fd;
@@ -266,7 +266,7 @@ uphys_getlabel(struct ubik_dbase *adbase, afs_int32 afile,
  */
 int
 uphys_setlabel(struct ubik_dbase *adbase, afs_int32 afile,
-	       struct ubik_version *aversion)
+	       struct ubik_nversion *aversion)
 {
     struct ubik_hdr thdr;
     afs_int32 code, fd;
