@@ -101,11 +101,18 @@ done:
 afs_int32
 SDISK_ReleaseLocks(struct rx_call *rxcall, struct ubik_tid *atid)
 {
-    afs_int32 code;
     struct ubik_ntid ntid;
 
     ntid.epoch = atid->epoch;
     ntid.counter = atid->counter;
+
+    return SDISK_ReleaseLocksV2(rxcall, &ntid);
+}
+
+afs_int32
+SDISK_ReleaseLocksV2(struct rx_call *rxcall, struct ubik_ntid *atid)
+{
+    afs_int32 code;
 
     if ((code = ubik_CheckAuth(rxcall))) {
 	return code;
@@ -123,7 +130,7 @@ SDISK_ReleaseLocks(struct rx_call *rxcall, struct ubik_tid *atid)
 	goto done;
     }
 
-    urecovery_CheckTid(&ntid, 0);
+    urecovery_CheckTid(atid, 0);
     if (!ubik_currentTrans) {
 	code = USYNC;
 	goto done;
