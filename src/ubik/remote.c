@@ -1011,7 +1011,6 @@ SDISK_SetVersion(struct rx_call *rxcall, struct ubik_tid *atid,
 		 struct ubik_version *oldversionp,
 		 struct ubik_version *newversionp)
 {
-    afs_int32 code = 0;
     struct ubik_nversion old_nversion, new_nversion;
     struct ubik_ntid ntid;
 
@@ -1022,6 +1021,16 @@ SDISK_SetVersion(struct rx_call *rxcall, struct ubik_tid *atid,
     new_nversion.counter = newversionp->counter;
     old_nversion.epoch = oldversionp->epoch;
     old_nversion.counter = oldversionp->counter;
+
+    return SDISK_SetVersionV2(rxcall, &ntid, &old_nversion, &new_nversion);
+}
+
+afs_int32
+SDISK_SetVersionV2(struct rx_call *rxcall, struct ubik_ntid *atid,
+		 struct ubik_nversion *oldversionp,
+		 struct ubik_nversion *newversionp)
+{
+    afs_int32 code = 0;
 
     if ((code = ubik_CheckAuth(rxcall))) {
 	return (code);
@@ -1043,19 +1052,19 @@ SDISK_SetVersion(struct rx_call *rxcall, struct ubik_tid *atid,
 	goto done;
     }
 
-    urecovery_CheckTid(&ntid, 0);
+    urecovery_CheckTid(atid, 0);
     if (!ubik_currentTrans) {
 	code = USYNC;
 	goto done;
     }
 
     /* Set the label if its version matches the sync-site's */
-    if (uvote_eq_dbVersion(old_nversion)) {
+    if (uvote_eq_dbVersion(*oldversionp)) {
 	UBIK_VERSION_LOCK;
-	code = (*ubik_dbase->setlabel) (ubik_dbase, 0, &new_nversion);
+	code = (*ubik_dbase->setlabel) (ubik_dbase, 0, newversionp);
 	if (!code) {
-	    ubik_dbase->version = new_nversion;
-	    uvote_set_dbVersion(new_nversion);
+	    ubik_dbase->version = *newversionp;
+	    uvote_set_dbVersion(*newversionp);
 	}
 	UBIK_VERSION_UNLOCK;
     } else {
