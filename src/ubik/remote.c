@@ -493,6 +493,72 @@ SDISK_GetFile(struct rx_call *rxcall, afs_int32 file,
 }
 
 afs_int32
+SDISK_GetFileV2(struct rx_call *rxcall, afs_int32 file,
+		struct ubik_nversion *haveVersion,
+		struct ubik_nversion *gotVersion)
+{
+    afs_int32 code;
+    struct ubik_dbase *dbase;
+    afs_int32 offset;
+    struct ubik_stat ubikstat;
+    char tbuffer[256];
+    afs_int64 tlen;
+    afs_int64 length;
+
+    if ((code = ubik_CheckAuth(rxcall))) {
+	return code;
+    }
+    dbase = ubik_dbase;
+    DBHOLD(dbase);
+    /*
+     * If the caller already has the version we have, return
+     success but no data.
+     */
+    code = (*dbase->getlabel) (dbase, file, gotVersion);
+    if (code != 0) {
+	DBRELE(dbase);
+	return code;
+    }
+    if (!vcmp(*haveVersion, *gotVersion)) {
+	DBRELE(dbase);
+	return 0;
+    }
+    code = (*dbase->stat) (dbase, file, &ubikstat);
+    if (code < 0) {
+	DBRELE(dbase);
+	return code;
+    }
+    length = ubikstat.size;
+    tlen = htonl(length);
+    code = rx_Write(rxcall, (char *)&tlen, sizeof(afs_int64));
+    if (code != sizeof(afs_int32)) {
+	DBRELE(dbase);
+	ubik_dprint("Rx-write length error=%d\n", code);
+	return BULK_ERROR;
+    }
+    offset = 0;
+    while (length > 0) {
+	tlen = (length > sizeof(tbuffer) ? sizeof(tbuffer) : length);
+	code = (*dbase->read) (dbase, file, tbuffer, offset, tlen);
+	if (code != tlen) {
+	    DBRELE(dbase);
+	    ubik_dprint("read failed error=%d\n", code);
+	    return UIOERROR;
+	}
+	code = rx_Write(rxcall, tbuffer, tlen);
+	if (code != tlen) {
+	    DBRELE(dbase);
+	    ubik_dprint("Rx-write length error=%d\n", code);
+	    return BULK_ERROR;
+	}
+	length -= tlen;
+	offset += tlen;
+    }
+    DBRELE(dbase);
+    return 0;
+}
+
+afs_int32
 SDISK_SendFile(struct rx_call *rxcall, afs_int32 file,
 	       afs_int32 length, struct ubik_version *avers)
 {

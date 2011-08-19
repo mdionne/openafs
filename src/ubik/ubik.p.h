@@ -114,11 +114,11 @@ struct ubik_trans {
 struct ubik_trunc {
     struct ubik_trunc *next;
     afs_int32 file;		/*!< file to truncate */
-    afs_int32 length;		/*!< new size */
+    afs_int64 length;		/*!< new size */
 };
 
 struct ubik_stat {
-    afs_int32 size;
+    afs_int64 size;
     afs_int32 mtime;
 };
 

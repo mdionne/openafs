@@ -322,3 +322,7 @@ WriteV2		(IN ubik_ntid *tid,
 		bulkdata *data) = DISK_WRITE_V2;
 
 GetVersionV2	(OUT ubik_nversion *Version) = DISK_GETVERSION_V2;
+
+GetFileV2	(IN afs_int32 file,
+		IN ubik_nversion *haveVersion,
+		OUT ubik_nversion *gotVersion) split = DISK_GETFILE_V2;
