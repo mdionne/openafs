@@ -574,7 +574,7 @@ SDISK_SendFile(struct rx_call *rxcall, afs_int32 file,
     char hoststr[16];
     char pbuffer[1028];
     int fd = -1;
-    afs_int32 epoch = 0;
+    afs_int64 epoch = 0;
     afs_int32 pass;
 
     nversion.epoch = avers->epoch;
@@ -722,6 +722,166 @@ failed:
     return code;
 }
 
+afs_int32
+SDISK_SendFileV2(struct rx_call *rxcall, afs_int32 file,
+	       afs_int64 length, struct ubik_nversion *avers)
+{
+    afs_int32 code;
+    struct ubik_dbase *dbase = NULL;
+    char tbuffer[1024];
+    afs_int64 offset;
+    struct ubik_nversion tversion;
+    int tlen;
+    struct rx_peer *tpeer;
+    struct rx_connection *tconn;
+    afs_uint32 otherHost = 0;
+    char hoststr[16];
+    char pbuffer[1028];
+    int fd = -1;
+    afs_int64 epoch = 0;
+    afs_int32 pass;
+
+    /* send the file back to the requester */
+
+    dbase = ubik_dbase;
+
+    if ((code = ubik_CheckAuth(rxcall))) {
+	DBHOLD(dbase);
+	goto failed;
+    }
+
+    /* next, we do a sanity check to see if the guy sending us the database is
+     * the guy we think is the sync site.  It turns out that we might not have
+     * decided yet that someone's the sync site, but they could have enough
+     * votes from others to be sync site anyway, and could send us the database
+     * in advance of getting our votes.  This is fine, what we're really trying
+     * to check is that some authenticated bogon isn't sending a random database
+     * into another configuration.  This could happen on a bad configuration
+     * screwup.  Thus, we only object if we're sure we know who the sync site
+     * is, and it ain't the guy talking to us.
+     */
+    offset = uvote_GetSyncSite();
+    tconn = rx_ConnectionOf(rxcall);
+    tpeer = rx_PeerOf(tconn);
+    otherHost = ubikGetPrimaryInterfaceAddr(rx_HostOf(tpeer));
+    if (offset && offset != otherHost) {
+	/* we *know* this is the wrong guy */
+	code = USYNC;
+	DBHOLD(dbase);
+	goto failed;
+    }
+
+    DBHOLD(dbase);
+
+    /* abort any active trans that may scribble over the database */
+    urecovery_AbortAll(dbase);
+
+    ubik_print("Ubik: Synchronize database with server %s\n",
+	       afs_inet_ntoa_r(otherHost, hoststr));
+
+    offset = 0;
+    UBIK_VERSION_LOCK;
+    epoch = tversion.epoch = 0;		/* start off by labelling in-transit db as invalid */
+    (*dbase->setlabel) (dbase, file, &tversion);	/* setlabel does sync */
+    snprintf(pbuffer, sizeof(pbuffer), "%s.DB%s%d.TMP",
+	     ubik_dbase->pathName, (file<0)?"SYS":"",
+	     (file<0)?-file:file);
+    fd = open(pbuffer, O_CREAT | O_RDWR | O_TRUNC, 0600);
+    if (fd < 0) {
+	code = errno;
+	goto failed_locked;
+    }
+    code = lseek(fd, HDRSIZE, 0);
+    if (code != HDRSIZE) {
+	close(fd);
+	goto failed_locked;
+    }
+    pass = 0;
+    memcpy(&ubik_dbase->version, &tversion, sizeof(struct ubik_nversion));
+    UBIK_VERSION_UNLOCK;
+    while (length > 0) {
+	tlen = (length > sizeof(tbuffer) ? sizeof(tbuffer) : length);
+#if !defined(AFS_PTHREAD_ENV)
+	if (pass % 4 == 0)
+	    IOMGR_Poll();
+#endif
+	code = rx_Read(rxcall, tbuffer, tlen);
+	if (code != tlen) {
+	    ubik_dprint("Rx-read length error=%d\n", code);
+	    code = BULK_ERROR;
+	    close(fd);
+	    goto failed;
+	}
+	code = write(fd, tbuffer, tlen);
+	pass++;
+	if (code != tlen) {
+	    ubik_dprint("write failed error=%d\n", code);
+	    code = UIOERROR;
+	    close(fd);
+	    goto failed;
+	}
+	offset += tlen;
+	length -= tlen;
+    }
+    code = close(fd);
+    if (code)
+	goto failed;
+
+    /* sync data first, then write label and resync (resync done by setlabel call).
+     * This way, good label is only on good database. */
+    snprintf(tbuffer, sizeof(tbuffer), "%s.DB%s%d",
+	     ubik_dbase->pathName, (file<0)?"SYS":"", (file<0)?-file:file);
+#ifdef AFS_NT40_ENV
+    snprintf(pbuffer, sizeof(pbuffer), "%s.DB%s%d.OLD",
+	     ubik_dbase->pathName, (file<0)?"SYS":"", (file<0)?-file:file);
+    code = unlink(pbuffer);
+    if (!code)
+	code = rename(tbuffer, pbuffer);
+    snprintf(pbuffer, sizeof(pbuffer), "%s.DB%s%d.TMP",
+	     ubik_dbase->pathName, (file<0)?"SYS":"", (file<0)?-file:file);
+#endif
+    if (!code)
+	code = rename(pbuffer, tbuffer);
+    UBIK_VERSION_LOCK;
+    if (!code) {
+	(*ubik_dbase->open) (ubik_dbase, file);
+	code = (*ubik_dbase->setlabel) (dbase, file, avers);
+    }
+#ifdef AFS_NT40_ENV
+    snprintf(pbuffer, sizeof(pbuffer), "%s.DB%s%d.OLD",
+	     ubik_dbase->pathName, (file<0)?"SYS":"", (file<0)?-file:file);
+    unlink(pbuffer);
+#endif
+    memcpy(&ubik_dbase->version, &avers, sizeof(struct ubik_nversion));
+    udisk_Invalidate(dbase, file);	/* new dbase, flush disk buffers */
+#ifdef AFS_PTHREAD_ENV
+    assert(pthread_cond_broadcast(&dbase->version_cond) == 0);
+#else
+    LWP_NoYieldSignal(&dbase->version);
+#endif
+
+failed_locked:
+    UBIK_VERSION_UNLOCK;
+
+failed:
+    if (code) {
+	unlink(pbuffer);
+	/* Failed to sync. Allow reads again for now. */
+	if (dbase != NULL) {
+	    UBIK_VERSION_LOCK;
+	    tversion.epoch = epoch;
+	    (*dbase->setlabel) (dbase, file, &tversion);
+	    UBIK_VERSION_UNLOCK;
+	}
+	ubik_print
+	    ("Ubik: Synchronize database with server %s failed (error = %d)\n",
+	     afs_inet_ntoa_r(otherHost, hoststr), code);
+    } else {
+	ubik_print("Ubik: Synchronize database completed\n");
+    }
+    DBRELE(dbase);
+    return code;
+}
 
 afs_int32
 SDISK_Probe(struct rx_call *rxcall)
