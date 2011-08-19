@@ -330,3 +330,5 @@ GetFileV2	(IN afs_int32 file,
 SendFileV2	(IN afs_int32 file,
 		afs_int64 length,
 		ubik_nversion *Version) split = DISK_SENDFILE_V2;
+
+AbortV2		(IN ubik_ntid *tid) = DISK_ABORT_V2;
