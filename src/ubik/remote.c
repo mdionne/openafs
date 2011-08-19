@@ -362,6 +362,18 @@ afs_int32
 SDISK_Truncate(struct rx_call *rxcall, struct ubik_tid *atid,
 	       afs_int32 afile, afs_int32 alen)
 {
+    struct ubik_ntid ntid;
+
+    ntid.epoch = atid->epoch;
+    ntid.counter = atid->counter;
+
+    return SDISK_TruncateV2(rxcall, &ntid, afile, alen);
+}
+
+afs_int32
+SDISK_TruncateV2(struct rx_call *rxcall, struct ubik_ntid *atid,
+	       afs_int32 afile, afs_int64 alen)
+{
     afs_int32 code;
     struct ubik_ntid ntid;
 

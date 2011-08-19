@@ -334,3 +334,7 @@ SendFileV2	(IN afs_int32 file,
 AbortV2		(IN ubik_ntid *tid) = DISK_ABORT_V2;
 
 ReleaseLocksV2	(IN ubik_ntid *tid) = DISK_RELEASELOCKS_V2;
+
+TruncateV2	(IN ubik_ntid *tid,
+		afs_int32 file,
+		afs_int64 length) = DISK_TRUNCATE_V2;
