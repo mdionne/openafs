@@ -177,6 +177,13 @@ struct ubik_iovec {
 };
 typedef struct ubik_iovec iovec_wrt<IOVEC_MAXWRT>;
 
+struct ubik_niovec {
+    afs_int32 file;                 /* File to be written */
+    afs_int64 position;             /* File position */
+    afs_int64 length;               /* number of bytes to write */
+};
+typedef struct ubik_niovec niovec_wrt<IOVEC_MAXWRT>;
+
 /* This package handles call sent to other voters to synchronize things in ubik. */
 package VOTE_
 statindex 11
@@ -338,6 +345,11 @@ ReleaseLocksV2	(IN ubik_ntid *tid) = DISK_RELEASELOCKS_V2;
 TruncateV2	(IN ubik_ntid *tid,
 		afs_int32 file,
 		afs_int64 length) = DISK_TRUNCATE_V2;
+
+WriteVV2	(IN ubik_ntid *tid,
+		niovec_wrt *io_vector,
+		iovec_buf *io_buffer) = DISK_WRITEV_V2;
+
 
 SetVersionV2	(IN ubik_ntid     *tid,
                  IN ubik_nversion *OldVersion,

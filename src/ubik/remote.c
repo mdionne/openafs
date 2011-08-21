@@ -309,6 +309,58 @@ done:
     return code;
 }
 
+/*!
+ * \brief Write a vector of data
+ */
+afs_int32
+SDISK_WriteVV2(struct rx_call *rxcall, struct ubik_ntid *atid,
+	     niovec_wrt *io_vector, iovec_buf *io_buffer)
+{
+    afs_int32 code, i, offset;
+    struct ubik_niovec *iovec;
+    char *iobuf;
+
+    if ((code = ubik_CheckAuth(rxcall))) {
+	return code;
+    }
+    DBHOLD(ubik_dbase);
+    if (!ubik_currentTrans) {
+	code = USYNC;
+	goto done;
+    }
+    /* sanity check to make sure only write trans appear here */
+    if (ubik_currentTrans->type != UBIK_WRITETRANS) {
+	code = UBADTYPE;
+	goto done;
+    }
+
+    urecovery_CheckTid(atid, 0);
+    if (!ubik_currentTrans) {
+	code = USYNC;
+	goto done;
+    }
+
+    iovec = (struct ubik_niovec *)io_vector->niovec_wrt_val;
+    iobuf = (char *)io_buffer->iovec_buf_val;
+    for (i = 0, offset = 0; i < io_vector->niovec_wrt_len; i++) {
+	/* Sanity check for going off end of buffer */
+	if ((offset + iovec[i].length) > io_buffer->iovec_buf_len) {
+	    code = UINTERNAL;
+	} else {
+	    code =
+		udisk_write(ubik_currentTrans, iovec[i].file, &iobuf[offset],
+			    iovec[i].position, iovec[i].length);
+	}
+	if (code)
+	    break;
+
+	offset += iovec[i].length;
+    }
+done:
+    DBRELE(ubik_dbase);
+    return code;
+}
+
 afs_int32
 SDISK_Write(struct rx_call *rxcall, struct ubik_tid *atid,
 	    afs_int32 afile, afs_int32 apos, bulkdata *adata)
