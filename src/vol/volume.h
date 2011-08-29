@@ -109,6 +109,9 @@ extern pthread_t vol_glock_holder;
 #define VTRANS_UNLOCK
 #endif /* AFS_PTHREAD_ENV */
 
+#define VOLUME_BITMAP_GROWSIZE 16	/* bytes, => 128vnodes */
+					/* Must be a multiple of 4 (1 word) !! */
+
 /**
  * volume package program type enumeration.
  */

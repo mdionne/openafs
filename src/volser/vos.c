@@ -2982,6 +2982,7 @@ RestoreVolumeCmd(struct cmd_syndesc *as, void *arock)
     afs_int32 acreation = 0, alastupdate = 0;
     int restoreflags = 0;
     int readonly = 0, offline = 0, voltype = RWVOL;
+    int rwvoltype = -1;
     char afilename[MAXPATHLEN], avolname[VOLSER_MAXVOLNAME + 1], apartName[10];
     char volname[VOLSER_MAXVOLNAME + 1];
     struct nvldbentry entry;
@@ -3248,10 +3249,35 @@ RestoreVolumeCmd(struct cmd_syndesc *as, void *arock)
 	restoreflags |= RV_NODEL;
     }
 
+    if (as->parms[11].items) { /* This is the primary server */
+	if(as->parms[10].items) {
+	    rwvoltype = RWVOL;
+	} else {
+	    fprintf(STDERR, "vos: -primary is a valid only with -nodelete\n");
+	    exit(1);
+	}
+    } else
+	if (as->parms[12].items) { /* This is the secondary server */
+	    if (as->parms[10].items) {
+		rwvoltype = RWSLAVEVOL;
+	    } else {
+		fprintf(STDERR, "vos: -secondary is a valid only with -nodelete\n");
+		exit(1);
+	    }
+	}
 
-    code =
-	UV_RestoreVolume2(aserver, apart, avolid, aparentid,
-                          avolname, restoreflags, WriteData, afilename);
+    if (rwvoltype == -1) {
+	fprintf(STDERR, "vos: calling basic RestoreVolume functionality\n");
+	code = UV_RestoreVolume2(aserver, apart, avolid, aparentid,
+		avolname, restoreflags, WriteData, afilename);
+    } else { /* - RW repication -*/
+
+	fprintf(STDERR, "vos: calling NEW RestoreVolume functionality\n");
+
+	code = UV_RestoreVolume3(aserver, apart, avolid, aparentid,
+		avolname, restoreflags, rwvoltype, WriteData, afilename);
+    }
+
     if (code) {
 	PrintDiagnostics("restore", code);
 	exit(1);
@@ -6016,6 +6042,11 @@ main(int argc, char **argv)
 		"dump | keep | new");
     cmd_AddParm(ts, "-nodelete", CMD_FLAG, CMD_OPTIONAL,
 		"do not delete old site when restoring to a new site");
+    cmd_AddParm(ts, "-primary", CMD_FLAG, CMD_OPTIONAL,
+		"set this server as the primary RW server, only works with -nodelete");
+    cmd_AddParm(ts, "-secondary", CMD_FLAG, CMD_OPTIONAL,
+		"set this server as the secondary RW server, only works with -nodelete");
+
     COMMONPARMS;
 
     ts = cmd_CreateSyntax("unlock", LockReleaseCmd, NULL,

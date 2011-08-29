@@ -20,10 +20,12 @@
 #define readwriteVolume		RWVOL
 #define readonlyVolume		ROVOL
 #define backupVolume		BACKVOL
+#define readwriteslaveVolume	RWSLAVEVOL
 
 #define RWVOL			0
 #define ROVOL			1
 #define BACKVOL			2
+#define RWSLAVEVOL		3
 
 #define VOLMAXTYPES             3   /* _current_ max number of types */
 

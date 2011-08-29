@@ -202,13 +202,23 @@ extern pthread_mutex_t fileproc_glock_mutex;
 extern pthread_mutex_t fsync_glock_mutex;
 #define FSYNC_LOCK MUTEX_ENTER(&fsync_glock_mutex);
 #define FSYNC_UNLOCK MUTEX_EXIT(&fsync_glock_mutex);
+
+extern pthread_mutex_t updatelist_glock_mutex;
+#define UPDATE_LOCK \
+	assert(pthread_mutex_lock(&updatelist_glock_mutex) == 0)
+#define UPDATE_UNLOCK \
+	assert(pthread_mutex_unlock(&updatelist_glock_mutex) == 0)
+
 #else /* AFS_PTHREAD_ENV */
+#define UPDATE_LOCK
+#define UPDATE_UNLOCK
 #define FS_LOCK
 #define FS_UNLOCK
 #define FSYNC_LOCK
 #define FSYNC_UNLOCK
 #endif /* AFS_PTHREAD_ENV */
 
+afs_uint32 queryDbserver;
 
 #ifdef AFS_DEMAND_ATTACH_FS
 /*

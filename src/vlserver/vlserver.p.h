@@ -33,6 +33,7 @@ extern struct vldstats dynamic_statistics;
 #define	RWVOL		0
 #define	ROVOL		1
 #define	BACKVOL		2
+#define	RWSLAVEVOL	3
 
 /* Header struct holding stats, internal pointers and the hash tables */
 struct vlheader {

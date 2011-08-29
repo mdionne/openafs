@@ -707,6 +707,89 @@ CallBackRxConnAddr(
   IN afs_int32 *addr
 ) = 65541;
 
+RCreateFile(
+  IN  AFSFid *DirFid,
+  string Name<AFSNAMEMAX>,
+  AFSStoreStatus *InStatus,
+  AFSFid *InFid,
+  AFSVolSync *Sync,
+  afs_int32 clientViceId
+) = 65600;
+
+RRemoveFile(
+  IN  AFSFid *DirFid,
+  string Name<AFSNAMEMAX>,
+  AFSVolSync *Sync,
+  afs_int32 clientViceId
+) = 65601;
+
+RStoreData64(
+  IN  AFSFid *Fid,
+  AFSStoreStatus *InStatus,
+  afs_uint64 Pos,
+  afs_uint64 Length,
+  afs_uint64 FileLength,
+  AFSVolSync *Sync,
+  afs_int32 clientViceId
+) = 65602;
+
+RRename(
+  IN  AFSFid *OldDirFid,
+  string OldName<AFSNAMEMAX>,
+  AFSFid *NewDirFid,
+  string NewName<AFSNAMEMAX>,
+  AFSVolSync *Sync,
+  afs_int32 clientViceId
+) = 65603;
+
+RRemoveDir(
+  IN  AFSFid *DirFid,
+  string Name<AFSNAMEMAX>,
+  AFSVolSync *Sync,
+  afs_int32 clientViceId
+) = 65604;
+
+RMakeDir(
+  IN  AFSFid *DirFid,
+  string Name<AFSNAMEMAX>,
+  AFSStoreStatus *InStatus,
+  AFSFid *InFid,
+  AFSVolSync *Sync,
+  afs_int32 clientViceId
+) = 65605;
+
+RSymlink(
+  IN  AFSFid *DirFid,
+  string Name<AFSNAMEMAX>,
+  string LinkContents<AFSPATHMAX>,
+  AFSStoreStatus *InStatus,
+  AFSFid *InFid,
+  AFSVolSync *Sync,
+  afs_int32 clientViceId
+) = 65606;
+
+RLink(
+  IN  AFSFid *DirFid,
+  string Name<AFSNAMEMAX>,
+  AFSFid *ExistingFid,
+  AFSVolSync *Sync,
+  afs_int32 clientViceId
+) = 65607;
+
+RStoreACL(
+  IN  AFSFid *Fid,
+  AFSOpaque *AccessList,
+  AFSVolSync *Sync,
+  afs_int32 clientViceId
+) = 65608;
+
+RStoreStatus(
+  IN  AFSFid *Fid,
+  AFSStoreStatus *InStatus,
+  AFSVolSync *Sync,
+  afs_int32 clientViceId
+) = 65609;
+
 %#define STATS64_CURRENTTIME 0
 %#define STATS64_BOOTTIME 1
 %#define STATS64_STARTTIME 2

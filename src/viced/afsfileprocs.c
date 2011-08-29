@@ -104,6 +104,7 @@ extern void FidZero(DirHandle * file);
 
 #ifdef AFS_PTHREAD_ENV
 pthread_mutex_t fileproc_glock_mutex;
+pthread_mutex_t updatelist_glock_mutex;
 #endif /* AFS_PTHREAD_ENV */
 
 /* Useful local defines used by this module */
@@ -166,6 +167,31 @@ struct afs_FSStats {
 
 struct afs_FSStats afs_fsstats;
 
+/* Defining structures for Lazy update of replicas */
+
+typedef struct AFSUpdateListItem{
+    afs_int32 RPCCall;
+    struct AFSFid InFid1;
+    struct AFSFid InFid2;
+    char *Name1;
+    char *Name2;
+    AFSStoreStatus InStatus;
+    AFSVolSync Sync;
+    AFSOpaque AccessList;
+    afs_uint64 Pos;
+    afs_uint64 Length;
+    afs_uint64 FileLength;
+    afs_int32 ClientViceId;
+    struct AFSUpdateListItem *NextItem;
+};
+
+/* Queue used for Lazy update. Implemented using 2 pointers. Should we
+ * have a upper bound for the queue size */
+
+struct AFSUpdateListItem *AFSUpdateListHead = NULL; /* We need to do this
+                                              in some other file*/
+struct AFSUpdateListItem *AFSUpdateListTail = NULL; /* Insert is at Tail FIFO */
+
 int LogLevel = 0;
 int supported = 1;
 int Console = 0;
@@ -198,8 +224,29 @@ static afs_int32 StoreData_RXStyle(Volume * volptr, Vnode * targetptr,
 				   afs_sfsize_t * a_bytesToStoreP,
 				   afs_sfsize_t * a_bytesStoredP);
 
+afs_int32 ReplicaStoreData_RXStyle(Volume * volptr, Vnode * targetptr,
+		struct AFSFid *Fid, register struct rx_call *Call,
+		afs_fsize_t Pos, afs_fsize_t Length, afs_fsize_t FileLength,
+		int sync,
+#if FS_STATS_DETAILED
+		afs_sfsize_t * a_bytesToStoreP,
+		afs_sfsize_t * a_bytesStoredP
+#endif  /* FS_STATS_DETAILED */
+);
+
 #ifdef AFS_SGI_XFS_IOPS_ENV
 #include <afs/xfsattrs.h>
+
+
+afs_int32 DelayedPopFromUpdateList();
+
+afs_int32 PushIntoUpdateList( afs_int32 pRPCCall, struct AFSFid *pInFid1,
+		struct AFSFid *pInFid2, char *pName1, char *pName2,
+		struct AFSStoreStatus *pInStatus, struct AFSVolSync *pSync,
+		struct AFSOpaque *pAccessList, afs_uint64 pPos,
+		afs_uint64 pLength, afs_uint64 pFileLength, struct rx_call *acall);
+
+
 static int
 GetLinkCount(Volume * avp, struct stat *astat)
 {
