@@ -58,7 +58,7 @@ int verbose = 0, noresolve = 0;
 
 struct release {
     afs_uint32 crtime;
-    afs_uint32 uptime;
+	afs_uint32 uptime;
     afs_int32 vldbEntryIndex;
 };
 
@@ -5208,8 +5208,24 @@ UV_ChangeLocation(afs_uint32 server, afs_int32 part, afs_uint32 volid)
 	}
 	return VOLSERBADOP;
     } else {			/* change the RW site */
-	entry.serverNumber[index] = server;
-	entry.serverPartition[index] = part;
+	int i;
+	for (i = 0; i < entry.nServers; i++) {
+	    if (entry.serverFlags[i] & ITSRWSLAVE) { /* are there any RWSL*/
+		if (entry.serverNumber[i] == server) { /* server is RWSL */
+		    break;
+		}
+	    }
+	}
+
+	if (i != entry.nServers) { /* changing to RW to RWSL and RWSL to RW*/
+	    fprintf(STDERR, "RWSL present for this server and volume %d \n",i);
+	    entry.serverFlags[index] = ITSRWSLAVE;
+	    entry.serverFlags[i] = ITSRWVOL;
+	} else { /* this is a new server for this volume in VLDB */
+	    entry.serverNumber[index] = server;
+	    entry.serverPartition[index] = part;
+	}
+
 	MapNetworkToHost(&entry, &storeEntry);
 	vcode =
 	    VLDB_ReplaceEntry(volid, RWVOL, &storeEntry,
@@ -7462,4 +7478,475 @@ MapHostToNetwork(struct nvldbentry *entry)
     for (i = 0; i < count; i++) {
 	entry->serverNumber[i] = htonl(entry->serverNumber[i]);
     }
+}
+
+/*
+ * Restore a volume to create RW replicas using the dump information
+ * <tovolid> <tovolname> on <toserver> <topart> from
+ * the dump file <afilename>.
+ * WriteData does all the real work after extracting params from the rock
+ * Also contains logic for the Primary server based on passed arguments
+ */
+int
+UV_RestoreVolume3(afs_int32 toserver, afs_int32 topart, afs_int32 tovolid,
+	afs_int32 toparentid, char *tovolname, int flags,
+	int rwvoltype, afs_int32(*WriteData) (struct rx_call *, void *), char *rock)
+{
+    struct rx_connection *toconn, *tempconn;
+    struct rx_call *tocall;
+    afs_int32 totid, code, rcode, vcode, terror = 0;
+    afs_int32 rxError = 0;
+    struct volser_status tstatus;
+    struct volintInfo vinfo;
+    char partName[10];
+    char tovolreal[VOLSER_OLDMAXVOLNAME];
+    afs_uint32 pvolid, pparentid;
+    afs_int32 temptid;
+    int success;
+    struct nvldbentry entry, storeEntry;
+    afs_int32 error;
+    int islocked;
+    struct restoreCookie cookie;
+    int reuseID;
+    afs_int32 volflag, voltype, volsertype;
+    afs_int32 oldCreateDate, oldUpdateDate, newCreateDate, newUpdateDate;
+    int index, index1, same, errcode;
+
+    memset(&cookie, 0, sizeof(cookie));
+    islocked = 0;
+    success = 0;
+    error = 0;
+    reuseID = 1;
+    tocall = (struct rx_call *)0;
+    toconn = (struct rx_connection *)0;
+    tempconn = (struct rx_connection *)0;
+    totid = 0;
+    temptid = 0;
+
+    if (flags & RV_RDONLY) {
+	voltype = ROVOL;
+	volsertype = volser_RO;
+    } else {
+	voltype = RWVOL;
+	volsertype = volser_RW;
+    }
+    pvolid = tovolid;
+    pparentid = toparentid;
+    toconn = UV_Bind(toserver, AFSCONF_VOLUMEPORT);
+    if (pvolid == 0) {         /*alot a new id if needed */
+	vcode = VLDB_GetEntryByName(tovolname, &entry);
+	if (vcode == VL_NOENT) {
+	    vcode = ubik_VL_GetNewVolumeId(cstruct, 0, 1, &pvolid);
+	    if (vcode) {
+		fprintf(STDERR, "Could not get an Id for the volume %s\n",
+		    tovolname);
+		error = vcode;
+		goto refail3;
+	    }
+	    reuseID = 0;
+	} else if (flags & RV_RDONLY) {
+	    if (entry.flags & RW_EXISTS) {
+		fprintf(STDERR,
+		    "Entry for ReadWrite volume %s already exists!\n",
+		    entry.name);
+		error = VOLSERBADOP;
+		goto refail3;
+	    }
+	    if (!entry.volumeId[ROVOL]) {
+		fprintf(STDERR,
+		    "Existing entry for volume %s has no ReadOnly ID\n",
+		    tovolname);
+		error = VOLSERBADOP;
+		goto refail3;
+	    }
+	    pvolid = entry.volumeId[ROVOL];
+	    pparentid = entry.volumeId[RWVOL];
+	} else {
+	    pvolid = entry.volumeId[RWVOL];
+	    pparentid = entry.volumeId[RWVOL];
+	}
+    }
+    if (!pparentid) pparentid = pvolid;
+    /* at this point we have a volume id to use/reuse for the volume to be restored */
+    strncpy(tovolreal, tovolname, VOLSER_OLDMAXVOLNAME);
+
+    if (strlen(tovolname) > (VOLSER_OLDMAXVOLNAME - 1)) {
+	EGOTO1(refail3, VOLSERBADOP,
+	    "The volume name %s exceeds the maximum limit of (VOLSER_OLDMAXVOLNAME -1 ) bytes\n",
+	    tovolname);
+    } else {
+	if ((pparentid != pvolid) && (flags & RV_RDONLY)) {
+	    if (strlen(tovolname) > (VOLSER_OLDMAXVOLNAME - 10)) {
+		EGOTO1(refail3, VOLSERBADOP,
+		    "The volume name %s exceeds the maximum limit of (VOLSER_OLDMAXVOLNAME -1 ) bytes\n", tovolname);
+	    }
+	    snprintf(tovolreal, VOLSER_OLDMAXVOLNAME, "%s.readonly", tovolname);
+	}
+    }
+    MapPartIdIntoName(topart, partName);
+    fprintf(STDOUT, "Restoring volume %s Id %lu on server %s partition %s ..",
+	    tovolreal, (unsigned long)pvolid,
+	    hostutil_GetNameByINet(toserver), partName);
+    fflush(STDOUT);
+
+    /* Do not need to worry about the type of volume created
+    * As this function is called in case of -nodelete + (-primary/-secondary)
+    */
+    code =
+	AFSVolCreateVolume(toconn, topart, tovolreal, volsertype, pparentid, &pvolid,
+	&totid);
+
+    if (code) {
+	if (flags & RV_FULLRST) {       /* full restore: delete then create anew */
+	    VPRINT1("Deleting the previous volume %u ...", pvolid);
+
+	    code =
+		AFSVolTransCreate(toconn, pvolid, topart, ITOffline, &totid);
+		    EGOTO1(refail3, code, "Failed to start transaction on %u\n",
+		    pvolid);
+
+	    code = AFSVolGetStatus(toconn, totid, &tstatus);
+	    EGOTO1(refail3, code, "Could not get timestamp from volume %u\n",
+		pvolid);
+
+	    oldCreateDate = tstatus.creationDate;
+	    oldUpdateDate = tstatus.updateDate;
+
+	    code =
+		AFSVolSetFlags(toconn, totid,
+		    VTDeleteOnSalvage | VTOutOfService);
+	    EGOTO1(refail3, code, "Could not set flags on volume %u \n",
+		    pvolid);
+
+	    code = AFSVolDeleteVolume(toconn, totid);
+	    EGOTO1(refail3, code, "Could not delete volume %u\n", pvolid);
+
+	    code = AFSVolEndTrans(toconn, totid, &rcode);
+	    totid = 0;
+	    if (!code)
+		code = rcode;
+	    EGOTO1(refail3, code, "Could not end transaction on %u\n", pvolid);
+
+	    VDONE;
+
+	    code =
+		AFSVolCreateVolume(toconn, topart, tovolreal, volsertype, pparentid,
+			  &pvolid, &totid);
+	    EGOTO1(refail3, code, "Could not create new volume %u\n", pvolid);
+	} else {
+	    code =
+		AFSVolTransCreate(toconn, pvolid, topart, ITOffline, &totid);
+	    EGOTO1(refail3, code, "Failed to start transaction on %u\n",
+		    pvolid);
+
+	    code = AFSVolGetStatus(toconn, totid, &tstatus);
+	    EGOTO1(refail3, code, "Could not get timestamp from volume %u\n",
+		    pvolid);
+
+	    oldCreateDate = tstatus.creationDate;
+	    oldUpdateDate = tstatus.updateDate;
+	}
+    } else {
+	oldCreateDate = 0;
+	oldUpdateDate = 0;
+    }
+
+    cookie.parent = pparentid;
+    cookie.type = voltype;
+    cookie.clone = 0;
+    strncpy(cookie.name, tovolreal, VOLSER_OLDMAXVOLNAME);
+
+    tocall = rx_NewCall(toconn);
+    terror = StartAFSVolRestore(tocall, totid, 1, &cookie);
+    if (terror) {
+	fprintf(STDERR, "Volume restore Failed \n");
+	error = terror;
+	goto refail3;
+    }
+    code = WriteData(tocall, rock);
+    if (code) {
+	fprintf(STDERR, "Could not transmit data\n");
+	error = code;
+	goto refail3;
+    }
+    terror = rx_EndCall(tocall, rxError);
+    tocall = (struct rx_call *)0;
+    if (terror) {
+	fprintf(STDERR, "rx_EndCall Failed \n");
+	error = terror;
+	goto refail3;
+    }
+    code = AFSVolGetStatus(toconn, totid, &tstatus);
+    if (code) {
+	fprintf(STDERR,
+	    "Could not get status information about the volume %lu\n",
+	    (unsigned long)pvolid);
+	error = code;
+	goto refail3;
+    }
+    code = AFSVolSetIdsTypes(toconn, totid, tovolreal, voltype, pparentid, 0, 0);
+    if (code) {
+	fprintf(STDERR, "Could not set the right type and ID on %lu\n",
+	(unsigned long)pvolid);
+	error = code;
+	goto refail3;
+    }
+    if (flags & RV_CRDUMP)
+	newCreateDate = tstatus.creationDate;
+    else if (flags & RV_CRKEEP && oldCreateDate != 0)
+	newCreateDate = oldCreateDate;
+    else
+	newCreateDate = time(0);
+    if (flags & RV_LUDUMP)
+	newUpdateDate = tstatus.updateDate;
+    else if (flags & RV_LUKEEP)
+	newUpdateDate = oldUpdateDate;
+    else
+	newUpdateDate = time(0);
+    code = AFSVolSetDate(toconn,totid, newCreateDate);
+    if (code) {
+	fprintf(STDERR, "Could not set the 'creation' date on %u\n", pvolid);
+	error = code;
+	goto refail3;
+    }
+
+    init_volintInfo(&vinfo);
+    vinfo.creationDate = newCreateDate;
+    vinfo.updateDate = newUpdateDate;
+    code = AFSVolSetInfo(toconn, totid, &vinfo);
+    if (code) {
+	fprintf(STDERR, "Could not set the 'last updated' date on %u\n",
+	    pvolid);
+	error = code;
+	goto refail3;
+    }
+
+    volflag = ((flags & RV_OFFLINE) ? VTOutOfService : 0);     /* off or on-line */
+    code = AFSVolSetFlags(toconn, totid, volflag);
+    if (code) {
+	fprintf(STDERR, "Could not mark %lu online\n", (unsigned long)pvolid);
+	error = code;
+	goto refail3;
+    }
+
+    /* It isn't handled right in refail */
+    code = AFSVolEndTrans(toconn, totid, &rcode);
+    totid = 0;
+    if (!code)
+	code = rcode;
+    if (code) {
+	fprintf(STDERR, "Could not end transaction on %lu\n",
+	    (unsigned long)pvolid);
+	error = code;
+	goto refail3;
+    }
+
+    success = 1;
+    fprintf(STDOUT, " done\n");
+    fflush(STDOUT);
+    /* We only have to worry about RW or RWSL after this point as the
+    * +     * entries in the VLDB have to be modified accordingly
+    * +     */
+
+    if (success && (!reuseID || (flags & RV_FULLRST))) {
+	/* Volume was restored on the file server, update the
+	* VLDB to reflect the change.
+	*/
+	vcode = VLDB_GetEntryByID(pvolid, voltype, &entry);
+	if (vcode && vcode != VL_NOENT && vcode != VL_ENTDELETED) {
+	    fprintf(STDERR,
+		"Could not fetch the entry for volume number %lu from VLDB \n",
+		(unsigned long)pvolid);
+	    error = vcode;
+	    goto refail3;
+	}
+	if (!vcode)
+	    MapHostToNetwork(&entry);
+	if (vcode == VL_NOENT) {        /* it doesnot exist already */
+	    /*make the vldb return this indication specifically */
+	    VPRINT("------- Creating a new VLDB entry ------- \n");
+	    strcpy(entry.name, tovolname);
+	    entry.nServers = 1;
+	    entry.serverNumber[0] = toserver;   /*should be indirect */
+	    entry.serverPartition[0] = topart;
+	    entry.serverFlags[0] = (flags & RV_RDONLY) ? ITSROVOL : ITSRWVOL;
+	    entry.flags = (flags & RV_RDONLY) ? RO_EXISTS : RW_EXISTS;
+	    if (flags & RV_RDONLY)
+		entry.volumeId[ROVOL] = pvolid;
+	    else if (tstatus.cloneID != 0) {
+		entry.volumeId[ROVOL] = tstatus.cloneID;        /*this should come from status info on the volume if non zero */
+	    } else
+		entry.volumeId[ROVOL] = INVALID_BID;
+	    entry.volumeId[RWVOL] = pparentid;
+	    entry.cloneId = 0;
+	    if (tstatus.backupID != 0) {
+		entry.volumeId[BACKVOL] = tstatus.backupID;
+	    /*this should come from status info on the volume if non zero */
+	    } else
+		entry.volumeId[BACKVOL] = INVALID_BID;
+	    MapNetworkToHost(&entry, &storeEntry);
+	    vcode = VLDB_CreateEntry(&storeEntry);
+	    if (vcode) {
+		fprintf(STDERR,
+		    "Could not create the VLDB entry for volume number %lu  \n",
+		    (unsigned long)pvolid);
+		error = vcode;
+		goto refail3;
+	    }
+	    islocked = 0;
+	    if (verbose)
+		EnumerateEntry(&entry);
+	} else {                /*update the existing entry */
+
+	    if (verbose) {
+		fprintf(STDOUT, "Updating the existing VLDB entry\n");
+		fprintf(STDOUT, "------- Old entry -------\n");
+		EnumerateEntry(&entry);
+		fprintf(STDOUT, "------- New entry -------\n");
+	    }
+	    vcode =
+		ubik_VL_SetLock(cstruct, 0, pvolid, voltype,
+			VLOP_RESTORE);
+	    if (vcode) {
+		fprintf(STDERR,
+			"Could not lock the entry for volume number %lu \n",
+			(unsigned long)pvolid);
+		error = vcode;
+		goto refail3;
+	    }
+	    islocked = 1;
+	    strcpy(entry.name, tovolname);
+
+	    /* Update the vlentry with the new information */
+	    if (flags & RV_RDONLY)
+		index = Lp_ROMatch(toserver, topart, &entry) - 1;
+	    else
+		index = Lp_GetRwIndex(&entry);
+	    if (index == -1) {
+		/* Add the new site for the volume being restored */
+		entry.serverNumber[entry.nServers] = toserver;
+		entry.serverPartition[entry.nServers] = topart;
+		entry.serverFlags[entry.nServers] =
+		    (flags & RV_RDONLY) ? ITSROVOL : ITSRWVOL;
+		entry.nServers++;
+	    } else {
+		/* This volume should be deleted on the old site
+		    * if its different from new site.
+		    */
+		same =
+		    VLDB_IsSameAddrs(toserver, entry.serverNumber[index],
+			&errcode);
+		if (errcode)
+		    EPRINT2(errcode,
+			    "Failed to get info about server's %d address(es) from vlserver (err=%d)\n",
+			    toserver, errcode);
+		if ((!errcode && !same)
+			    || (entry.serverPartition[index] != topart)) {
+		    if (flags & RV_NODEL) {
+			VPRINT2("Not deleting the previous volume %u on server %s, ...",
+				pvolid,
+				hostutil_GetNameByINet(entry.serverNumber[index]));
+		    } else {
+			EPRINT1(errcode,
+				    "Should never come here - Error in code %d\n",errcode);
+		    }
+		}
+		if (entry.serverNumber[index] == toserver) {
+		    /* this server holds the RW entry*/
+		    /* restore with -seconday or -primary is meaningless */
+		    EPRINT1(errcode,"Restore is meaning less as the server is a RW replica, %d\n",errcode);
+		} else {
+
+		    /* find if an entry is already present */
+		    for(index1=0;index1<entry.nServers;index1++){
+			if(entry.serverNumber[index1] == toserver){
+			    break;
+			}
+		    }
+
+		    if(index1 == entry.nServers){ /* make a new entry */
+			entry.serverFlags[index] =
+				(rwvoltype & ITSRWVOL) ? ITSRWVOL : ITSRWSLAVE;
+
+			/* Add the new site for the volume being restored */
+			entry.serverNumber[entry.nServers] = toserver;
+			entry.serverPartition[entry.nServers] = topart;
+			entry.serverFlags[entry.nServers] =
+			    (rwvoltype & ITSRWVOL) ? ITSRWSLAVE : ITSRWVOL ;
+
+			entry.nServers++;
+		    } else { /* change the existing entry */
+			entry.serverFlags[index] =
+			    (rwvoltype & ITSRWVOL) ? ITSRWVOL : ITSRWSLAVE;
+
+			entry.serverFlags[index1] =
+			    (rwvoltype & ITSRWVOL) ? ITSRWSLAVE : ITSRWVOL ;
+		    }
+		}
+	    }
+
+	    entry.flags |= (flags & RV_RDONLY) ? RO_EXISTS : RW_EXISTS;
+	    MapNetworkToHost(&entry, &storeEntry);
+	    vcode =
+		VLDB_ReplaceEntry(pvolid, voltype, &storeEntry,
+			LOCKREL_OPCODE | LOCKREL_AFSID |
+			LOCKREL_TIMESTAMP);
+	    if (vcode) {
+		fprintf(STDERR,
+		    "Could not update the entry for volume number %lu  \n",
+		    (unsigned long)pvolid);
+		error = vcode;
+		goto refail3;
+	    }
+	    islocked = 0;
+	    if (verbose)
+		EnumerateEntry(&entry);
+	}
+    }
+refail3:
+    if (tocall) {
+	code = rx_EndCall(tocall, rxError);
+	if (!error)
+	    error = code;
+    }
+    if (islocked) {
+	vcode =
+		ubik_VL_ReleaseLock(cstruct, 0, pvolid, voltype,
+		LOCKREL_OPCODE | LOCKREL_AFSID | LOCKREL_TIMESTAMP);
+	if (vcode) {
+	    fprintf(STDERR,
+		    "Could not release lock on the VLDB entry for the volume %lu\n",
+		    (unsigned long)pvolid);
+	    if (!error)
+		error = vcode;
+	}
+    }
+    if (totid) {
+	code = AFSVolEndTrans(toconn, totid, &rcode);
+	if (!code)
+	    code = rcode;
+	if (code) {
+	    fprintf(STDERR, "Could not end transaction on the volume %lu \n",
+		    (unsigned long)pvolid);
+	    if (!error)
+		error = code;
+	}
+    }
+    if (temptid) {
+	code = AFSVolEndTrans(toconn, temptid, &rcode);
+	if (!code)
+	    code = rcode;
+	if (code) {
+	    fprintf(STDERR, "Could not end transaction on the volume %lu \n",
+		    (unsigned long)pvolid);
+	    if (!error)
+		error = code;
+	}
+    }
+    if (tempconn)
+	rx_DestroyConnection(tempconn);
+    if (toconn)
+	rx_DestroyConnection(toconn);
+    PrintError("", error);
+    return error;
 }

@@ -1743,3 +1743,210 @@ VReleaseVnodeFiles_r(Volume * vp)
     VChangeState_r(vp, vol_state_save);
 #endif /* AFS_DEMAND_ATTACH_FS */
 }
+
+Vnode *
+VAllocReplicaVnode(Error * ec, Volume * vp,  VnodeId vnodeNumber,
+                    Unique unique, VnodeType type)
+{
+    Vnode *vnp;
+    int newHash, bitNumber;
+    struct VnodeClassInfo *vcp;
+    VnodeClass class;
+    struct vnodeIndex *index;
+    unsigned int offset;
+    byte *bp;
+
+
+    *ec = 0;
+    if (programType == fileServer && !V_inUse(vp)) {
+	if (vp->specialStatus) {
+	    *ec = vp->specialStatus;
+	} else {
+	    *ec = VOFFLINE;
+	}
+	ViceLog(0,("VAllocReplicaVnode: Failed 1\n"));
+	return NULL;
+    }
+    class = vnodeTypeToClass(type);
+    vcp = &VnodeClassInfo[class];
+    index = &vp->vnodeIndex[class];
+
+    if (!VolumeWriteable(vp)) {
+	*ec = (bit32) VREADONLY;
+	ViceLog(0,("VAllocReplicaVnode: Failed 2\n"));
+	return NULL;
+    }
+
+    /* This shouldn't happen */
+    if (!unique){
+	*ec = VNOVNODE;
+	ViceLog(0,("VAllocReplicaVnode: Failed 3\n"));
+	return NULL;
+    }
+
+    /* Catch us up to where the master is */
+    if (unique > vp->nextVnodeUnique)
+	vp->nextVnodeUnique = unique+1;
+
+    if (vp->nextVnodeUnique > V_uniquifier(vp)) {
+	VUpdateVolume_r(ec, vp, 0);
+	if (*ec){
+	    ViceLog(0,("VAllocReplicaVnode: Failed 4\n"));
+	    return NULL;
+	}
+    }
+    if (programType == fileServer) {
+	VAddToVolumeUpdateList_r(ec, vp);
+	if (*ec){
+	    ViceLog(0,("VAllocReplicaVnode: Failed 5\n"));
+	    return NULL;
+	}
+    }
+
+    bitNumber = vnodeIdToBitNumber(vnodeNumber);
+    offset = bitNumber >> 3;
+
+
+    /* Mark vnode in use. Grow bitmap if needed. */
+    if ((offset >= index->bitmapSize)
+	    || ((*(index->bitmap + offset) & (1 << (bitNumber & 0x7)))
+	    == 0)) {
+	bp = (byte *)
+	realloc(index->bitmap, index->bitmapSize + VOLUME_BITMAP_GROWSIZE);
+	assert(bp != NULL);
+	index->bitmap = bp;
+	bp += index->bitmapSize;
+	memset(bp, 0, VOLUME_BITMAP_GROWSIZE);
+	index->bitmapOffset = index->bitmapSize;
+	index->bitmapSize += VOLUME_BITMAP_GROWSIZE;
+
+    }
+
+    /* bp = index->bitmap + offset;*/
+
+    /* Should not happen */
+    if (*(index->bitmap + offset) & (1 << (bitNumber & 0x7))) {
+	*ec = VNOVNODE;
+	return NULL;
+    }
+    /* Mark as in-use */
+    /*    *bp = 1;*/
+
+    *(index->bitmap + offset) |= (1 << (bitNumber & 0x7));
+    vnrehash:
+    VNLog(2, 1, vnodeNumber);
+    /* Prepare to move it to the new hash chain */
+    newHash = VNODE_HASH(vp, vnodeNumber);
+    for (vnp = VnodeHashTable[newHash];
+	vnp && (vnp->vnodeNumber != vnodeNumber || vnp->volumePtr != vp
+	|| vnp->volumePtr->cacheCheck != vnp->cacheCheck);
+    vnp = vnp->hashNext);
+    if (vnp) {
+	/* slot already exists.  May even not be in lruq (consider store file locking a file being deleted)
+	* so we may have to wait for it below */
+	VNLog(3, 2, vnodeNumber, (afs_int32) vnp->vnodeNumber);
+
+	/* If first user, remove it from the LRU chain.  We can assume that
+	* there is at least one item in the queue */
+	if (++vnp->nUsers == 1) {
+	    if (vnp == vcp->lruHead)
+		vcp->lruHead = vcp->lruHead->lruNext;
+	    vnp->lruPrev->lruNext = vnp->lruNext;
+	    vnp->lruNext->lruPrev = vnp->lruPrev;
+	    if (vnp == vcp->lruHead || vcp->lruHead == NULL)
+		Abort("VGetVnode: lru chain addled!\n");
+	    /* This won't block */
+	    ObtainWriteLock(&vnp->lock);
+	} else {
+	    /* follow locking hierarchy */
+	    VOL_UNLOCK;
+	    ObtainWriteLock(&vnp->lock);
+	    VOL_LOCK;
+	    if (vnp->volumePtr->cacheCheck != vnp->cacheCheck) {
+		ReleaseWriteLock(&vnp->lock);
+		goto vnrehash;
+	    }
+	}
+#ifdef AFS_PTHREAD_ENV
+	vnp->writer = pthread_self();
+#else /* AFS_PTHREAD_ENV */
+	LWP_CurrentProcess(&vnp->writer);
+#endif /* AFS_PTHREAD_ENV */
+    } else {
+	vnp = VGetFreeVnode_r(vcp);
+	/* Remove vnode from LRU chain and grab a write lock */
+	if (vnp == vcp->lruHead)
+	    vcp->lruHead = vcp->lruHead->lruNext;
+	vnp->lruPrev->lruNext = vnp->lruNext;
+	vnp->lruNext->lruPrev = vnp->lruPrev;
+	if (vnp == vcp->lruHead || vcp->lruHead == NULL)
+	    Abort("VGetVnode: lru chain addled!\n");
+	/* Initialize the header fields so noone allocates another
+	* vnode with the same number */
+	vnp->vnodeNumber = vnodeNumber;
+	vnp->volumePtr = vp;
+	vnp->cacheCheck = vp->cacheCheck;
+	vnp->nUsers = 1;
+/* XXX
+	moveHash(vnp, newHash);
+*/
+	/* This will never block */
+	ObtainWriteLock(&vnp->lock);
+#ifdef AFS_PTHREAD_ENV
+	vnp->writer = pthread_self();
+#else /* AFS_PTHREAD_ENV */
+	LWP_CurrentProcess(&vnp->writer);
+#endif /* AFS_PTHREAD_ENV */
+	/* Sanity check:  is this vnode really not in use? */
+	{
+	    int size;
+	    IHandle_t *ihP = vp->vnodeIndex[class].handle;
+	    FdHandle_t *fdP;
+	    off_t off = vnodeIndexOffset(vcp, vnodeNumber);
+
+	    VOL_UNLOCK;
+	    fdP = IH_OPEN(ihP);
+	    if (fdP == NULL)
+		Abort("VAllocVnode: can't open index file!\n");
+	    if ((size = FDH_SIZE(fdP)) < 0)
+		Abort("VAllocVnode: can't stat index file!\n");
+	    if (FDH_SEEK(fdP, off, SEEK_SET) < 0)
+		Abort("VAllocVnode: can't seek on index file!\n");
+	    if (off < size) {
+		if (FDH_READ(fdP, &vnp->disk, vcp->diskSize) == vcp->diskSize) {
+		    if (vnp->disk.type != vNull)
+			Abort("VAllocVnode:  addled bitmap or index!\n");
+		}
+	    } else {
+		/* growing file - grow in a reasonable increment */
+		char *buf = (char *)malloc(16 * 1024);
+		if (!buf)
+		   Abort("VAllocVnode: malloc failed\n");
+		memset(buf, 0, 16 * 1024);
+		(void)FDH_WRITE(fdP, buf, 16 * 1024);
+		free(buf);
+	    }
+	    FDH_CLOSE(fdP);
+	    VOL_LOCK;
+	}
+	VNLog(4, 2, vnodeNumber, (afs_int32) vnp->vnodeNumber);
+    }
+
+    VNLog(5, 1, (afs_int32)(uintptr_t) vnp);
+#ifdef AFS_PTHREAD_ENV
+    vnp->writer = pthread_self();
+#else /* AFS_PTHREAD_ENV */
+    LWP_CurrentProcess(&vnp->writer);
+#endif /* AFS_PTHREAD_ENV */
+    memset(&vnp->disk, 0, sizeof(vnp->disk));
+    vnp->changed_newTime = 0;  /* set this bit when vnode is updated */
+    vnp->changed_oldTime = 0;  /* set this on CopyOnWrite. */
+    vnp->delete = 0;
+    vnp->disk.vnodeMagic = vcp->magic;
+    vnp->disk.type = type;
+    vnp->disk.uniquifier = unique;
+    vnp->handle = NULL;
+    vcp->allocs++;
+    vp->header->diskstuff.filecount++;
+    return vnp;
+}

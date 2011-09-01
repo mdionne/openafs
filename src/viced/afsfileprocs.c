@@ -2991,12 +2991,20 @@ SRXAFS_StoreData(struct rx_call * acall, struct AFSFid * Fid,
 		 afs_uint32 Length, afs_uint32 FileLength,
 		 struct AFSFetchStatus * OutStatus, struct AFSVolSync * Sync)
 {
+    int code=0,code1=0;
+    struct rx_connection *tcon = rx_ConnectionOf(acall);
+    struct client *t_client = NULL;
+
     if (FileLength > 0x7fffffff || Pos > 0x7fffffff ||
 	(0x7fffffff - Pos) < Length)
         return EFBIG;
 
-    return common_StoreData64(acall, Fid, InStatus, Pos, Length, FileLength,
+    code = common_StoreData64(acall, Fid, InStatus, Pos, Length, FileLength,
 	                      OutStatus, Sync);
+    t_client=(struct client *)rx_GetSpecific(tcon,rxcon_client_key);
+    code1 = PushIntoUpdateList(4,Fid,NULL,NULL,NULL,InStatus,
+	    Sync,NULL,Pos,Length,FileLength, t_client ? t_client->ViceId : 0);
+    return code;
 }				/*SRXAFS_StoreData */
 
 afs_int32
@@ -3010,6 +3018,9 @@ SRXAFS_StoreData64(struct rx_call * acall, struct AFSFid * Fid,
     afs_fsize_t tPos;
     afs_fsize_t tLength;
     afs_fsize_t tFileLength;
+    struct rx_connection *tcon = rx_ConnectionOf(acall);
+    struct client *t_client = NULL;
+
 
     tPos = (afs_fsize_t) Pos;
     tLength = (afs_fsize_t) Length;
@@ -3018,6 +3029,10 @@ SRXAFS_StoreData64(struct rx_call * acall, struct AFSFid * Fid,
     code =
 	common_StoreData64(acall, Fid, InStatus, tPos, tLength, tFileLength,
 			   OutStatus, Sync);
+    t_client = (struct client *)rx_GetSpecific(tcon,rxcon_client_key);
+    code1 = PushIntoUpdateList(4,Fid,NULL,NULL,NULL,InStatus,
+	    Sync,NULL,Pos,Length,FileLength, t_client ? t_client->ViceId : 0);
+
     return code;
 }
 
@@ -3038,6 +3053,7 @@ SRXAFS_StoreACL(struct rx_call * acall, struct AFSFid * Fid,
     struct client *t_client = NULL;	/* tmp ptr to client data */
     struct in_addr logHostAddr;	/* host ip holder for inet_ntoa */
     struct fsstats fsstats;
+    int code1;
 
     fsstats_StartOp(&fsstats, FS_STATS_RPCIDX_STOREACL);
 
@@ -3106,6 +3122,9 @@ SRXAFS_StoreACL(struct rx_call * acall, struct AFSFid * Fid,
     osi_auditU(acall, StoreACLEvent, errorCode,
                AUD_ID, t_client ? t_client->ViceId : 0,
                AUD_FID, Fid, AUD_ACL, AccessList->AFSOpaque_val, AUD_END);
+    code1 = PushIntoUpdateList(8,Fid,NULL,NULL,NULL,NULL,Sync,
+		AccessList,0,0,0,t_client ? t_client->ViceId : 0);
+
     return errorCode;
 
 }				/*SRXAFS_StoreACL */
@@ -3224,6 +3243,10 @@ SRXAFS_StoreStatus(struct rx_call * acall, struct AFSFid * Fid,
     osi_auditU(acall, StoreStatusEvent, code,
                AUD_ID, t_client ? t_client->ViceId : 0,
                AUD_FID, Fid, AUD_END);
+
+    code1 = PushIntoUpdateList(9,Fid,NULL,NULL,NULL,InStatus,
+	    Sync,NULL,0,0,0,t_client ? t_client->ViceId : 0);
+
     return code;
 
 }				/*SRXAFS_StoreStatus */
@@ -3359,6 +3382,9 @@ SRXAFS_RemoveFile(struct rx_call * acall, struct AFSFid * DirFid, char *Name,
     osi_auditU(acall, RemoveFileEvent, code,
                AUD_ID, t_client ? t_client->ViceId : 0,
                AUD_FID, DirFid, AUD_STR, Name, AUD_END);
+    code1 = PushIntoUpdateList(1,DirFid,NULL,Name,NULL,NULL,
+	    Sync,NULL,0,0,0,t_client ? t_client->ViceId : 0);
+
     return code;
 
 }				/*SRXAFS_RemoveFile */
@@ -3502,6 +3528,9 @@ SRXAFS_CreateFile(struct rx_call * acall, struct AFSFid * DirFid, char *Name,
     osi_auditU(acall, CreateFileEvent, code,
                AUD_ID, t_client ? t_client->ViceId : 0,
                AUD_FID, DirFid, AUD_STR, Name, AUD_FID, OutFid, AUD_END);
+    PushIntoUpdateList(0,DirFid,OutFid,Name,NULL,
+	    InStatus,Sync,NULL,0,0,0, t_client ? t_client->ViceId : 0);
+
     return code;
 
 }				/*SRXAFS_CreateFile */
@@ -3974,6 +4003,472 @@ SAFSS_Rename(struct rx_call *acall, struct AFSFid *OldDirFid, char *OldName,
 
 }				/*SAFSS_Rename */
 
+static afs_int32
+SRXAFS_RRename(struct rx_call *acall, struct AFSFid *OldDirFid, char *OldName,
+	     struct AFSFid *NewDirFid, char *NewName,
+	     struct AFSVolSync *Sync, afs_int32 clientViceId)
+{
+    Vnode *oldvptr = 0;		/* vnode of the old Directory */
+    Vnode *newvptr = 0;		/* vnode of the new Directory */
+    Vnode *fileptr = 0;		/* vnode of the file to move */
+    Vnode *newfileptr = 0;	/* vnode of the file to delete */
+    Vnode *testvptr = 0;	/* used in directory tree walk */
+    Vnode *parent = 0;		/* parent for use in SetAccessList */
+    Error errorCode = 0;		/* error code */
+    Error fileCode = 0;		/* used when writing Vnodes */
+    VnodeId testnode;		/* used in directory tree walk */
+    AFSFid fileFid;		/* Fid of file to move */
+    AFSFid newFileFid;		/* Fid of new file */
+    DirHandle olddir;		/* Handle for dir package I/O */
+    DirHandle newdir;		/* Handle for dir package I/O */
+    DirHandle filedir;		/* Handle for dir package I/O */
+    DirHandle newfiledir;	/* Handle for dir package I/O */
+    Volume *volptr = 0;		/* pointer to the volume header */
+    struct client *client = 0;	/* pointer to client structure */
+    afs_int32 rights, anyrights;	/* rights for this and any user */
+    afs_int32 newrights;	/* rights for this user */
+    afs_int32 newanyrights;	/* rights for any user */
+    int doDelete;		/* deleted the rename target (ref count now 0) */
+    int code;
+    int updatefile = 0;		/* are we changing the renamed file? (we do this
+				 * if we need to update .. on a renamed dir) */
+    struct client *t_client;	/* tmp ptr to client data */
+    struct in_addr logHostAddr;	/* host ip holder for inet_ntoa */
+    struct rx_connection *tcon = rx_ConnectionOf(acall);
+    afs_ino_str_t stmp;
+
+    FidZero(&olddir);
+    FidZero(&newdir);
+    FidZero(&filedir);
+    FidZero(&newfiledir);
+
+    /* Get ptr to client data for user Id for logging */
+/*
+    t_client = (struct client *)rx_GetSpecific(tcon, rxcon_client_key);
+*/
+    logHostAddr.s_addr = rxr_HostOf(tcon);
+    ViceLog(1,
+	    ("SAFS_RRename %s	to %s,	Fid = %u.%u.%u to %u.%u.%u, Host %s:%d, Id %d\n",
+	     OldName, NewName, OldDirFid->Volume, OldDirFid->Vnode,
+	     OldDirFid->Unique, NewDirFid->Volume, NewDirFid->Vnode,
+	     NewDirFid->Unique, inet_ntoa(logHostAddr), ntohs(rxr_PortOf(tcon)), t_client->ViceId));
+    FS_LOCK;
+    AFSCallStats.Rename++, AFSCallStats.TotalCalls++;
+    FS_UNLOCK;
+    if (!FileNameOK(NewName)) {
+	errorCode = EINVAL;
+	goto Bad_Rename;
+    }
+    if (OldDirFid->Volume != NewDirFid->Volume) {
+	DFlush();
+	errorCode = EXDEV;
+	goto Bad_Rename;
+    }
+    if ((strcmp(OldName, ".") == 0) || (strcmp(OldName, "..") == 0)
+	|| (strcmp(NewName, ".") == 0) || (strcmp(NewName, "..") == 0)
+	|| (strlen(NewName) == 0) || (strlen(OldName) == 0)) {
+	DFlush();
+	errorCode = EINVAL;
+	goto Bad_Rename;
+    }
+
+    if (OldDirFid->Vnode <= NewDirFid->Vnode) {
+	if ((errorCode =
+	     GetReplicaVolumePackage(OldDirFid, &volptr, &oldvptr, MustBeDIR,
+			      &parent, WRITE_LOCK))) {
+	    DFlush();
+	    goto Bad_Rename;
+	}
+	if (OldDirFid->Vnode == NewDirFid->Vnode) {
+	    newvptr = oldvptr;
+	    newrights = rights, newanyrights = anyrights;
+	} else
+	    if ((errorCode =
+		 GetReplicaVolumePackage(NewDirFid, &volptr, &newvptr,
+				  MustBeDIR, &parent, WRITE_LOCK))) {
+	    DFlush();
+	    goto Bad_Rename;
+	}
+    } else {
+	if ((errorCode =
+	     GetReplicaVolumePackage(NewDirFid, &volptr, &newvptr, MustBeDIR,
+			      &parent, WRITE_LOCK))) {
+	    DFlush();
+	    goto Bad_Rename;
+	}
+	if ((errorCode =
+	     GetReplicaVolumePackage(OldDirFid, &volptr, &oldvptr, MustBeDIR,
+			      &parent, WRITE_LOCK))) {
+	    DFlush();
+	    goto Bad_Rename;
+	}
+    }
+
+    /* set volume synchronization information */
+    SetVolumeSync(Sync, volptr);
+
+/*
+    if ((errorCode = CheckWriteMode(oldvptr, rights, PRSFS_DELETE))) {
+	goto Bad_Rename;
+    }
+    if ((errorCode = CheckWriteMode(newvptr, newrights, PRSFS_INSERT))) {
+	goto Bad_Rename;
+    }
+*/
+
+/* XXX keep? new check */
+    if (CheckLength(volptr, oldvptr, -1) ||
+        CheckLength(volptr, newvptr, -1)) {
+	VTakeOffline(volptr);
+	errorCode = VSALVAGE;
+	goto Bad_Rename;
+    }
+
+    /* The CopyOnWrite might return ENOSPC ( disk full). Even if the second
+     *  call to CopyOnWrite returns error, it is not necessary to revert back
+     *  the effects of the first call because the contents of the volume is
+     *  not modified, it is only replicated.
+     */
+    if (oldvptr->disk.cloned) {
+	ViceLog(25, ("Rename : calling CopyOnWrite on  old dir\n"));
+	if ((errorCode = CopyOnWrite(oldvptr, volptr, 0, MAXFSIZE)))
+	    goto Bad_Rename;
+    }
+    SetDirHandle(&olddir, oldvptr);
+    if (newvptr->disk.cloned) {
+	ViceLog(25, ("Rename : calling CopyOnWrite on  new dir\n"));
+	if ((errorCode = CopyOnWrite(newvptr, volptr, 0, MAXFSIZE)))
+	    goto Bad_Rename;
+    }
+
+    SetDirHandle(&newdir, newvptr);
+
+    /* Lookup the file to delete its vnode */
+    if (afs_dir_Lookup(&olddir, OldName, &fileFid)) {
+	errorCode = ENOENT;
+	goto Bad_Rename;
+    }
+    if (fileFid.Vnode == oldvptr->vnodeNumber
+	|| fileFid.Vnode == newvptr->vnodeNumber) {
+	errorCode = FSERR_ELOOP;
+	goto Bad_Rename;
+    }
+    fileFid.Volume = V_id(volptr);
+    fileptr = VGetVnode(&errorCode, volptr, fileFid.Vnode, WRITE_LOCK);
+    if (errorCode != 0) {
+	ViceLog(0,
+		("SAFSS_RRename(): Error in VGetVnode() for old file %s, code %d\n",
+		 OldName, errorCode));
+	VTakeOffline(volptr);
+	goto Bad_Rename;
+    }
+    if (fileptr->disk.uniquifier != fileFid.Unique) {
+	ViceLog(0,
+		("SAFSS_RRename(): Old file %s uniquifier mismatch\n",
+		 OldName));
+	VTakeOffline(volptr);
+	errorCode = EIO;
+	goto Bad_Rename;
+    }
+
+    if (fileptr->disk.type != vDirectory && oldvptr != newvptr
+	&& fileptr->disk.linkCount != 1) {
+	/*
+	 * Hard links exist to this file - cannot move one of the links to
+	 * a new directory because of AFS restrictions (this is the same
+	 * reason that links cannot be made across directories, i.e.
+	 * access lists)
+	 */
+	errorCode = EXDEV;
+	goto Bad_Rename;
+    }
+
+    /* Lookup the new file  */
+    if (!(afs_dir_Lookup(&newdir, NewName, &newFileFid))) {
+	if (readonlyServer) {
+	    errorCode = VREADONLY;
+	    goto Bad_Rename;
+	}
+	if (!(newrights & PRSFS_DELETE)) {
+	    errorCode = EACCES;
+	    goto Bad_Rename;
+	}
+	if (newFileFid.Vnode == oldvptr->vnodeNumber
+	    || newFileFid.Vnode == newvptr->vnodeNumber
+	    || newFileFid.Vnode == fileFid.Vnode) {
+	    errorCode = EINVAL;
+	    goto Bad_Rename;
+	}
+	newFileFid.Volume = V_id(volptr);
+	newfileptr =
+	    VGetVnode(&errorCode, volptr, newFileFid.Vnode, WRITE_LOCK);
+	if (errorCode != 0) {
+	    ViceLog(0,
+		    ("SAFSS_Rename(): Error in VGetVnode() for new file %s, code %d\n",
+		     NewName, errorCode));
+	    VTakeOffline(volptr);
+	    goto Bad_Rename;
+	}
+	if (fileptr->disk.uniquifier != fileFid.Unique) {
+	    ViceLog(0,
+		    ("SAFSS_Rename(): New file %s uniquifier mismatch\n",
+		     NewName));
+	    VTakeOffline(volptr);
+	    errorCode = EIO;
+	    goto Bad_Rename;
+	}
+	SetDirHandle(&newfiledir, newfileptr);
+	/* Now check that we're moving directories over directories properly, etc.
+	 * return proper POSIX error codes:
+	 * if fileptr is a file and new is a dir: EISDIR.
+	 * if fileptr is a dir and new is a file: ENOTDIR.
+	 * Also, dir to be removed must be empty, of course.
+	 */
+	if (newfileptr->disk.type == vDirectory) {
+	    if (fileptr->disk.type != vDirectory) {
+		errorCode = EISDIR;
+		goto Bad_Rename;
+	    }
+	    if ((afs_dir_IsEmpty(&newfiledir))) {
+		errorCode = EEXIST;
+		goto Bad_Rename;
+	    }
+	} else {
+	    if (fileptr->disk.type == vDirectory) {
+		errorCode = ENOTDIR;
+		goto Bad_Rename;
+	    }
+	}
+    }
+
+    /*
+     * ok - now we check that the old name is not above new name in the
+     * directory structure.  This is to prevent removing a subtree alltogether
+     */
+    if ((oldvptr != newvptr) && (fileptr->disk.type == vDirectory)) {
+        afs_int32 forpass = 0, vnum = 0, top = 0;
+	for (testnode = newvptr->disk.parent; testnode != 0; forpass++) {
+	    if (testnode > vnum) vnum = testnode;
+	    if (forpass > vnum) {
+		errorCode = FSERR_ELOOP;
+		goto Bad_Rename;
+	    }
+	    if (testnode == oldvptr->vnodeNumber) {
+		testnode = oldvptr->disk.parent;
+		continue;
+	    }
+	    if ((testnode == fileptr->vnodeNumber)
+		|| (testnode == newvptr->vnodeNumber)) {
+		errorCode = FSERR_ELOOP;
+		goto Bad_Rename;
+	    }
+	    if ((newfileptr) && (testnode == newfileptr->vnodeNumber)) {
+		errorCode = FSERR_ELOOP;
+		goto Bad_Rename;
+	    }
+	    if (testnode == 1) top = 1;
+	    testvptr = VGetVnode(&errorCode, volptr, testnode, READ_LOCK);
+	    osi_Assert(errorCode == 0);
+	    testnode = testvptr->disk.parent;
+	    VPutVnode(&errorCode, testvptr);
+	    if ((top == 1) && (testnode != 0)) {
+		VTakeOffline(volptr);
+		ViceLog(0,
+			("Volume %u now offline, must be salvaged.\n",
+			 volptr->hashid));
+		errorCode = EIO;
+		goto Bad_Rename;
+	    }
+	    osi_Assert(errorCode == 0);
+	}
+    }
+
+    if (fileptr->disk.type == vDirectory) {
+	SetDirHandle(&filedir, fileptr);
+	if (oldvptr != newvptr) {
+	    /* we always need to update .. if we've moving fileptr to a
+	     * different directory */
+	    updatefile = 1;
+	} else {
+	    struct AFSFid unused;
+
+	    code = afs_dir_Lookup(&filedir, "..", &unused);
+	    if (code == ENOENT) {
+		/* only update .. if it doesn't already exist */
+		updatefile = 1;
+	    }
+	}
+    }
+
+    /* Do the CopyonWrite first before modifying anything else. Copying is
+     * required when we have to change entries for ..
+     */
+    if (updatefile && (fileptr->disk.cloned)) {
+	ViceLog(25, ("Rename : calling CopyOnWrite on  target dir\n"));
+	if ((errorCode = CopyOnWrite(fileptr, volptr, 0, MAXFSIZE)))
+	    goto Bad_Rename;
+    }
+
+    /* If the new name exists already, delete it and the file it points to */
+    doDelete = 0;
+    if (newfileptr) {
+	/* Delete NewName from its directory */
+	code = afs_dir_Delete(&newdir, NewName);
+	osi_Assert(code == 0);
+
+	/* Drop the link count */
+	newfileptr->disk.linkCount--;
+	if (newfileptr->disk.linkCount == 0) {	/* Link count 0 - delete */
+	    afs_fsize_t newSize;
+	    VN_GET_LEN(newSize, newfileptr);
+	    VAdjustDiskUsage((Error *) & errorCode, volptr,
+			     (afs_sfsize_t) - nBlocks(newSize), 0);
+	    if (VN_GET_INO(newfileptr)) {
+		IH_REALLYCLOSE(newfileptr->handle);
+		errorCode =
+		    IH_DEC(V_linkHandle(volptr), VN_GET_INO(newfileptr),
+			   V_parentId(volptr));
+		IH_RELEASE(newfileptr->handle);
+		if (errorCode == -1) {
+		    ViceLog(0,
+			    ("Del: inode=%s, name=%s, errno=%d\n",
+			     PrintInode(stmp, VN_GET_INO(newfileptr)),
+			     NewName, errno));
+		    if ((errno != ENOENT) && (errno != EIO)
+			&& (errno != ENXIO))
+			ViceLog(0, ("Do we need to fsck?"));
+		}
+	    }
+	    VN_SET_INO(newfileptr, (Inode) 0);
+	    newfileptr->delete = 1;	/* Mark NewName vnode to delete */
+	    doDelete = 1;
+	} else {
+	    /* Link count did not drop to zero.
+	     * Mark NewName vnode as changed - updates stime.
+	     */
+	    newfileptr->changed_newTime = 1;
+	}
+    }
+
+    /*
+     * If the create below fails, and the delete above worked, we have
+     * removed the new name and not replaced it.  This is not very likely,
+     * but possible.  We could try to put the old file back, but it is
+     * highly unlikely that it would work since it would involve issuing
+     * another create.
+     */
+    if ((errorCode = afs_dir_Create(&newdir, NewName, &fileFid)))
+	goto Bad_Rename;
+
+    /* Delete the old name */
+    osi_Assert(afs_dir_Delete(&olddir, OldName) == 0);
+
+    /* if the directory length changes, reflect it in the statistics */
+#if FS_STATS_DETAILED
+    Update_ReplicaParentVnodeStatus(oldvptr, volptr, &olddir, client->ViceId,
+			     oldvptr->disk.linkCount);
+    Update_ReplicaParentVnodeStatus(newvptr, volptr, &newdir, client->ViceId,
+			     newvptr->disk.linkCount);
+#else
+    Update_ReplicaParentVnodeStatus(oldvptr, volptr, &olddir, client->ViceId,
+			     oldvptr->disk.linkCount);
+    Update_ReplicaParentVnodeStatus(newvptr, volptr, &newdir, client->ViceId,
+			     newvptr->disk.linkCount);
+#endif /* FS_STATS_DETAILED */
+
+    if (oldvptr == newvptr)
+	oldvptr->disk.dataVersion--;	/* Since it was bumped by 2! */
+
+    if (fileptr->disk.parent != newvptr->vnodeNumber) {
+	fileptr->disk.parent = newvptr->vnodeNumber;
+	fileptr->changed_newTime = 1;
+    }
+
+    /* if we are dealing with a rename of a directory, and we need to
+     * update the .. entry of that directory */
+    if (updatefile) {
+	osi_Assert(!fileptr->disk.cloned);
+
+	fileptr->changed_newTime = 1;	/* status change of moved file */
+
+	/* fix .. to point to the correct place */
+	afs_dir_Delete(&filedir, "..");	/* No assert--some directories may be bad */
+	osi_Assert(afs_dir_Create(&filedir, "..", NewDirFid) == 0);
+	fileptr->disk.dataVersion++;
+
+	/* if the parent directories are different the link counts have to be   */
+	/* changed due to .. in the renamed directory */
+	if (oldvptr != newvptr) {
+	    oldvptr->disk.linkCount--;
+	    newvptr->disk.linkCount++;
+	}
+    }
+
+    /* set up return status */
+/*
+    GetStatus(oldvptr, OutOldDirStatus, rights, anyrights, 0);
+    GetStatus(newvptr, OutNewDirStatus, newrights, newanyrights, 0);
+*/
+    if (newfileptr && doDelete) {
+	DeleteFileCallBacks(&newFileFid);	/* no other references */
+    }
+
+    DFlush();
+
+    /* convert the write locks to a read locks before breaking callbacks */
+    VVnodeWriteToRead(&errorCode, newvptr);
+    osi_Assert(!errorCode || errorCode == VSALVAGE);
+    if (oldvptr != newvptr) {
+	VVnodeWriteToRead(&errorCode, oldvptr);
+	osi_Assert(!errorCode || errorCode == VSALVAGE);
+    }
+    if (newfileptr && !doDelete) {
+	/* convert the write lock to a read lock before breaking callbacks */
+	VVnodeWriteToRead(&errorCode, newfileptr);
+	osi_Assert(!errorCode || errorCode == VSALVAGE);
+    }
+
+    /* break call back on NewDirFid, OldDirFid, NewDirFid and newFileFid  */
+/* XXX remove all callback related stuff
+    BreakCallBack(client->host, NewDirFid, 0);
+*/
+    if (oldvptr != newvptr) {
+	BreakCallBack(client->host, OldDirFid, 0);
+    }
+    if (updatefile) {
+	/* if a dir moved, .. changed */
+	/* we do not give an AFSFetchStatus structure back to the
+	 * originating client, and the file's status has changed, so be
+	 * sure to send a callback break. In theory the client knows
+	 * enough to know that the callback could be broken implicitly,
+	 * but that may not be clear, and some client implementations
+	 * may not know to. */
+	BreakCallBack(client->host, &fileFid, 1);
+    }
+    if (newfileptr) {
+	/* Note:  it is not necessary to break the callback */
+	if (doDelete)
+	    DeleteFileCallBacks(&newFileFid);	/* no other references */
+	else
+	    /* other's still exist (with wrong link count) */
+	    BreakCallBack(client->host, &newFileFid, 1);
+    }
+
+  Bad_Rename:
+    if (newfileptr) {
+	VPutVnode(&fileCode, newfileptr);
+	osi_Assert(fileCode == 0);
+    }
+    (void)PutReplicaVolumePackage((newvptr && newvptr != oldvptr ?
+				     newvptr : 0), oldvptr, volptr);
+    FidZap(&olddir);
+    FidZap(&newdir);
+    FidZap(&filedir);
+    FidZap(&newfiledir);
+    ViceLog(2, ("SAFS_RRename returns %d\n", errorCode));
+    return errorCode;
+
+}				/*SRXAFS_RRename */
 
 afs_int32
 SRXAFS_Rename(struct rx_call * acall, struct AFSFid * OldDirFid,
@@ -3982,7 +4477,7 @@ SRXAFS_Rename(struct rx_call * acall, struct AFSFid * OldDirFid,
 	      struct AFSFetchStatus * OutNewDirStatus,
 	      struct AFSVolSync * Sync)
 {
-    afs_int32 code;
+    afs_int32 code, code1;
     struct rx_connection *tcon;
     struct host *thost;
     struct client *t_client = NULL;	/* tmp ptr to client data */
@@ -4008,6 +4503,8 @@ SRXAFS_Rename(struct rx_call * acall, struct AFSFid * OldDirFid,
                AUD_ID, t_client ? t_client->ViceId : 0,
                AUD_FID, OldDirFid, AUD_STR, OldName,
                AUD_FID, NewDirFid, AUD_STR, NewName, AUD_END);
+    code1 = PushIntoUpdateList(5,OldDirFid,NewDirFid,OldName,NewName,NULL,
+	    Sync,NULL,0,0,0, t_client ? t_client->ViceId : 0);
     return code;
 
 }				/*SRXAFS_Rename */
@@ -4167,7 +4664,7 @@ SRXAFS_Symlink(struct rx_call *acall,	/* Rx call */
 	       struct AFSFetchStatus *OutDirStatus,	/* Output status for parent dir */
 	       struct AFSVolSync *Sync)
 {
-    afs_int32 code;
+    afs_int32 code, code1;
     struct rx_connection *tcon;
     struct host *thost;
     struct client *t_client = NULL;	/* tmp ptr to client data */
@@ -4193,6 +4690,8 @@ SRXAFS_Symlink(struct rx_call *acall,	/* Rx call */
                AUD_ID, t_client ? t_client->ViceId : 0,
                AUD_FID, DirFid, AUD_STR, Name,
 	       AUD_FID, OutFid, AUD_STR, LinkContents, AUD_END);
+    code1 = PushIntoUpdateList(6,DirFid,OutFid,Name,LinkContents,InStatus,
+	    Sync,NULL,0,0,0, t_client ? t_client->ViceId : 0);
     return code;
 
 }				/*SRXAFS_Symlink */
@@ -4340,6 +4839,142 @@ SAFSS_Link(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
 
 }				/*SAFSS_Link */
 
+static afs_int32
+SRXAFS_RLink(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
+	   struct AFSFid *ExistingFid, struct AFSVolSync *Sync, afs_int32 clientViceId)
+{
+    Vnode *parentptr = 0;	/* vnode of input Directory */
+    Vnode *targetptr = 0;	/* vnode of the new file */
+    Vnode *parentwhentargetnotdir = 0;	/* parent for use in SetAccessList */
+    Volume *volptr = 0;		/* pointer to the volume header */
+    Error errorCode = 0;		/* error code */
+    DirHandle dir;		/* Handle for dir package I/O */
+    struct client *client = 0;	/* pointer to client structure */
+    afs_int32 rights, anyrights;	/* rights for this and any user */
+
+    FidZero(&dir);
+
+    /* Get ptr to client data for user Id for logging */
+/*
+    t_client = (struct client *)rx_GetSpecific(tcon, rxcon_client_key);
+    logHostAddr.s_addr = rxr_HostOf(tcon);
+    ViceLog(1,
+	    ("SAFS_Link %s,	Did = %u.%u.%u,	Fid = %u.%u.%u, Host %s:%d, Id %d\n",
+	     Name, DirFid->Volume, DirFid->Vnode, DirFid->Unique,
+	     ExistingFid->Volume, ExistingFid->Vnode, ExistingFid->Unique,
+	     inet_ntoa(logHostAddr), ntohs(rxr_PortOf(tcon)), t_client->ViceId));
+*/
+    FS_LOCK;
+    AFSCallStats.Link++, AFSCallStats.TotalCalls++;
+    FS_UNLOCK;
+    if (DirFid->Volume != ExistingFid->Volume) {
+	errorCode = EXDEV;
+	goto Bad_Link;
+    }
+    if (!FileNameOK(Name)) {
+	errorCode = EINVAL;
+	goto Bad_Link;
+    }
+
+    /*
+     * Get the vnode and volume for the parent dir along with the caller's
+     * rights to it
+     */
+    if ((errorCode =
+	 GetReplicaVolumePackage(DirFid, &volptr, &parentptr, MustBeDIR,
+			  &parentwhentargetnotdir, WRITE_LOCK))) {
+	goto Bad_Link;
+    }
+
+    /* set volume synchronization information */
+    SetVolumeSync(Sync, volptr);
+
+    /* Can the caller insert into the parent directory? */
+/*
+    if ((errorCode = CheckWriteMode(parentptr, rights, PRSFS_INSERT))) {
+	goto Bad_Link;
+    }
+*/
+
+    if (((DirFid->Vnode & 1) && (ExistingFid->Vnode & 1)) || (DirFid->Vnode == ExistingFid->Vnode)) {	/* at present, */
+	/* AFS fileservers always have directory vnodes that are odd.   */
+	errorCode = EISDIR;
+	goto Bad_Link;
+    }
+
+    if (CheckLength(volptr, parentptr, -1)) {
+	VTakeOffline(volptr);
+	errorCode = VSALVAGE;
+	goto Bad_Link;
+    }
+
+    /* get the file vnode  */
+    if ((errorCode =
+	 CheckVnode(ExistingFid, &volptr, &targetptr, WRITE_LOCK))) {
+	goto Bad_Link;
+    }
+    if (targetptr->disk.type != vFile) {
+	errorCode = EISDIR;
+	goto Bad_Link;
+    }
+    if (targetptr->disk.parent != DirFid->Vnode) {
+	errorCode = EXDEV;
+	goto Bad_Link;
+    }
+    if (parentptr->disk.cloned) {
+	ViceLog(25, ("Link : calling CopyOnWrite on  target dir\n"));
+	if ((errorCode = CopyOnWrite(parentptr, volptr, 0, MAXFSIZE)))
+	    goto Bad_Link;	/* disk full error */
+    }
+
+    /* add the name to the directory */
+    SetDirHandle(&dir, parentptr);
+    if ((errorCode = afs_dir_Create(&dir, Name, ExistingFid)))
+	goto Bad_Link;
+    DFlush();
+
+    /* update the status in the parent vnode */
+    /**WARNING** --> disk.author SHOULDN'T be modified???? */
+#if FS_STATS_DETAILED
+    Update_ReplicaParentVnodeStatus(parentptr, volptr, &dir, client->ViceId,
+			     parentptr->disk.linkCount);
+#else
+    Update_ReplicaParentVnodeStatus(parentptr, volptr, &dir, client->ViceId,
+			     parentptr->disk.linkCount);
+#endif /* FS_STATS_DETAILED */
+
+    targetptr->disk.linkCount++;
+    targetptr->disk.author = client->ViceId;
+    targetptr->changed_newTime = 1;	/* Status change of linked-to file */
+
+    /* set up return status */
+/*
+    GetStatus(targetptr, OutFidStatus, rights, anyrights, parentptr);
+*/
+    GetStatus(parentptr, OutDirStatus, rights, anyrights, 0);
+
+    /* convert the write locks to read locks before breaking callbacks */
+    VVnodeWriteToRead(&errorCode, targetptr);
+    osi_Assert(!errorCode || errorCode == VSALVAGE);
+    VVnodeWriteToRead(&errorCode, parentptr);
+    osi_Assert(!errorCode || errorCode == VSALVAGE);
+
+    /* break call back on DirFid */
+    BreakCallBack(client->host, DirFid, 0);
+    /*
+     * We also need to break the callback for the file that is hard-linked since part
+     * of its status (like linkcount) is changed
+     */
+    BreakCallBack(client->host, ExistingFid, 0);
+
+  Bad_Link:
+    /* Write the all modified vnodes (parent, new files) and volume back */
+    (void)PutReplicaVolumePackage(targetptr, parentptr, volptr);
+    FidZap(&dir);
+    ViceLog(2, ("SRXAFS_RLink returns %d\n", errorCode));
+    return errorCode;
+
+}				/*SRXAFS_RLink */
 
 afs_int32
 SRXAFS_Link(struct rx_call * acall, struct AFSFid * DirFid, char *Name,
@@ -4372,6 +5007,8 @@ SRXAFS_Link(struct rx_call * acall, struct AFSFid * DirFid, char *Name,
                AUD_ID, t_client ? t_client->ViceId : 0,
                AUD_FID, DirFid, AUD_STR, Name,
 	       AUD_FID, ExistingFid, AUD_END);
+    PushIntoUpdateList(7,DirFid,ExistingFid,Name,NULL,NULL,
+	    Sync,NULL,0,0,0,t_client ? t_client->ViceId : 0);
     return code;
 
 }				/*SRXAFS_Link */
@@ -4519,7 +5156,7 @@ SRXAFS_MakeDir(struct rx_call * acall, struct AFSFid * DirFid, char *Name,
 	       struct AFSFetchStatus * OutDirStatus,
 	       struct AFSCallBack * CallBack, struct AFSVolSync * Sync)
 {
-    afs_int32 code;
+    afs_int32 code, code1;
     struct rx_connection *tcon;
     struct host *thost;
     struct client *t_client = NULL;	/* tmp ptr to client data */
@@ -4545,6 +5182,8 @@ SRXAFS_MakeDir(struct rx_call * acall, struct AFSFid * DirFid, char *Name,
                AUD_ID, t_client ? t_client->ViceId : 0,
                AUD_FID, DirFid, AUD_STR, Name,
 	       AUD_FID, OutFid, AUD_END);
+    code1 = PushIntoUpdateList(2,DirFid,OutFid,Name,NULL,
+		InStatus,Sync,NULL,0,0,0, t_client ? t_client->ViceId : 0);
     return code;
 
 }				/*SRXAFS_MakeDir */
@@ -6939,3 +7578,1425 @@ sys_error_to_et(afs_int32 in)
 	return sys2et[in];
     return in;
 }
+
+static void
+PutReplicaVolumePackage(struct Vnode *targetptr,struct Vnode *parentptr,struct Volume *volptr)
+{
+    int fileCode=0;
+
+    if (targetptr) {
+	VPutVnode(&fileCode,targetptr);
+	assert(!fileCode);
+    }
+    if (parentptr) {
+	VPutVnode(&fileCode,parentptr);
+	assert(!fileCode);
+    }
+    if (volptr) {
+	VPutVolume(volptr);
+    }
+    return;
+}
+
+static afs_int32
+GetReplicaVolumePackage(struct AFSFid *Fid, Volume **volptr,
+	    Vnode **targetptr,int chkforDir, Vnode ** parent, int locktype)
+{
+    struct acl_accessList *aCL;        /* Internal access List */
+    int errorCode = 0;         /* return code to caller */
+    if ((errorCode = CheckVnode(Fid, volptr, targetptr, locktype)))
+	return (errorCode);
+    if (chkforDir) {
+	if (chkforDir == MustNOTBeDIR
+		&& ((*targetptr)->disk.type == vDirectory))
+	    return (EISDIR);
+	else if (chkforDir == MustBeDIR
+		&& ((*targetptr)->disk.type != vDirectory))
+	    return (ENOTDIR);
+    }
+
+/*    ViceLog(0,("ReplicaVolumePackage: CheckVnode is okey\n"));
+       if ((errorCode =
+        SetAccessList(targetptr, volptr, &aCL, &aCLSize, parent,
+                      (chkforDir == MustBeDIR ? (AFSFid *) 0 : Fid),
+                      (chkforDir == MustBeDIR ? 0 : locktype))) != 0)
+       return (errorCode);
+
+    ViceLog(0,("ReplicaVolumePackage: SetAccessList is okey\n"));
+    if (chkforDir == MustBeDIR)
+       assert((*parent) == 0);*/
+
+/*    GetRights(*client, aCL, rights, anyrights);
+
+    if ((*targetptr)->disk.type != vDirectory) {
+       if ((*targetptr)->disk.owner == (*client)->ViceId)
+           (*rights) |= PRSFS_ADMINISTER;
+       else
+       (*rights) &= ~PRSFS_ADMINISTER;
+}
+#ifdef ADMIN_IMPLICIT_LOOKUP
+
+if (!VanillaUser(*client))
+   (*rights) |= PRSFS_LOOKUP;
+#endif*/
+
+    return errorCode;
+}
+
+/* Made Dummy COnnection to make fileserver->fileserver RPC call*/
+struct rx_connection *MakeDummyConnection(afs_int32 serverIp)
+{
+    struct rx_connection *tcon;
+    struct rx_securityClass *sc;
+    afs_uint32 ip = htonl(serverIp);
+
+    /* Make a new connection */
+
+    ViceLog(0,("Initial [%d], Later [%d]\n",serverIp,ip));
+
+    sc = rxnull_NewClientSecurityObject();
+    /*server2_ip = inet_addr(f_ip);*/
+
+    tcon = rx_NewConnection(ip,htons(7000),1,sc,0);
+
+    return tcon;
+}
+
+afs_int32
+DelayedPopFromUpdateList() {
+    struct AFSUpdateListItem *tptr = AFSUpdateListHead;
+    struct AFSUpdateListItem *tptr1 = NULL;
+    struct vldbentry entry;
+    int code1,index;
+    struct rx_connection *tcon = NULL;
+
+    while (tptr != NULL) {
+	ViceLog(0,("Sending updates of %d\n",tptr->RPCCall));
+
+	GetSlaveServersForVolume(&(tptr->InFid1),&entry); /* Should check for
+					    success of this call*/
+
+	/*     ViceLog(0,("Replicas to be updated [%d] for volume [%d]",
+	(&entry)->nServers,tptr->InFid1.Volume));*/
+
+	for (index=0;index<entry.nServers;index++) {
+	    if (!(entry.serverFlags[index] & 0x04)) {/* remove this constant*/
+		/* make connections for each Slave */
+		tcon = MakeDummyConnection(entry.serverNumber[index]);
+
+		switch (tptr->RPCCall) {
+		    case 0: /* CreateFile  = 0 */
+			code1 = RXAFS_RCreateFile(tcon, &(tptr->InFid1),
+			    (tptr->Name1),&(tptr->InStatus),
+			    &(tptr->InFid2), &(tptr->Sync),
+			    tptr->ClientViceId);
+			break;
+		    case 1: /* RemoveFile  = 1 */
+			code1 = RXAFS_RRemoveFile(tcon, &(tptr->InFid1),
+			    (tptr->Name1), &(tptr->Sync), tptr->ClientViceId);
+			break;
+		    case 2: /* MakeDir     = 2 */
+			code1 = RXAFS_RMakeDir(tcon, &(tptr->InFid1),
+			    (tptr->Name1), &(tptr->InStatus), &(tptr->InFid2),
+			    &(tptr->Sync), tptr->ClientViceId);
+			break;
+		    case 3: /* RemoveDir   = 3 */
+			code1 = RXAFS_RRemoveDir(tcon, &(tptr->InFid1),
+			    (tptr->Name1), &(tptr->Sync), tptr->ClientViceId);
+			break;
+		    case 4: /* StoreData64 = 4 */
+			code1 = RXAFS_RStoreData64(tcon, &(tptr->InFid1),
+			    &(tptr->InStatus), tptr->Pos, tptr->Length,
+			    tptr->FileLength, &(tptr->Sync),
+			    tptr->ClientViceId);
+			break;
+		    case 5: /* Rename      = 5 */
+			code1 = RXAFS_RRename(tcon, &(tptr->InFid1),
+			    (tptr->Name1), &(tptr->InFid2), (tptr->Name2),
+			    &(tptr->Sync), tptr->ClientViceId);
+			break;
+		    case 6: /* Symlink     = 6 */
+			code1 = RXAFS_RSymlink(tcon, &(tptr->InFid1),
+			    (tptr->Name1), (tptr->Name2), &(tptr->InStatus),
+			    &(tptr->InFid2), &(tptr->Sync),
+			    tptr->ClientViceId);
+			break;
+		    case 7: /* Link        = 7 */
+			code1 = RXAFS_RLink(tcon, &(tptr->InFid1), (tptr->Name1),
+			    &(tptr->InFid2), &(tptr->Sync), tptr->ClientViceId);
+			break;
+		    case 8: /* StoreACL    = 8 */
+			code1 = RXAFS_RStoreACL(tcon, &(tptr->InFid1),
+			    &(tptr->AccessList), &(tptr->Sync),
+			    tptr->ClientViceId);
+			break;
+		    case 9: /* StoreStatus = 9 */
+			code1 = RXAFS_RStoreStatus(tcon, &(tptr->InFid1),
+			    &(tptr->InStatus), &(tptr->Sync), tptr->ClientViceId);
+			break;
+		    default:
+			ViceLog(0,("Delayed Update failed: Ivalid RPCCall\n"));
+		}
+
+		ViceLog(0,("GSOC-08: RPC Replica Call returned [code = %d]\n",code1));
+	    }
+	}
+
+	UPDATE_LOCK;
+
+	tptr1 = tptr;
+	tptr = tptr->NextItem; /* move to the next item in the list*/
+
+	AFSUpdateListHead = tptr;
+	if(AFSUpdateListTail == tptr1){ /*last item (tail) of the list*/
+	    AFSUpdateListTail = tptr; /* tptr == NULL is we come here*/
+	}
+
+	UPDATE_UNLOCK;
+
+	/* free Name and the AccessList which were allocated independently*/
+	if (tptr1->Name1 != NULL) {
+	    free(tptr1->Name1);
+	}
+	if (tptr1->Name2 != NULL) {
+	    free(tptr1->Name2);
+	}
+	if (tptr1->AccessList.AFSOpaque_val != NULL) {
+	    free(tptr1->AccessList.AFSOpaque_val);
+	}
+
+	ViceLog(0,("GSOC-08: Successfull in freeing\n"));
+
+	free(tptr1); /* Free the memory */
+
+	ViceLog(0,("GSOC-08: This too \n"));
+    }
+
+    ViceLog(0,("GSOC-08: RPC updates successfull\n"));
+
+    return 0;
+}
+
+/* Push into the queue for Lazy Update
+ * Use locks in the critical sections */
+
+afs_int32
+PushIntoUpdateList(afs_int32 pRPCCall, struct AFSFid *pInFid1, struct AFSFid *pInFid2,
+		char *pName1, char *pName2, struct AFSStoreStatus *pInStatus,
+		struct AFSVolSync *pSync, struct AFSOpaque *pAccessList,
+		afs_uint64 pPos, afs_uint64 pLength, afs_uint64 pFileLength, afs_int32 pClientViceId)
+{
+    int errCode = 0;
+    struct AFSUpdateListItem *ptr = NULL;
+
+    ViceLog(0,("PushIntoUpdateList: called \n"));
+
+    ptr = (struct AFSUpdateListItem *)malloc(
+	    sizeof(struct AFSUpdateListItem)*1);
+
+    ptr->RPCCall = pRPCCall;
+    ptr->ClientViceId = pClientViceId;
+    ptr->NextItem = NULL;
+
+    ViceLog(0,("PushIntoUpdateList: assignment okey \n"));
+
+    if (pInFid1) {
+	ptr->InFid1.Volume = pInFid1->Volume;
+	ptr->InFid1.Vnode = pInFid1->Vnode;
+	ptr->InFid1.Unique = pInFid1->Unique;
+    }
+    if (pInFid2) {
+	ptr->InFid2.Volume = pInFid2->Volume;
+	ptr->InFid2.Vnode = pInFid2->Vnode;
+	ptr->InFid2.Unique = pInFid2->Unique;
+    }
+    if (pName1) {
+	if (strlen(pName1) > 0) {
+	    ptr->Name1 = (char *)malloc(sizeof(char)*AFSNAMEMAX);
+	    if (!ptr->Name1) {
+		ViceLog(0,("Name1 allocate memory failed\n"));
+		return -1;
+	    }
+	    strcpy(ptr->Name1,pName1);
+	}
+    } else {
+	ptr->Name1 = NULL;
+    }
+    if (pName2) {
+	if (strlen(pName2) > 0) {
+	    if (pRPCCall == 6) { /* Dont use constants !! */
+		ptr->Name2 = (char *)malloc(sizeof(char)*AFSPATHMAX);
+	    } else {
+		ptr->Name2 = (char *)malloc(sizeof(char)*AFSNAMEMAX);
+	    }
+	    if (!ptr->Name2) {
+		ViceLog(0,("Name2 allocate memory failed\n"));
+		return -1;
+	    }
+	    strcpy(ptr->Name2,pName2);
+	}
+    } else {
+	ptr->Name2 = NULL;
+    }
+
+    if (pInStatus) {
+	ptr->InStatus.Mask = pInStatus->Mask;
+	ptr->InStatus.ClientModTime = pInStatus->ClientModTime;
+	ptr->InStatus.Owner = pInStatus->Owner;
+	ptr->InStatus.Group = pInStatus->Group;
+	ptr->InStatus.UnixModeBits = pInStatus->UnixModeBits;
+	ptr->InStatus.SegSize = pInStatus->SegSize;
+    }
+    if (pSync) {
+	ptr->Sync.spare1 = pSync->spare1;
+	ptr->Sync.spare2 = pSync->spare2;
+	ptr->Sync.spare3 = pSync->spare3;
+	ptr->Sync.spare4 = pSync->spare4;
+	ptr->Sync.spare5 = pSync->spare5;
+	ptr->Sync.spare6 = pSync->spare6;
+    }
+    if (pAccessList) {
+	ptr->AccessList.AFSOpaque_len = pAccessList->AFSOpaque_len;
+	/* Here we need to copy a string*/
+	ptr->AccessList.AFSOpaque_val = malloc(AFSOPAQUEMAX);
+	if (!ptr->AccessList.AFSOpaque_val) {
+	    ViceLog(0,("AFSOpaque_val allocate memory failed\n"));
+	    return -1;
+	}
+	strcpy(ptr->AccessList.AFSOpaque_val,
+	pAccessList->AFSOpaque_val);
+    } else {
+	ptr->AccessList.AFSOpaque_val = NULL;
+    }
+
+    ptr->Pos = pPos;
+    ptr->Length = pLength;
+    ptr->FileLength = pFileLength;
+
+
+    UPDATE_LOCK;
+    if ((AFSUpdateListTail == NULL)||(AFSUpdateListHead == NULL)) { /* No Item*/
+	ViceLog(0,("GSOC-08: PushIntoUpdateList: First item \n"));
+
+	AFSUpdateListHead = ptr;
+	AFSUpdateListTail = ptr;
+    } else {
+	ViceLog(0,("GSOC-08: PushIntoUpdateList: New item \n"));
+	AFSUpdateListTail->NextItem = ptr;
+	AFSUpdateListTail = ptr;
+    }
+
+    UPDATE_UNLOCK;
+
+    ViceLog(0,("GSOC-08: PushIntoUpdateList: seems okey [%d]\n",pRPCCall));
+
+    return errCode;
+}
+
+static afs_int32
+Alloc_ReplicaNewVnode(Vnode * parentptr, DirHandle * dir, Volume * volptr,
+	Vnode ** targetptr, char *Name, struct AFSFid *InFid,
+	int FileType, afs_sfsize_t BlocksPreallocatedForVnode)
+{
+    int errorCode = 0;         /* Error code returned back */
+    int temp;
+    Inode inode = 0;
+    Inode nearInode AFS_UNUSED;           /* hint for inode allocation in solaris */
+
+    if ((errorCode = AdjustDiskUsage(volptr, BlocksPreallocatedForVnode,
+	    BlocksPreallocatedForVnode))) {
+	ViceLog(0,
+	    ("Insufficient space to allocate %lld blocks\n",
+	    (afs_intmax_t) BlocksPreallocatedForVnode));
+	return (errorCode);
+    }
+
+    /*    *targetptr = VAllocVnode(&errorCode, volptr, FileType);*/
+
+    VOL_LOCK;
+    *targetptr = VAllocReplicaVnode(&errorCode, volptr, InFid->Vnode,
+                                   InFid->Unique, FileType);
+    VOL_UNLOCK;
+
+    if (errorCode != 0) {
+	VAdjustDiskUsage(&temp, volptr, -BlocksPreallocatedForVnode, 0);
+	return (errorCode);
+    }
+
+    if (InFid->Volume == V_id(volptr)){
+	(*targetptr)->vnodeNumber = InFid->Vnode;
+	(*targetptr)->disk.uniquifier = InFid->Unique;
+    } else {
+	ViceLog(0,("GSOC-08 : Alloc_ReplicaNewVnode: This Does not make sense"));
+    }
+
+    nearInode = VN_GET_INO(parentptr); /* parent is also in same vol */
+
+    /* create the inode now itself */
+    inode = IH_CREATE(V_linkHandle(volptr), V_device(volptr),
+	    VPartitionPath(V_partition(volptr)), nearInode,
+	    V_id(volptr), (*targetptr)->vnodeNumber,
+	    (*targetptr)->disk.uniquifier, 1);
+    /* error in creating inode */
+    if (!VALID_INO(inode)) {
+	ViceLog(0,
+		("Volume : %u vnode = %u Failed to create inode: errno = %d\n",
+		(*targetptr)->volumePtr->header->diskstuff.id,
+		(*targetptr)->vnodeNumber, errno));
+	VAdjustDiskUsage(&temp, volptr, -BlocksPreallocatedForVnode, 0);
+	(*targetptr)->delete = 1;       /* delete vnode */
+	return ENOSPC;
+    }
+    VN_SET_INO(*targetptr, inode);
+    IH_INIT(((*targetptr)->handle), V_device(volptr), V_id(volptr), inode);
+
+    /* copy group from parent dir */
+    (*targetptr)->disk.group = parentptr->disk.group;
+
+    if (parentptr->disk.cloned) {
+	ViceLog(25, ("Alloc_NewVnode : CopyOnWrite called\n"));
+	if ((errorCode = CopyOnWrite(parentptr, volptr))) {     /* disk full */
+	    ViceLog(25, ("Alloc_NewVnode : CopyOnWrite failed\n"));
+	    /* delete the vnode previously allocated */
+	    (*targetptr)->delete = 1;
+	    VAdjustDiskUsage(&temp, volptr, -BlocksPreallocatedForVnode, 0);
+	    IH_REALLYCLOSE((*targetptr)->handle);
+	    if (IH_DEC(V_linkHandle(volptr), inode, V_parentId(volptr)))
+		ViceLog(0,
+		    ("Alloc_NewVnode: partition %s idec %s failed\n",
+		    volptr->partition->name, PrintInode(NULL, inode)));
+	    IH_RELEASE((*targetptr)->handle);
+
+	    return errorCode;
+	}
+    }
+
+    /* add the name to the directory */
+    SetDirHandle(dir, parentptr);
+    if ((errorCode = afs_dir_Create(dir, (char *)Name, InFid))) {
+	(*targetptr)->delete = 1;
+	VAdjustDiskUsage(&temp, volptr, -BlocksPreallocatedForVnode, 0);
+	IH_REALLYCLOSE((*targetptr)->handle);
+	if (IH_DEC(V_linkHandle(volptr), inode, V_parentId(volptr)))
+	    ViceLog(0,
+		("Alloc_NewVnode: partition %s idec %s failed\n",
+		volptr->partition->name, PrintInode(NULL, inode)));
+	IH_RELEASE((*targetptr)->handle);
+	return (errorCode);
+    }
+    DFlush();
+    return (0);
+
+}                              /*Alloc_ReplicaNewVnode */
+
+/*
+ * Returns saying that you are a vanilla user
+ */
+static afs_int32
+ReplicaVanillaUser(struct client *client)
+{
+    return 0;
+}
+
+
+/*
+ * This routine updates the parent directory's status block
+ * at the replica after the
+ * specified operation (i.e. RemoveFile(), CreateFile(), Rename(),
+ * SymLink(), Link(), MakeDir(), RemoveDir()) on one of its children has
+ * been performed.
+ */
+
+static void
+Update_ReplicaParentVnodeStatus(Vnode * parentptr, Volume * volptr,
+	DirHandle * dir, int ClientViceId, int linkcount )
+{
+    char InSameNetwork = 1;
+
+    /* update the status of the parent vnode */
+#if FS_STATS_DETAILED
+    Update_ParentVnodeStatus(parentptr, volptr, dir, ClientViceId,
+	    parentptr->disk.linkCount, InSameNetwork);
+#else
+    Update_ParentVnodeStatus(parentptr, volptr, dir, ClientViceId,
+	    parentptr->disk.linkCount);
+#endif
+/* FS_STATS_DETAILED */
+}
+
+/* Get all the RWSL servers for the Volume*/
+int GetSlaveServersForVolume(struct AFSFid *Fid,
+	struct vldbentry *entry)
+{
+    static struct rx_connection *vlConn = 0;
+    static int down = 0;
+    static afs_int32 lastDownTime = 0;
+    struct rx_securityClass *vlSec;
+    register afs_int32 code;
+
+    ViceLog(0,("The VLDB is [%d]\n",queryDbserver));
+
+    if (!vlConn) {
+	vlSec = rxnull_NewClientSecurityObject();
+	vlConn =
+	    rx_NewConnection(queryDbserver, htons(7003), 52, vlSec, 0);
+	rx_SetConnDeadTime(vlConn, 15); /* don't wait long */
+    }
+    if (down && (FT_ApproxTime() < lastDownTime + 180)) {
+	ViceLog(0,("Some kind of Failure\n")); /**/
+    }
+
+    code = VL_GetEntryByID(vlConn, Fid->Volume, RWVOL, entry);
+    if (code >= 0){
+	down = 0;               /* call worked */
+    }
+    if (code) {
+	if (code < 0) {
+	    lastDownTime = FT_ApproxTime();     /* last time we tried an RPC */
+	    down = 1;
+	}
+	ViceLog(0,("Another kind of Failure\n")); /**/
+	return 1;
+    }
+
+    return 0;
+}
+
+
+  afs_int32
+SRXAFS_RStoreData64(struct rx_call *acall, struct AFSFid *Fid,
+		   struct AFSStoreStatus *InStatus, afs_fsize_t Pos,
+		   afs_fsize_t Length, afs_fsize_t FileLength,
+		   struct AFSVolSync *Sync, afs_int32 clientViceId)
+{
+    Vnode *targetptr = 0;	/* pointer to input fid */
+    Vnode *parentwhentargetnotdir = 0;	/* parent of Fid to get ACL */
+    int errorCode = 0;		/* return code for caller */
+    Volume *volptr = 0;		/* pointer to the volume header */
+#if FS_STATS_DETAILED
+    struct fs_stats_opTimingData *opP;	/* Ptr to this op's timing struct */
+    struct fs_stats_xferData *xferP;	/* Ptr to this op's byte size struct */
+    struct timeval opStartTime;	/* Start/stop times for RPC op */
+    struct timeval xferStartTime, xferStopTime;	/* Start/stop times for xfer portion */
+    struct timeval elapsedTime;	/* Transfer time */
+    afs_sfsize_t bytesToXfer;	/* # bytes to xfer */
+    afs_sfsize_t bytesXferred;	/* # bytes actually xfer */
+    static afs_int32 tot_bytesXferred;	/* shared access protected by FS_LOCK */
+
+    /*
+     * Set our stats pointers, remember when the RPC operation started, and
+     * tally the operation.
+     */
+    opP = &(afs_FullPerfStats.det.rpcOpTimes[FS_STATS_RPCIDX_STOREDATA]);
+    xferP = &(afs_FullPerfStats.det.xferOpTimes[FS_STATS_XFERIDX_STOREDATA]);
+    FS_LOCK;
+    (opP->numOps)++;
+    FS_UNLOCK;
+
+
+    ViceLog(0,
+	    ("ReplicaStoreData: Fid = %u.%u.%u\n", Fid->Volume, Fid->Vnode,
+	     Fid->Unique));
+
+    TM_GetTimeOfDay(&opStartTime, 0);
+#endif /* FS_STATS_DETAILED */
+
+    FS_LOCK;
+    AFSCallStats.StoreData++, AFSCallStats.TotalCalls++;
+    FS_UNLOCK;
+
+
+    /* Get ptr to client data for user Id for logging */
+/*    t_client = (struct client *)rx_GetSpecific(tcon, rxcon_client_key);
+
+    tcon = rx_ConnectionOf(acall);*/
+
+	ViceLog(0,("GSOC-08: rx_ConnectionOf Ok\n"));
+
+  /*  logHostAddr.s_addr = rxr_HostOf(tcon);
+    ViceLog(0,
+	    ("StoreData: Fid = %u.%u.%u, Host %s:%d, Id %d\n", Fid->Volume,
+	     Fid->Vnode, Fid->Unique, inet_ntoa(logHostAddr),
+	     ntohs(rxr_PortOf(tcon)), t_client->ViceId));*/
+
+    /*
+     * Get associated volume/vnode for the stored file; caller's rights
+     * are also returned
+     */
+    if ((errorCode =
+	 GetReplicaVolumePackage( Fid, &volptr, &targetptr, MustNOTBeDIR,
+		 &parentwhentargetnotdir, WRITE_LOCK))) {
+
+    /* Get the updated File's status back to the caller */
+/*    GetStatus(targetptr, OutStatus, rights, anyrights,
+	      &tparentwhentargetnotdir);*/
+	ViceLog(0,("GSOC-08: RStoreData64 : GetReplicaVolumePackage Failed [%d]\n",errorCode));
+	goto Bad_RStoreData;
+    }
+
+	ViceLog(0,("GSOC-08: RStoreData64 : GetReplicaVolumePackage Ok\n"));
+
+    /* set volume synchronization information */
+    SetVolumeSync(Sync, volptr);
+
+    if ((targetptr->disk.type == vSymlink)) {
+	/* Should we return a better error code here??? */
+	errorCode = EISDIR;
+
+	ViceLog(0,("GSOC-08: RStoreData64 : vSymlink heck failed\n"));
+	goto Bad_RStoreData;
+    }
+
+
+#if FS_STATS_DETAILED
+    /*
+     * Remember when the data transfer started.
+     */
+    TM_GetTimeOfDay(&xferStartTime, 0);
+#endif /* FS_STATS_DETAILED */
+
+    /* Do the actual storing of the data */
+#if FS_STATS_DETAILED
+    errorCode =
+	ReplicaStoreData_RXStyle(volptr, targetptr, Fid, acall, Pos, Length,
+			  FileLength, (InStatus->Mask & AFS_FSYNC),
+			  &bytesToXfer, &bytesXferred);
+#else
+    errorCode =
+	ReplicaStoreData_RXStyle(volptr, targetptr, Fid, acall, Pos, Length,
+			  FileLength, (InStatus->Mask & AFS_FSYNC));
+
+	ViceLog(0,("GSOC-08: RStoreData64 : ReplicaStoreData_RXStyle Ok\n"));
+
+    if (errorCode && (!targetptr->changed_newTime))
+	goto Bad_RStoreData;
+#endif /* FS_STATS_DETAILED */
+#if FS_STATS_DETAILED
+    /*
+     * At this point, the data transfer is done, for good or ill.  Remember
+     * when the transfer ended, bump the number of successes/failures, and
+     * integrate the transfer size and elapsed time into the stats.  If the
+     * operation failed, we jump to the appropriate point.
+     */
+    TM_GetTimeOfDay(&xferStopTime, 0);
+    FS_LOCK;
+    (xferP->numXfers)++;
+    if (!errorCode) {
+	(xferP->numSuccesses)++;
+
+	/*
+	 * Bump the xfer sum by the number of bytes actually sent, NOT the
+	 * target number.
+	 */
+	tot_bytesXferred += bytesXferred;
+	(xferP->sumBytes) += (tot_bytesXferred >> 10);
+	tot_bytesXferred &= 0x3FF;
+	if (bytesXferred < xferP->minBytes)
+	    xferP->minBytes = bytesXferred;
+	if (bytesXferred > xferP->maxBytes)
+	    xferP->maxBytes = bytesXferred;
+
+	/*
+	 * Tally the size of the object.  Note: we tally the actual size,
+	 * NOT the number of bytes that made it out over the wire.
+	 */
+	if (bytesToXfer <= FS_STATS_MAXBYTES_BUCKET0)
+	    (xferP->count[0])++;
+	else if (bytesToXfer <= FS_STATS_MAXBYTES_BUCKET1)
+	    (xferP->count[1])++;
+	else if (bytesToXfer <= FS_STATS_MAXBYTES_BUCKET2)
+	    (xferP->count[2])++;
+	else if (bytesToXfer <= FS_STATS_MAXBYTES_BUCKET3)
+	    (xferP->count[3])++;
+	else if (bytesToXfer <= FS_STATS_MAXBYTES_BUCKET4)
+	    (xferP->count[4])++;
+	else if (bytesToXfer <= FS_STATS_MAXBYTES_BUCKET5)
+	    (xferP->count[5])++;
+	else if (bytesToXfer <= FS_STATS_MAXBYTES_BUCKET6)
+	    (xferP->count[6])++;
+	else if (bytesToXfer <= FS_STATS_MAXBYTES_BUCKET7)
+	    (xferP->count[7])++;
+	else
+	    (xferP->count[8])++;
+
+	fs_stats_GetDiff(elapsedTime, xferStartTime, xferStopTime);
+	fs_stats_AddTo((xferP->sumTime), elapsedTime);
+	fs_stats_SquareAddTo((xferP->sqrTime), elapsedTime);
+	if (fs_stats_TimeLessThan(elapsedTime, (xferP->minTime))) {
+	    fs_stats_TimeAssign((xferP->minTime), elapsedTime);
+	}
+	if (fs_stats_TimeGreaterThan(elapsedTime, (xferP->maxTime))) {
+	    fs_stats_TimeAssign((xferP->maxTime), elapsedTime);
+	}
+    }
+    FS_UNLOCK;
+    /*
+     * Finally, go off to tell our caller the bad news in case the
+     * store failed.
+     */
+    if (errorCode && (!targetptr->changed_newTime))
+	goto Bad_RStoreData;
+#endif /* FS_STATS_DETAILED */
+
+    ViceLog(0,("GSOC-08: RStoreData64 : Everything good before Update_ReplicaTargetVnode\n"));
+
+    /* Update the status of the target's vnode */
+    Update_ReplicaTargetVnodeStatus(targetptr, TVS_SDATA, InStatus,
+			     targetptr, volptr, 0, clientViceId);
+
+
+    ViceLog(0,("GSOC-08: RStoreData64 : Update_ReplicaTargetVnode Ok\n"));
+
+
+  Bad_RStoreData:
+    /* Update and store volume/vnode and parent vnodes back */
+    (void)PutReplicaVolumePackage( targetptr, (Vnode *) 0,
+			   volptr);
+
+    ViceLog(0, ("SAFS_StoreData	returns	%d\n", errorCode));
+
+    return (errorCode);
+}				/*common_StoreData64 */
+
+static void
+Update_ReplicaTargetVnodeStatus(Vnode * targetptr, afs_uint32 Caller,
+			 AFSStoreStatus * InStatus,
+			 Vnode * parentptr, Volume * volptr,
+			 afs_fsize_t length, afs_int32 ClientViceId)
+ {
+    struct client *client = 0;	/* pointer to client structure */
+    int clientInSameNetwork = 1; /* in the same network,
+				    this also needs to be passed from the
+				    Primary fileserver*/
+
+ #if FS_STATS_DETAILED
+    Date currDate;		/*Current date */
+    int writeIdx;		/*Write index to bump */
+    int timeIdx;		/*Authorship time index to bump */
+#endif /* FS_STATS_DETAILED */
+
+    if (Caller & (TVS_CFILE | TVS_SLINK | TVS_MKDIR)) {	/* initialize new file */
+	targetptr->disk.parent = parentptr->vnodeNumber;
+	VN_SET_LEN(targetptr, length);
+	/* targetptr->disk.group =      0;  save some cycles */
+	targetptr->disk.modeBits = 0777;
+	targetptr->disk.owner = ClientViceId;
+	targetptr->disk.dataVersion = 0;	/* consistent with the client */
+	targetptr->disk.linkCount = (Caller & TVS_MKDIR ? 2 : 1);
+	/* the inode was created in Alloc_NewVnode() */
+    }
+#if FS_STATS_DETAILED
+     /*
+     * Update file write stats for this volume.  Note that the auth
+     * counter is located immediately after its associated ``distance''
+     * counter.
+      */
+    if (clientInSameNetwork)
+	writeIdx = VOL_STATS_SAME_NET;
+    else
+	writeIdx = VOL_STATS_DIFF_NET;
+    V_stat_writes(volptr, writeIdx)++;
+    if (ClientViceId != AnonymousID) {
+	V_stat_writes(volptr, writeIdx + 1)++;
+     }
+
+     /*
+     * We only count operations that DON'T involve creating new objects
+     * (files, symlinks, directories) or simply setting status as
+     * authorship-change operations.
+      */
+    if (!(Caller & (TVS_CFILE | TVS_SLINK | TVS_MKDIR | TVS_SSTATUS))) {
+	/*
+	 * Update the volume's authorship information in response to this
+	 * file operation.  Get the current time, decide to which time
+	 * slot this operation belongs, and bump the appropriate slot.
+	 */
+	currDate = (FT_ApproxTime() - targetptr->disk.unixModifyTime);
+	timeIdx =
+	    (currDate <
+	     VOL_STATS_TIME_CAP_0 ? VOL_STATS_TIME_IDX_0 : currDate <
+	     VOL_STATS_TIME_CAP_1 ? VOL_STATS_TIME_IDX_1 : currDate <
+	     VOL_STATS_TIME_CAP_2 ? VOL_STATS_TIME_IDX_2 : currDate <
+	     VOL_STATS_TIME_CAP_3 ? VOL_STATS_TIME_IDX_3 : currDate <
+	     VOL_STATS_TIME_CAP_4 ? VOL_STATS_TIME_IDX_4 :
+	     VOL_STATS_TIME_IDX_5);
+	if (targetptr->disk.author == ClientViceId) {
+	    V_stat_fileSameAuthor(volptr, timeIdx)++;
+	} else {
+	    V_stat_fileDiffAuthor(volptr, timeIdx)++;
+	}
+    }
+#endif /* FS_STATS_DETAILED */
+    if (!(Caller & TVS_SSTATUS))
+	targetptr->disk.author = ClientViceId;
+    if (Caller & TVS_SDATA) {
+	targetptr->disk.dataVersion++;
+	if (ReplicaVanillaUser(client)) {
+	    targetptr->disk.modeBits &= ~04000;	/* turn off suid for file. */
+#ifdef CREATE_SGUID_ADMIN_ONLY
+	    targetptr->disk.modeBits &= ~02000;	/* turn off sgid for file. */
+#endif
+	}
+    }
+    if (Caller & TVS_SSTATUS) {	/* update time on non-status change */
+	/* store status, must explicitly request to change the date */
+	if (InStatus->Mask & AFS_SETMODTIME)
+	    targetptr->disk.unixModifyTime = InStatus->ClientModTime;
+    } else {			/* other: date always changes, but perhaps to what is specified by caller */
+	targetptr->disk.unixModifyTime =
+	    (InStatus->Mask & AFS_SETMODTIME ? InStatus->
+	     ClientModTime : FT_ApproxTime());
+    }
+    if (InStatus->Mask & AFS_SETOWNER) {
+	/* admin is allowed to do chmod, chown as well as chown, chmod. */
+	if (ReplicaVanillaUser(client)) {
+	    targetptr->disk.modeBits &= ~04000;	/* turn off suid for file. */
+#ifdef CREATE_SGUID_ADMIN_ONLY
+	    targetptr->disk.modeBits &= ~02000;	/* turn off sgid for file. */
+#endif
+	}
+	targetptr->disk.owner = InStatus->Owner;
+	if (VolumeRootVnode(targetptr)) {
+	    Error errorCode = 0;	/* what should be done with this? */
+
+	    V_owner(targetptr->volumePtr) = InStatus->Owner;
+	    VUpdateVolume(&errorCode, targetptr->volumePtr);
+	}
+     }
+    if (InStatus->Mask & AFS_SETMODE) {
+	int modebits = InStatus->UnixModeBits;
+#define	CREATE_SGUID_ADMIN_ONLY 1
+#ifdef CREATE_SGUID_ADMIN_ONLY
+	if (ReplicaVanillaUser(client))
+	    modebits = modebits & 0777;
+#endif
+	if (ReplicaVanillaUser(client)) {
+	    targetptr->disk.modeBits = modebits;
+	} else {
+	    targetptr->disk.modeBits = modebits;
+	    switch (Caller) {
+	    case TVS_SDATA:
+		osi_audit(PrivSetID, 0, AUD_ID, ClientViceId, AUD_INT,
+			  CHK_STOREDATA, AUD_END);
+		break;
+	    case TVS_CFILE:
+	    case TVS_SSTATUS:
+		osi_audit(PrivSetID, 0, AUD_ID, ClientViceId, AUD_INT,
+			  CHK_STORESTATUS, AUD_END);
+		break;
+	    default:
+		break;
+	    }
+	}
+    }
+    targetptr->disk.serverModifyTime = FT_ApproxTime();
+    if (InStatus->Mask & AFS_SETGROUP)
+	targetptr->disk.group = InStatus->Group;
+    /* vnode changed : to be written back by VPutVnode */
+    targetptr->changed_newTime = 1;
+}				/*Update_ReplicaTargetVnodeStatus */
+
+
+afs_int32
+SRXAFS_RStoreACL(struct rx_call * acall, struct AFSFid * Fid,
+		struct AFSOpaque * AccessList, struct AFSVolSync * Sync,
+		afs_int32 clientViceId)
+{
+    Vnode *targetptr = 0;	/* pointer to input fid */
+    Vnode *parentwhentargetnotdir = 0;	/* parent of Fid to get ACL */
+    int errorCode = 0;		/* return code for caller */
+    Volume *volptr = 0;		/* pointer to the volume header */
+    struct rx_connection *tcon;
+    struct client *t_client = NULL;	/* tmp ptr to client data */
+    struct in_addr logHostAddr;	/* host ip holder for inet_ntoa */
+#if FS_STATS_DETAILED
+    struct fs_stats_opTimingData *opP;	/* Ptr to this op's timing struct */
+    struct timeval opStartTime;	/* Start/stop times for RPC op */
+
+    ViceLog(0,("GSOC: RStoreACL start\n"));
+
+    /*
+     * Set our stats pointer, remember when the RPC operation started, and
+     * tally the operation.
+     */
+    opP = &(afs_FullPerfStats.det.rpcOpTimes[FS_STATS_RPCIDX_STOREACL]);
+    FS_LOCK;
+    (opP->numOps)++;
+    FS_UNLOCK;
+    TM_GetTimeOfDay(&opStartTime, 0);
+#endif /* FS_STATS_DETAILED */
+  /*  if ((errorCode = CallPreamble(acall, ACTIVECALL, &tcon, &thost)))
+	goto Bad_StoreACL;*/
+
+    /* Get ptr to client data for user Id for logging */
+/*    t_client = (struct client *)rx_GetSpecific(tcon, rxcon_client_key);
+    logHostAddr.s_addr = rxr_HostOf(tcon);*/
+    ViceLog(0,
+	    ("SAFS_RStoreACL, Fid = %u.%u.%u, ACL=%s, Host %s:%d, Id %d\n",
+	     Fid->Volume, Fid->Vnode, Fid->Unique, AccessList->AFSOpaque_val,
+	     inet_ntoa(logHostAddr), ntohs(rxr_PortOf(tcon)), t_client->ViceId));
+    FS_LOCK;
+    AFSCallStats.StoreACL++, AFSCallStats.TotalCalls++;
+    FS_UNLOCK;
+
+    /*
+     * Get associated volume/vnode for the target dir; caller's rights
+     * are also returned.
+     */
+    if ((errorCode =
+	 GetReplicaVolumePackage( Fid, &volptr, &targetptr,
+		 MustBeDIR, &parentwhentargetnotdir, WRITE_LOCK))) {
+	    ViceLog(0,("GSOC: GetReplicaVolumePackage failed\n"));
+	goto Bad_RStoreACL;
+    }
+
+    /* set volume synchronization information */
+    SetVolumeSync(Sync, volptr);
+
+    /* Check if we have permission to change the dir's ACL */
+/*    if ((errorCode =
+	 Check_PermissionRights(targetptr, client, rights, CHK_STOREACL,
+				&InStatus))) {
+	goto Bad_StoreACL;
+    }*/
+
+    /* Build and store the new Access List for the dir */
+    if ((errorCode = RXStore_AccessList(targetptr, AccessList))) {
+	    ViceLog(0,("GSOC: RXStore_AccessList failed\n"));
+	goto Bad_RStoreACL;
+    }
+
+    targetptr->changed_newTime = 1;	/* status change of directory */
+
+    /* convert the write lock to a read lock before breaking callbacks */
+/*    VVnodeWriteToRead(&errorCode, targetptr);
+    assert(!errorCode || errorCode == VSALVAGE);*/
+
+    /* break call backs on the directory  */
+/*    BreakCallBack(client->host, Fid, 0);*/
+
+    /* Get the updated dir's status back to the caller */
+/*    GetStatus(targetptr, OutStatus, rights, anyrights, 0);*/
+
+  Bad_RStoreACL:
+    /* Update and store volume/vnode and parent vnodes back */
+    PutReplicaVolumePackage( targetptr, (Vnode *) 0, volptr);
+
+    ViceLog(0, ("SAFS_RStoreACL returns %d\n", errorCode));
+
+    return errorCode;
+}				/*SRXAFS_RStoreACL */
+
+
+afs_int32
+SRXAFS_RStoreStatus(struct rx_call *acall, struct AFSFid *Fid,
+		  struct AFSStoreStatus *InStatus, struct AFSVolSync *Sync,
+		  afs_int32 clientViceId)
+{
+    Vnode *targetptr = 0;	/* pointer to input fid */
+    Vnode *parentwhentargetnotdir = 0;	/* parent of Fid to get ACL */
+    int errorCode = 0;		/* return code for caller */
+    Volume *volptr = 0;		/* pointer to the volume header */
+
+    ViceLog(0,("GSOC-08: RStoreStatus start\n"));
+
+    /* Get ptr to client data for user Id for logging */
+/*    t_client = (struct client *)rx_GetSpecific(tcon, rxcon_client_key);
+    logHostAddr.s_addr = rxr_HostOf(tcon);
+    ViceLog(0,
+	    ("SAFS_RStoreStatus,  Fid	= %u.%u.%u, Host %s:%d, Id %d\n",
+	     Fid->Volume, Fid->Vnode, Fid->Unique, inet_ntoa(logHostAddr),
+	     ntohs(rxr_PortOf(tcon)), t_client->ViceId));*/
+    FS_LOCK;
+    AFSCallStats.StoreStatus++, AFSCallStats.TotalCalls++;
+    FS_UNLOCK;
+    /*
+     * Get volume/vnode for the target file; caller's rights to it are
+     * also returned
+     */
+    if ((errorCode =
+	 GetReplicaVolumePackage(Fid, &volptr, &targetptr, DONTCHECK,
+		 &parentwhentargetnotdir, WRITE_LOCK))) {
+	    ViceLog(0,("GSOC-08: GetReplicaVolumePackage failed\n"));
+	goto Bad_RStoreStatus;
+    }
+
+    /* set volume synchronization information */
+    SetVolumeSync(Sync, volptr);
+
+    /* Check if the caller has proper permissions to store status to Fid */
+/*    if ((errorCode =
+	 Check_PermissionRights(targetptr, client, rights, CHK_STORESTATUS,
+				InStatus))) {
+	goto Bad_StoreStatus;
+    }*/
+    /*
+     * Check for a symbolic link; we can't chmod these (otherwise could
+     * change a symlink to a mt pt or vice versa)
+     */
+    if (targetptr->disk.type == vSymlink && (InStatus->Mask & AFS_SETMODE)) {
+	errorCode = EINVAL;
+	ViceLog(0,("GSOC-08: Something failed\n"));
+	goto Bad_RStoreStatus;
+    }
+
+    /* Update the status of the target's vnode */
+    Update_ReplicaTargetVnodeStatus(targetptr, TVS_SSTATUS, InStatus,
+			     (parentwhentargetnotdir ? parentwhentargetnotdir
+			      : targetptr), volptr, 0, clientViceId);
+
+    /* convert the write lock to a read lock before breaking callbacks */
+/*    VVnodeWriteToRead(&errorCode, targetptr);
+    assert(!errorCode || errorCode == VSALVAGE);*/
+
+    /* Break call backs on Fid */
+/*    BreakCallBack(client->host, Fid, 0);*/
+
+    /* Return the updated status back to caller */
+/*    GetStatus(targetptr, OutStatus, rights, anyrights,
+	      parentwhentargetnotdir);*/
+
+    ViceLog(0,("GSOC-08: RStoreStatus done\n"));
+
+  Bad_RStoreStatus:
+    /* Update and store volume/vnode and parent vnodes back */
+    PutReplicaVolumePackage( targetptr, (Vnode *) 0, volptr);
+    ViceLog(0, ("SAFS_RStoreStatus returns %d\n", errorCode));
+    return errorCode;
+
+}				/*SRXAFS_RStoreStatus */
+
+
+
+afs_int32
+SRXAFS_RRemoveFile(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
+		  struct AFSVolSync *Sync, afs_int32 clientViceId)
+{
+    Vnode *parentptr = 0;	/* vnode of input Directory */
+    Vnode *parentwhentargetnotdir = 0;	/* parent for use in SetAccessList */
+    Vnode *targetptr = 0;	/* file to be deleted */
+    Volume *volptr = 0;		/* pointer to the volume header */
+    AFSFid fileFid;		/* area for Fid from the directory */
+    int errorCode = 0;		/* error code */
+    DirHandle dir;		/* Handle for dir package I/O */
+    struct client *t_client;	/* tmp ptr to client data */
+    struct in_addr logHostAddr;	/* host ip holder for inet_ntoa */
+    struct rx_connection *tcon = rx_ConnectionOf(acall);
+
+    ViceLog(0, ("SRXAFS_RRemoveFile Called \n"));
+
+    FidZero(&dir);
+    /* Get ptr to client data for user Id for logging */
+/*    t_client = (struct client *)rx_GetSpecific(tcon, rxcon_client_key);
+    logHostAddr.s_addr = rxr_HostOf(tcon);*/
+    ViceLog(0,
+	    ("SRXAFS_RRemoveFile %s,  Did = %u.%u.%u, Host %s:%d, Id %d\n", Name,
+	     DirFid->Volume, DirFid->Vnode, DirFid->Unique,
+	     inet_ntoa(logHostAddr), ntohs(rxr_PortOf(tcon)), t_client->ViceId));
+    FS_LOCK;
+    AFSCallStats.RemoveFile++, AFSCallStats.TotalCalls++;
+    FS_UNLOCK;
+    /*
+     * Get volume/vnode for the parent dir; caller's access rights are
+     * also returned
+     */
+    if ((errorCode =
+	 GetReplicaVolumePackage(DirFid, &volptr, &parentptr,
+		 MustBeDIR, &parentwhentargetnotdir, WRITE_LOCK))) {
+
+	ViceLog(0, ("SRXAFS_RRemoveFile : Error in GetReplicaVolumePackage [%d]\n", errorCode));
+	goto Bad_RRemoveFile;
+    }
+
+    ViceLog(0, ("SRXAFS_RRemoveFile : GetReplicaVolumePackage Ok\n"));
+    /* set volume synchronization information */
+    SetVolumeSync(Sync, volptr);
+
+    /* Actually delete the desired file */
+    if ((errorCode =
+	DeleteTarget(parentptr, volptr, &targetptr, &dir, &fileFid, Name,
+		      MustNOTBeDIR))) {
+
+	ViceLog(0, ("SAFS_RRemoveFile : Error in DeleteTarget [%d]\n", errorCode));
+	goto Bad_RRemoveFile;
+    }
+
+    ViceLog(0, ("SRXAFS_RRemoveFile : DeleteTarget Ok\n"));
+    /* Update the vnode status of the parent dir */
+
+    Update_ReplicaParentVnodeStatus(parentptr, volptr, &dir, clientViceId,
+			     parentptr->disk.linkCount);
+
+
+    ViceLog(0, ("SRXAFS_RRemoveFile : ReplicaParentVnodeStatus Ok\n"));
+  Bad_RRemoveFile:
+    /* Update and store volume/vnode and parent vnodes back */
+    PutReplicaVolumePackage(targetptr, parentptr, volptr);
+    FidZap(&dir);
+
+    ViceLog(0, ("SAFS_RRemoveFile returns %d\n", errorCode));
+    return errorCode;
+}				/*SRXAFS_RRemoveFile */
+
+
+/* This is used for fileserver - fileserver communication in RW replication */
+
+afs_int32
+SRXAFS_RCreateFile(struct rx_call * acall, struct AFSFid * DirFid,
+		char *Name, struct AFSStoreStatus * InStatus,
+		struct AFSFid * InFid, struct AFSVolSync * Sync,
+		afs_int32 clientViceId)
+{
+    Vnode *parentptr = 0;	/* vnode of input Directory */
+    Vnode *targetptr = 0;	/* vnode of the new file */
+    Vnode *parentwhentargetnotdir = 0;
+    Volume *volptr = 0;
+    int errorCode=0;
+    DirHandle dir;		/* Handle for dir package I/O */
+    struct client *t_client;	/* tmp ptr to client data */
+    struct in_addr logHostAddr;	/* host ip holder for inet_ntoa */
+    struct rx_connection *tcon = rx_ConnectionOf(acall);
+
+
+    ViceLog(0,("GSOC-08: RCreateFile : DirFid[%d,%d,%d] Name[%s] InFid[%d,%d,%d] InStatus[%d,%d,%d,%d,%d,%d]\n",DirFid->Volume,DirFid->Vnode,DirFid->Unique,Name,InFid->Volume,InFid->Vnode,InFid->Unique,InStatus->Mask,InStatus->ClientModTime,InStatus->Owner,InStatus->Group,InStatus->UnixModeBits,InStatus->SegSize));
+
+    FidZero(&dir);
+
+    ViceLog(0,
+	    ("GSOC-08 SAFS_CreateFile %s,  Did = %u.%u.%u, Host %s:%d, Id %d\n", Name,
+	     DirFid->Volume, DirFid->Vnode, DirFid->Unique,
+	     inet_ntoa(logHostAddr), ntohs(rxr_PortOf(tcon)), t_client->ViceId));
+
+    ViceLog(0,
+	    ("RCreateFile : Fid = %u.%u.%u\n", InFid->Volume, InFid->Vnode,
+	     InFid->Unique));
+
+    FS_LOCK;
+    AFSCallStats.CreateFile++, AFSCallStats.TotalCalls++;
+    FS_UNLOCK;
+    if (!FileNameOK(Name)) {
+	errorCode = EINVAL;
+	ViceLog(0,("GSOC-08: RCreateFile : Error FileName Not Ok \n"));
+	goto Bad_RCreateFile;
+    }
+
+
+    ViceLog(0,("GSOC-08: RCreateFile : FileNameOk \n"));
+
+    if ((errorCode =
+	 GetReplicaVolumePackage(DirFid, &volptr, &parentptr,
+		 MustBeDIR, &parentwhentargetnotdir, WRITE_LOCK))) {
+
+	ViceLog(0,("GSOC-08: RCreateFile: Error in GetReplicaVolumePackage [%d]\n",errorCode));
+	return errorCode;
+    }
+
+    ViceLog(0,("GSOC-08: RCreateFile : GetReplicaVolumePackage Ok \n"));
+
+    SetVolumeSync(Sync,volptr);
+
+    if ((errorCode =
+	 Alloc_ReplicaNewVnode(parentptr, &dir, volptr, &targetptr, Name, InFid,
+			vFile, nBlocks(0)))) {
+	ViceLog(0,("GSOC-08: RCreateFile: Error in Alloc_ReplicaNewVnode [%d]\n",errorCode));
+	goto Bad_RCreateFile;
+    }
+
+
+    ViceLog(0,("GSOC-08: RCreateFile : Alloc_ReplicaNewVnode Ok\n"));
+
+    /* update the status of the parent vnode */
+
+    Update_ReplicaParentVnodeStatus(parentptr, volptr, &dir, clientViceId,
+			     parentptr->disk.linkCount);
+
+    ViceLog(0,("GSOC-08: RCreateFile : Update_ReplicaParentVNodeStatus Ok\n"));
+
+    /* update the status of the new file's vnode */
+    Update_ReplicaTargetVnodeStatus(targetptr, TVS_CFILE, InStatus,
+			     parentptr, volptr, 0, clientViceId);
+
+    ViceLog(0,("GSOC-08: RCreateFile : Update_ReplicaTargetVNodeStatus Ok\n"));
+
+  Bad_RCreateFile:
+    /* Update and store volume/vnode and parent vnodes back */
+    (void)PutReplicaVolumePackage( targetptr, parentptr, volptr);
+
+    FidZap(&dir);
+
+    ViceLog(0,("GSOC-08: RCreateFile : Done \n"));
+    return errorCode;
+}                    /*SRXAFS_RCreateFile*/
+
+
+
+afs_int32
+SRXAFS_RSymlink(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
+	      char *LinkContents, struct AFSStoreStatus *InStatus,
+	      struct AFSFid *InFid, struct AFSVolSync *Sync,
+	      afs_int32 clientViceId)
+{
+    Vnode *parentptr = 0;	/* vnode of input Directory */
+    Vnode *targetptr = 0;	/* vnode of the new link */
+    Vnode *parentwhentargetnotdir = 0;	/* parent for use in SetAccessList */
+    int errorCode = 0;		/* error code */
+    int len, code = 0;
+    DirHandle dir;		/* Handle for dir package I/O */
+    Volume *volptr = 0;		/* pointer to the volume header */
+    struct client *client = 0;	/* pointer to client structure */
+    afs_int32 rights;	/* rights for this and any user */
+    struct client *t_client;	/* tmp ptr to client data */
+    struct in_addr logHostAddr;	/* host ip holder for inet_ntoa */
+    FdHandle_t *fdP;
+    struct rx_connection *tcon = rx_ConnectionOf(acall);
+
+    ViceLog(0,("GSOC-08: RXAFS_RSymlink start\n"));
+
+    FidZero(&dir);
+
+    /* Get ptr to client data for user Id for logging */
+/*    t_client = (struct client *)rx_GetSpecific(tcon, rxcon_client_key);
+    logHostAddr.s_addr = rxr_HostOf(tcon);*/
+    ViceLog(0,
+	    ("SAFS_Symlink %s to %s,  Did = %u.%u.%u, Host %s:%d, Id %d\n", Name,
+	     LinkContents, DirFid->Volume, DirFid->Vnode, DirFid->Unique,
+	     inet_ntoa(logHostAddr), ntohs(rxr_PortOf(tcon)), t_client->ViceId));
+    FS_LOCK;
+    AFSCallStats.Symlink++, AFSCallStats.TotalCalls++;
+    FS_UNLOCK;
+    if (!FileNameOK(Name)) {
+	errorCode = EINVAL;
+	goto Bad_RSymLink;
+    }
+
+    /*
+     * Get the vnode and volume for the parent dir along with the caller's
+     * rights to it
+     */
+    if ((errorCode =
+	 GetReplicaVolumePackage(DirFid, &volptr, &parentptr, MustBeDIR,
+		 &parentwhentargetnotdir, WRITE_LOCK))) {
+	    ViceLog(0,("GSOC-08: GetReplicaVolumePackage failed\n"));
+	goto Bad_RSymLink;
+    }
+
+    /* set volume synchronization information */
+    SetVolumeSync(Sync, volptr);
+
+    /* Does the caller has insert (and write) access to the parent directory? */
+/*    if ((errorCode = CheckWriteMode(parentptr, rights, PRSFS_INSERT))) {
+	goto Bad_SymLink;
+    }*/
+
+    /*
+     * If we're creating a mount point (any x bits clear), we must have
+     * administer access to the directory, too.  Always allow sysadmins
+     * to do this.
+     */
+    if ((InStatus->Mask & AFS_SETMODE) && !(InStatus->UnixModeBits & 0111)) {
+	if (readonlyServer) {
+	    errorCode = VREADONLY;
+	    goto Bad_RSymLink;
+	}
+	/*
+	 * We have a mountpoint, 'cause we're trying to set the Unix mode
+	 * bits to something with some x bits missing (default mode bits
+	 * if AFS_SETMODE is false is 0777)
+	 */
+	if (VanillaUser(client) && !(rights & PRSFS_ADMINISTER)) {
+	    errorCode = EACCES;
+	    goto Bad_RSymLink;
+	}
+    }
+
+    /* get a new vnode for the symlink and set it up */
+    if ((errorCode =
+	 Alloc_ReplicaNewVnode(parentptr, &dir, volptr, &targetptr, Name, InFid,
+			vSymlink, nBlocks(strlen((char *)LinkContents))))) {
+	    ViceLog(0,("GSOC-08: ReplicaNewVnode failed\n"));
+	goto Bad_RSymLink;
+    }
+
+    /* update the status of the parent vnode */
+#if FS_STATS_DETAILED
+    Update_ReplicaParentVnodeStatus(parentptr, volptr, &dir, clientViceId,
+		    parentptr->disk.linkCount);
+#else
+    Update_ReplicaParentVnodeStatus(parentptr, volptr, &dir, clientViceId,
+			     parentptr->disk.linkCount);
+#endif /* FS_STATS_DETAILED */
+
+    /* update the status of the new symbolic link file vnode */
+    Update_ReplicaTargetVnodeStatus(targetptr, TVS_SLINK, InStatus,
+			     parentptr, volptr, strlen((char *)LinkContents),
+			     clientViceId);
+
+    /* Write the contents of the symbolic link name into the target inode */
+    fdP = IH_OPEN(targetptr->handle);
+    if (fdP == NULL) {
+	(void)PutReplicaVolumePackage(targetptr, parentptr, volptr);
+	VTakeOffline(volptr);
+	ViceLog(0, ("Volume %u now offline, must be salvaged.\n",
+		    volptr->hashid));
+	return EIO;
+    }
+    len = strlen((char *) LinkContents);
+    code = (len == FDH_WRITE(fdP, (char *) LinkContents, len)) ? 0 : VDISKFULL;
+    if (code)
+	ViceLog(0, ("SAFSS_Symlink FDH_WRITE failed for len=%d, Fid=%u.%d.%d\n", len, InFid->Volume, InFid->Vnode, InFid->Unique));
+    FDH_CLOSE(fdP);
+    /*
+     * Set up and return modified status for the parent dir and new symlink
+     * to caller.
+     */
+/*    GetStatus(targetptr, OutFidStatus, rights, anyrights, parentptr);
+    GetStatus(parentptr, OutDirStatus, rights, anyrights, 0);*/
+
+    /* convert the write lock to a read lock before breaking callbacks */
+/*    VVnodeWriteToRead(&errorCode, parentptr);
+    assert(!errorCode || errorCode == VSALVAGE);*/
+
+    /* break call back on the parent dir */
+/*    BreakCallBack(client->host, DirFid, 0);*/
+
+    ViceLog(0,("GSOC-08: SRXAFS_RSymlink okey\n"));
+
+  Bad_RSymLink:
+    /* Write the all modified vnodes (parent, new files) and volume back */
+    (void)PutReplicaVolumePackage(targetptr, parentptr, volptr);
+    FidZap(&dir);
+    ViceLog(0, ("SAFS_RSymlink returns %d\n", errorCode));
+    return ( errorCode ? errorCode : code );
+
+}				/*SAFSS_Symlink */
+
+
+
+afs_int32
+SRXAFS_RMakeDir(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
+	      struct AFSStoreStatus *InStatus, struct AFSFid *InFid,
+	      struct AFSVolSync *Sync, afs_int32 clientViceId)
+{
+    Vnode *parentptr = 0;	/* vnode of input Directory */
+    Vnode *targetptr = 0;	/* vnode of the new file */
+    Vnode *parentwhentargetnotdir = 0;	/* parent for use in SetAccessList */
+    Volume *volptr = 0;		/* pointer to the volume header */
+    int errorCode = 0;		/* error code */
+    struct acl_accessList *newACL;	/* Access list */
+    int newACLSize;		/* Size of access list */
+    DirHandle dir;		/* Handle for dir package I/O */
+    DirHandle parentdir;	/* Handle for dir package I/O */
+    struct client *t_client;	/* tmp ptr to client data */
+    struct in_addr logHostAddr;	/* host ip holder for inet_ntoa */
+    struct rx_connection *tcon = rx_ConnectionOf(acall);
+
+    ViceLog(0,("GSOC-8: RMakedir start\n"));
+
+    FidZero(&dir);
+    FidZero(&parentdir);
+
+    ViceLog(0,
+	    ("SRXAFS_RMakeDir %s,  Did = %u.%u.%u, Host %s:%d, Id %d\n", Name,
+	     DirFid->Volume, DirFid->Vnode, DirFid->Unique,
+	     inet_ntoa(logHostAddr), ntohs(rxr_PortOf(tcon)), t_client->ViceId));
+    FS_LOCK;
+    AFSCallStats.MakeDir++, AFSCallStats.TotalCalls++;
+    FS_UNLOCK;
+
+    if (!FileNameOK(Name)) {
+	errorCode = EINVAL;
+	goto Bad_RMakeDir;
+    }
+
+    /*
+     * Get the vnode and volume for the parent dir along with the caller's
+     * rights to it.
+     */
+    if ((errorCode =
+	 GetReplicaVolumePackage(DirFid, &volptr, &parentptr, MustBeDIR,
+		 &parentwhentargetnotdir, WRITE_LOCK))) {
+	    ViceLog(0,("GSOC-8: RMakedir: GetReplicaVolumePackage Failed\n"));
+	goto Bad_RMakeDir;
+    }
+
+    ViceLog(0,("GSOC-8: RMakedir: GetReplicaVolumePackage Okey\n"));
+
+    /* set volume synchronization information */
+    SetVolumeSync(Sync, volptr);
+
+    ViceLog(0,("GSOC-8: RMakedir:SetVolumeSync Okey\n"));
+
+    /* Write access to the parent directory? */
+/*#ifdef DIRCREATE_NEED_WRITE*/
+    /*
+     * requires w access for the user to create a directory. this
+     * closes a loophole in the current security arrangement, since a
+     * user with i access only can create a directory and get the
+     * implcit a access that goes with dir ownership, and proceed to
+     * subvert quota in the volume.
+     */
+/*    if ((errorCode = CheckWriteMode(parentptr, rights, PRSFS_INSERT))
+	|| (errorCode = CheckWriteMode(parentptr, rights, PRSFS_WRITE))) {
+#else
+    if ((errorCode = CheckWriteMode(parentptr, rights, PRSFS_INSERT))) {
+#endif
+	goto Bad_MakeDir;
+    }*/
+#define EMPTYDIRBLOCKS 2
+    /* get a new vnode and set it up */
+    if ((errorCode =
+	 Alloc_ReplicaNewVnode(parentptr, &parentdir, volptr, &targetptr, Name,
+			InFid, vDirectory, EMPTYDIRBLOCKS))) {
+	    ViceLog(0,("GSOC-8: RMakedir: Alloc_ReplicaNewVnode Failed\n"));
+	goto Bad_RMakeDir;
+    }
+
+    ViceLog(0,("GSOC-8: RMakedir: Alloc_ReplicaNewVnode Passed\n"));
+
+    /* Update the status for the parent dir */
+
+    Update_ReplicaParentVnodeStatus(parentptr, volptr, &parentdir, clientViceId,
+			     parentptr->disk.linkCount + 1);
+
+    ViceLog(0,("GSOC-8: ReplicaParentVnodeStatus okey\n"));
+
+    /* Point to target's ACL buffer and copy the parent's ACL contents to it */
+    assert((SetAccessList
+	    (&targetptr, &volptr, &newACL, &newACLSize,
+	     &parentwhentargetnotdir, (AFSFid *) 0, 0)) == 0);
+    ViceLog(0,("GSOC-8: SetAccessList okey\n"));
+
+    assert(parentwhentargetnotdir == 0);
+    ViceLog(0,("GSOC-8: parentwhentargetnotdir okey\n"));
+
+    memcpy((char *)newACL, (char *)VVnodeACL(parentptr), VAclSize(parentptr));
+    ViceLog(0,("GSOC-8: Memcpy is okey\n"));
+
+    /* update the status for the target vnode */
+    Update_ReplicaTargetVnodeStatus(targetptr, TVS_MKDIR, InStatus,
+			     parentptr, volptr, 0, clientViceId);
+
+    ViceLog(0,("GSOC-8: ReplicaTargerVnodeStatus okey\n"));
+
+    /* Actually create the New directory in the directory package */
+    SetDirHandle(&dir, targetptr);
+    ViceLog(0,("GSOC-8: SetDirHandle okey\n"));
+
+    assert(!(afs_dir_MakeDir(&dir, (afs_int32 *)InFid, (afs_int32 *)DirFid)));
+
+    DFlush();
+    VN_SET_LEN(targetptr, (afs_fsize_t) Length(&dir));
+
+    ViceLog(0,("GSOC-8: RMakedir okey\n"));
+
+  Bad_RMakeDir:
+    /* Write the all modified vnodes (parent, new files) and volume back */
+    (void)PutReplicaVolumePackage( targetptr, parentptr, volptr);
+
+    FidZap(&dir);
+    FidZap(&parentdir);
+
+    ViceLog(0, ("SRXAFS_RMakeDir returns %d\n", errorCode));
+
+    return errorCode;
+}				/*SRXAFS_RMakeDir */

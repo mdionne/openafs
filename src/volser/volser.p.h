@@ -36,7 +36,7 @@
 #define volser_RW	0
 #define volser_RO	1
 #define	volser_BACK	2
-define volser_RWSL	3
+#define volser_RWSL	3
 
 #define	THOLD(tt)	((tt)->refCount++)
 
