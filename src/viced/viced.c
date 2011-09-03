@@ -92,6 +92,7 @@ static void ResetCheckSignal(void);
 static void *CheckSignal(void *);
 
 static afs_int32 Do_VLRegisterRPC(void);
+extern afs_int32 DelayedPopFromUpdateList(void);
 
 int eventlog = 0, rxlog = 0;
 FILE *debugFile;
@@ -600,6 +601,31 @@ FsyncCheckLWP(void *unused)
 #endif /* AFS_DEMAND_ATTACH_FS */
     return NULL;
 }
+
+/* This LWP sends updates to replicas every 1 minute: This delay needs
+ * to be determined by some statistics, for now it is just a number that
+ * feels okey
+ */
+static void *
+ReplicaUpdateLWP(void *unused)
+{
+    ViceLog(1, ("Starting ReplicaUpdate process\n"));
+    setThreadId("ReplicaUpdateLWP");
+    while (1) {
+#ifdef AFS_PTHREAD_ENV
+	sleep((fiveminutes/5));
+#else /* AFS_PTHREAD_ENV */
+	IOMGR_Sleep((fiveminutes/5));
+#endif /* AFS_PTHREAD_ENV */
+	ViceLog(0, ("Updating replicas\n"));
+	if (DelayedPopFromUpdateList()) { /* Update Failed*/
+	    ViceLog(0,("Update failed at some place\n"));
+	    /*  return NULL;*/
+	}
+    ViceLog(0,("All the updates passed\n"));
+    }
+    return NULL;
+}                              /*ReplicaUpdateLWP */
 
 /*------------------------------------------------------------------------
  * PRIVATE ClearXStatValues
@@ -1610,6 +1636,9 @@ vl_Initialize(const char *confDir)
 		 info.numServers, MAXSERVERS));
 	exit(1);
     }
+
+    queryDbserver = info.hostAddr[0].sin_addr.s_addr;
+
     for (i = 0; i < info.numServers; i++)
 	serverconns[i] =
 	    rx_NewConnection(info.hostAddr[i].sin_addr.s_addr,
@@ -2269,6 +2298,8 @@ main(int argc, char *argv[])
 	   (&serverPid, &tattr, HostCheckLWP, &fiveminutes) == 0);
     osi_Assert(pthread_create
 	   (&serverPid, &tattr, FsyncCheckLWP, &fiveminutes) == 0);
+    osi_Assert(pthread_create
+	   (&serverPid, &tattr, ReplicaUpdateLWP, &fiveminutes) == 0);
 #else /* AFS_PTHREAD_ENV */
     ViceLog(5, ("Starting LWP\n"));
     osi_Assert(LWP_CreateProcess
@@ -2282,6 +2313,10 @@ main(int argc, char *argv[])
     osi_Assert(LWP_CreateProcess
 	   (FsyncCheckLWP, stack * 1024, LWP_MAX_PRIORITY - 2,
 	    (void *)&fiveminutes, "FsyncCheck", &serverPid) == LWP_SUCCESS);
+    osi_Assert(LWP_CreateProcess
+	    (ReplicaUpdateLWP, stack * 1024, LWP_MAX_PRIORITY - 2,
+	    &fiveminutes, "HostCheck", &serverPid) == LWP_SUCCESS);
+
 #endif /* AFS_PTHREAD_ENV */
 
     FT_GetTimeOfDay(&tp, 0);

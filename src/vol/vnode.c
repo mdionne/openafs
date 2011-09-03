@@ -1806,7 +1806,6 @@ VAllocReplicaVnode(Error * ec, Volume * vp,  VnodeId vnodeNumber,
     bitNumber = vnodeIdToBitNumber(vnodeNumber);
     offset = bitNumber >> 3;
 
-
     /* Mark vnode in use. Grow bitmap if needed. */
     if ((offset >= index->bitmapSize)
 	    || ((*(index->bitmap + offset) & (1 << (bitNumber & 0x7)))
@@ -1856,14 +1855,14 @@ VAllocReplicaVnode(Error * ec, Volume * vp,  VnodeId vnodeNumber,
 	    if (vnp == vcp->lruHead || vcp->lruHead == NULL)
 		Abort("VGetVnode: lru chain addled!\n");
 	    /* This won't block */
-	    ObtainWriteLock(&vnp->lock);
+	    VnLock(vnp, WRITE_LOCK, VOL_LOCK_HELD, WILL_NOT_DEADLOCK);
 	} else {
 	    /* follow locking hierarchy */
 	    VOL_UNLOCK;
-	    ObtainWriteLock(&vnp->lock);
+	    VnLock(vnp, WRITE_LOCK, 0, WILL_NOT_DEADLOCK);
 	    VOL_LOCK;
 	    if (vnp->volumePtr->cacheCheck != vnp->cacheCheck) {
-		ReleaseWriteLock(&vnp->lock);
+		VnUnlock(vnp, WRITE_LOCK);
 		goto vnrehash;
 	    }
 	}
@@ -1891,7 +1890,7 @@ VAllocReplicaVnode(Error * ec, Volume * vp,  VnodeId vnodeNumber,
 	moveHash(vnp, newHash);
 */
 	/* This will never block */
-	ObtainWriteLock(&vnp->lock);
+	VnLock(vnp, WRITE_LOCK, VOL_LOCK_HELD, WILL_NOT_DEADLOCK);
 #ifdef AFS_PTHREAD_ENV
 	vnp->writer = pthread_self();
 #else /* AFS_PTHREAD_ENV */
