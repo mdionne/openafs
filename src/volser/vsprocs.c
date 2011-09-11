@@ -7745,13 +7745,13 @@ UV_RestoreVolume3(afs_int32 toserver, afs_int32 topart, afs_int32 tovolid,
     fprintf(STDOUT, " done\n");
     fflush(STDOUT);
     /* We only have to worry about RW or RWSL after this point as the
-    * +     * entries in the VLDB have to be modified accordingly
-    * +     */
+     * entries in the VLDB have to be modified accordingly
+     */
 
     if (success && (!reuseID || (flags & RV_FULLRST))) {
 	/* Volume was restored on the file server, update the
-	* VLDB to reflect the change.
-	*/
+	 * VLDB to reflect the change.
+	 */
 	vcode = VLDB_GetEntryByID(pvolid, voltype, &entry);
 	if (vcode && vcode != VL_NOENT && vcode != VL_ENTDELETED) {
 	    fprintf(STDERR,
@@ -7762,7 +7762,7 @@ UV_RestoreVolume3(afs_int32 toserver, afs_int32 topart, afs_int32 tovolid,
 	}
 	if (!vcode)
 	    MapHostToNetwork(&entry);
-	if (vcode == VL_NOENT) {        /* it doesnot exist already */
+	if (vcode == VL_NOENT) {        /* it does not exist already */
 	    /*make the vldb return this indication specifically */
 	    VPRINT("------- Creating a new VLDB entry ------- \n");
 	    strcpy(entry.name, tovolname);
@@ -7831,8 +7831,8 @@ UV_RestoreVolume3(afs_int32 toserver, afs_int32 topart, afs_int32 tovolid,
 		entry.nServers++;
 	    } else {
 		/* This volume should be deleted on the old site
-		    * if its different from new site.
-		    */
+		 * if its different from new site.
+		 */
 		same =
 		    VLDB_IsSameAddrs(toserver, entry.serverNumber[index],
 			&errcode);
@@ -7854,17 +7854,17 @@ UV_RestoreVolume3(afs_int32 toserver, afs_int32 topart, afs_int32 tovolid,
 		if (entry.serverNumber[index] == toserver) {
 		    /* this server holds the RW entry*/
 		    /* restore with -seconday or -primary is meaningless */
-		    EPRINT1(errcode,"Restore is meaning less as the server is a RW replica, %d\n",errcode);
+		    EPRINT1(errcode,"Restore is meaningless as the server is a RW replica, %d\n",errcode);
 		} else {
 
 		    /* find if an entry is already present */
-		    for(index1=0;index1<entry.nServers;index1++){
-			if(entry.serverNumber[index1] == toserver){
+		    for (index1=0;index1<entry.nServers;index1++) {
+			if (entry.serverNumber[index1] == toserver) {
 			    break;
 			}
 		    }
 
-		    if(index1 == entry.nServers){ /* make a new entry */
+		    if (index1 == entry.nServers) { /* make a new entry */
 			entry.serverFlags[index] =
 				(rwvoltype & ITSRWVOL) ? ITSRWVOL : ITSRWSLAVE;
 
