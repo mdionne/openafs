@@ -3303,7 +3303,7 @@ AddSite(struct cmd_syndesc *as, void *arock)
 {
     afs_uint32 avolid;
     afs_uint32 aserver;
-    afs_int32 apart, code, err, arovolid, valid = 0;
+    afs_int32 apart, code, err, arovolid, valid = 0, rw = 0;
     char apartName[10], avolname[VOLSER_MAXVOLNAME + 1];
 
     vsu_ExtractName(avolname, as->parms[2].items->data);;
@@ -3350,7 +3350,10 @@ AddSite(struct cmd_syndesc *as, void *arock)
     if (as->parms[4].items) {
 	valid = 1;
     }
-    code = UV_AddSite2(aserver, apart, avolid, arovolid, valid);
+    if (as->parms[5].items) {
+	rw = 1;
+    }
+    code = UV_AddSite(aserver, apart, avolid, arovolid, valid, rw);
     if (code) {
 	PrintDiagnostics("addsite", code);
 	exit(1);
@@ -6046,6 +6049,7 @@ main(int argc, char **argv)
     cmd_AddParm(ts, "-id", CMD_SINGLE, 0, "volume name or ID");
     cmd_AddParm(ts, "-roid", CMD_SINGLE, CMD_OPTIONAL, "volume name or ID for RO");
     cmd_AddParm(ts, "-valid", CMD_FLAG, CMD_OPTIONAL, "publish as an up-to-date site in VLDB");
+    cmd_AddParm(ts, "-rw", CMD_FLAG, CMD_OPTIONAL, "new site is a RW clone");
     COMMONPARMS;
 
     ts = cmd_CreateSyntax("remsite", RemoveSite, NULL,
