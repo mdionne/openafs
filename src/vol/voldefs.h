@@ -24,8 +24,9 @@
 #define RWVOL			0
 #define ROVOL			1
 #define BACKVOL			2
+#define RWSLAVEVOL		3
 
-#define VOLMAXTYPES             3   /* _current_ max number of types */
+#define VOLMAXTYPES             4   /* _current_ max number of types */
 
 /* the maximum number of volumes in a volume group that we can handle */
 #define VOL_VG_MAX_VOLS 20

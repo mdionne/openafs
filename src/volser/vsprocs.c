@@ -581,8 +581,10 @@ SubEnumerateEntry(struct nvldbentry *entry)
                 hostutil_GetNameByINet(entry->serverNumber[i]), pname);
 	if (entry->serverFlags[i] & ITSRWVOL)
 	    fprintf(STDOUT, "RW Site ");
-	else
+	else if (entry->serverFlags[i] & ITSROVOL)
 	    fprintf(STDOUT, "RO Site ");
+	else
+	    fprintf(STDOUT, "RWSLAVE Site ");
 	if (isMixed) {
 	    if (entry->serverFlags[i] & NEW_REPSITE)
 		fprintf(STDOUT," -- New release");
@@ -4949,21 +4951,17 @@ UV_LockRelease(afs_uint32 volid)
 
 }
 
-/* old interface to add rosites */
+/*
+ * Adds <server> and <part> as a replication site for <volid>
+ * in vldb
+ * The rw flag indicates a RW slave site
+ */
 int
 UV_AddSite(afs_uint32 server, afs_int32 part, afs_uint32 volid,
-	   afs_int32 valid)
-{
-    return UV_AddSite2(server, part, volid, 0, valid);
-}
-
-/*adds <server> and <part> as a readonly replication site for <volid>
-*in vldb */
-int
-UV_AddSite2(afs_uint32 server, afs_int32 part, afs_uint32 volid,
-	    afs_uint32 rovolid, afs_int32 valid)
+	    afs_uint32 rovolid, afs_int32 valid, afs_int32 rw)
 {
     int j, nro = 0, islocked = 0;
+    int nrw = 0;
     struct nvldbentry entry, storeEntry, entry2;
     afs_int32 vcode, error = 0;
     char apartName[10];
@@ -5004,6 +5002,9 @@ UV_AddSite2(afs_uint32 server, afs_int32 part, afs_uint32 volid,
 
     /* See if it's on the same server */
     for (j = 0; j < entry.nServers; j++) {
+	if (entry.serverFlags[j] & ITSRWSLAVEVOL) {
+	    nrw++;
+	}
 	if (entry.serverFlags[j] & ITSROVOL) {
 	    nro++;
 	    if (VLDB_IsSameAddrs(server, entry.serverNumber[j], &error)) {
@@ -5024,9 +5025,9 @@ UV_AddSite2(afs_uint32 server, afs_int32 part, afs_uint32 volid,
     }
 
     /* See if it's too many RO sites - leave one for the RW */
-    if (nro >= NMAXNSERVERS - 1) {
-	fprintf(STDERR, "Total number of sites will exceed %u\n",
-		NMAXNSERVERS - 1);
+    if (nro >= NMAXNSERVERS - nrw - 1) {
+	fprintf(STDERR, "Total number of read-only sites will exceed %u\n",
+		NMAXNSERVERS - nrw - 1);
 	error = VOLSERBADOP;
 	goto asfail;
     }
@@ -5053,10 +5054,14 @@ UV_AddSite2(afs_uint32 server, afs_int32 part, afs_uint32 volid,
     VPRINT("Adding a new site ...");
     entry.serverNumber[entry.nServers] = server;
     entry.serverPartition[entry.nServers] = part;
-    if (!valid) {
-	entry.serverFlags[entry.nServers] = (ITSROVOL | RO_DONTUSE);
+    if (!rw) {
+	if (!valid) {
+	    entry.serverFlags[entry.nServers] = (ITSROVOL | RO_DONTUSE);
+	} else {
+	    entry.serverFlags[entry.nServers] = (ITSROVOL);
+	}
     } else {
-	entry.serverFlags[entry.nServers] = (ITSROVOL);
+	entry.serverFlags[entry.nServers] = (ITSRWSLAVEVOL);
     }
     entry.nServers++;
 
