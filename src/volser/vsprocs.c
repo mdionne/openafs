@@ -3826,7 +3826,7 @@ UV_ReleaseVolume(afs_uint32 afromvol, afs_uint32 afromserver,
     /* For each index in the VLDB */
     for (vldbindex = 0; vldbindex < entry.nServers;) {
 
-	/* Get a transaction on the replicas. Pick replacas which have an old release. */
+	/* Get a transaction on the replicas. Pick replicas which have an old release. */
 	for (volcount = 0;
 	     ((volcount < nservers) && (vldbindex < entry.nServers));
 	     vldbindex++) {
@@ -3843,8 +3843,8 @@ UV_ReleaseVolume(afs_uint32 afromvol, afs_uint32 afromserver,
 	    if ((entry.serverFlags[vldbindex] & NEW_REPSITE)
 		&& !(entry.serverFlags[vldbindex] & RO_DONTUSE))
 		continue;
-	    if (!(entry.serverFlags[vldbindex] & ITSROVOL))
-		continue;	/* not a RO vol */
+	    if (!(entry.serverFlags[vldbindex] & ITSROVOL) && !(entry.serverFlags[vldbindex] & ITSRWSLAVEVOL))
+		continue;	/* not a RO or RWSLAVE vol */
 
 
 	    /* Get a Transaction on this replica. Get a new connection if
