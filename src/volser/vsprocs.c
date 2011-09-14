@@ -168,7 +168,7 @@ static int DelVol(struct rx_connection *conn, afs_uint32 vid, afs_int32 part,
 static int GetTrans(struct nvldbentry *vldbEntryPtr, afs_int32 index,
 		    struct rx_connection **connPtr, afs_int32 * transPtr,
 		    afs_uint32 * crtimePtr, afs_uint32 * uptimePtr,
-		    afs_int32 *origflags);
+		    afs_int32 *origflags, afs_int32 rwreplica);
 static int SimulateForwardMultiple(struct rx_connection *fromconn,
 				   afs_int32 fromtid, afs_int32 fromdate,
 				   manyDests * tr, afs_int32 flags,
@@ -3232,7 +3232,7 @@ static int
 GetTrans(struct nvldbentry *vldbEntryPtr, afs_int32 index,
 	 struct rx_connection **connPtr, afs_int32 * transPtr,
 	 afs_uint32 * crtimePtr, afs_uint32 * uptimePtr,
-	 afs_int32 *origflags)
+	 afs_int32 *origflags, afs_int32 rwreplica)
 {
     afs_uint32 volid;
     struct volser_status tstatus;
@@ -3250,7 +3250,11 @@ GetTrans(struct nvldbentry *vldbEntryPtr, afs_int32 index,
     if (!*connPtr)
 	goto fail;		/* server is down */
 
-    volid = vldbEntryPtr->volumeId[ROVOL];
+    if (rwreplica)
+	volid = vldbEntryPtr->volumeId[RWVOL];
+    else
+	volid = vldbEntryPtr->volumeId[ROVOL];
+
     if (volid) {
 	code =
 	    AFSVolTransCreate_retry(*connPtr, volid,
@@ -3300,6 +3304,7 @@ GetTrans(struct nvldbentry *vldbEntryPtr, afs_int32 index,
     if (!volid || code) {
 	char volname[64];
         char hoststr[16];
+	afs_int32 voltype;
 
 	if (volid && (code != VNOVOL)) {
 	    PrintError("Failed to start a transaction on the RO volume.\n",
@@ -3308,7 +3313,12 @@ GetTrans(struct nvldbentry *vldbEntryPtr, afs_int32 index,
 	}
 
 	strcpy(volname, vldbEntryPtr->name);
-	strcat(volname, ".readonly");
+	if (!rwreplica) {
+	    strcat(volname, ".readonly");
+	    voltype = volser_RO;
+	} else {
+	    voltype = volser_RWREPL;
+	}
 
 	if (verbose) {
 	    fprintf(STDOUT,
@@ -3323,7 +3333,7 @@ GetTrans(struct nvldbentry *vldbEntryPtr, afs_int32 index,
 
 	code =
 	    AFSVolCreateVolume(*connPtr, vldbEntryPtr->serverPartition[index],
-			       volname, volser_RO,
+			       volname, voltype,
 			       vldbEntryPtr->volumeId[RWVOL], &volid,
 			       transPtr);
 	if (code) {
@@ -3514,6 +3524,7 @@ UV_ReleaseVolume(afs_uint32 afromvol, afs_uint32 afromserver,
     char hoststr[16];
     afs_int32 origflags[NMAXNSERVERS];
     struct volser_status orig_status;
+    afs_int32 *vol_flags;
 
     memset(remembertime, 0, sizeof(remembertime));
     memset(&results, 0, sizeof(results));
@@ -3806,7 +3817,8 @@ UV_ReleaseVolume(afs_uint32 afromvol, afs_uint32 afromserver,
 					nservers + 1);
     results.manyResults_val =
 	(afs_int32 *) malloc(sizeof(afs_int32) * nservers + 1);
-    if (!replicas || !times || !results.manyResults_val || !toconns)
+    vol_flags = malloc(sizeof(afs_int32) * nservers + 1);
+    if (!replicas || !times || !results.manyResults_val || !toconns || !vol_flags)
 	ONERROR0(ENOMEM,
 		"Failed to create transaction on the release clone\n");
 
@@ -3814,6 +3826,7 @@ UV_ReleaseVolume(afs_uint32 afromvol, afs_uint32 afromserver,
     memset(times, 0, (sizeof(struct release) * nservers + 1));
     memset(toconns, 0, (sizeof(struct rx_connection *) * nservers + 1));
     memset(results.manyResults_val, 0, (sizeof(afs_int32) * nservers + 1));
+    memset(vol_flags, 0, (sizeof(afs_int32) * nservers + 1));
 
     /* Create a transaction on the cloned volume */
     VPRINT1("Starting transaction on cloned volume %u...", cloneVolId);
@@ -3832,7 +3845,7 @@ UV_ReleaseVolume(afs_uint32 afromvol, afs_uint32 afromserver,
     /* For each index in the VLDB */
     for (vldbindex = 0; vldbindex < entry.nServers;) {
 
-	/* Get a transaction on the replicas. Pick replacas which have an old release. */
+	/* Get a transaction on the replicas. Pick replicas which have an old release. */
 	for (volcount = 0;
 	     ((volcount < nservers) && (vldbindex < entry.nServers));
 	     vldbindex++) {
@@ -3849,8 +3862,9 @@ UV_ReleaseVolume(afs_uint32 afromvol, afs_uint32 afromserver,
 	    if ((entry.serverFlags[vldbindex] & NEW_REPSITE)
 		&& !(entry.serverFlags[vldbindex] & RO_DONTUSE))
 		continue;
-	    if (!(entry.serverFlags[vldbindex] & ITSROVOL))
-		continue;	/* not a RO vol */
+	    if (!(entry.serverFlags[vldbindex] & ITSROVOL) &&
+		    !(entry.serverFlags[vldbindex] & ITSRWREPL))
+		continue;	/* not a RO or RW replica */
 
 
 	    /* Get a Transaction on this replica. Get a new connection if
@@ -3863,13 +3877,14 @@ UV_ReleaseVolume(afs_uint32 afromvol, afs_uint32 afromserver,
 	    replicas[volcount].server.destPort = AFSCONF_VOLUMEPORT;
 	    replicas[volcount].server.destSSID = 1;
 	    times[volcount].vldbEntryIndex = vldbindex;
+	    vol_flags[volcount] = entry.serverFlags[vldbindex];
 
 	    code =
 		GetTrans(&entry, vldbindex, &(toconns[volcount]),
 			 &(replicas[volcount].trans),
 			 &(times[volcount].crtime),
 			 &(times[volcount].uptime),
-			 origflags);
+			 origflags, (vol_flags[volcount] & ITSRWREPL));
 	    if (code)
 		continue;
 
@@ -3983,9 +3998,12 @@ UV_ReleaseVolume(afs_uint32 afromvol, afs_uint32 afromserver,
 		    continue;
 		}
 
-		code =
-		    AFSVolSetIdsTypes(toconns[m], replicas[m].trans, vname,
-				      ROVOL, entry.volumeId[RWVOL], 0, 0);
+		if (vol_flags[m] & ITSRWREPL)
+		    code = AFSVolSetIdsTypes(toconns[m], replicas[m].trans,
+			    vname, RWREPL, entry.volumeId[RWVOL], 0, 0);
+		else
+		    code = AFSVolSetIdsTypes(toconns[m], replicas[m].trans,
+			    vname, ROVOL, entry.volumeId[RWVOL], 0, 0);
 		if (code) {
 		    if ((m == 0) || (code != ENOENT)) {
 			PrintError("Failed to set correct names and ids: ",

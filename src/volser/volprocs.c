@@ -550,7 +550,7 @@ VolCreateVolume(struct rx_call *acid, afs_int32 apart, char *aname,
     if ((error = ConvertPartition(apart, ppath, sizeof(ppath))))
 	return error;		/*a standard unix error */
     if (atype != readwriteVolume && atype != readonlyVolume
-	&& atype != backupVolume)
+	&& atype != backupVolume && atype != rwreplicaVolume)
 	return EINVAL;
     if ((volumeID = *avolid) == 0) {
 
