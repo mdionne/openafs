@@ -5123,8 +5123,8 @@ UV_RemoveSite(afs_uint32 server, afs_int32 part, afs_uint32 volid)
 	return (vcode);
     }
     MapHostToNetwork(&entry);
-    if (!Lp_ROMatch(server, part, &entry)) {
-	/*this site doesnot exist  */
+    if (!Lp_ROMatch(server, part, &entry) && !Lp_RWSlaveMatch(server, part, &entry)) {
+	/* This site does not exist  */
 	fprintf(STDERR, "This site is not a replication site \n");
 	vcode =
 	    ubik_VL_ReleaseLock(cstruct, 0, volid, RWVOL,
@@ -5139,7 +5139,7 @@ UV_RemoveSite(afs_uint32 server, afs_int32 part, afs_uint32 volid)
 	}
 	return VOLSERBADOP;
     } else {			/*remove the rep site */
-	Lp_SetROValue(&entry, server, part, 0, 0);
+	Lp_SetReplValue(&entry, server, part, 0, 0);
 	entry.nServers--;
 	if ((entry.nServers == 1) && (entry.flags & RW_EXISTS))
 	    entry.flags &= ~RO_EXISTS;
