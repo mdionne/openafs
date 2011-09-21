@@ -783,3 +783,9 @@ GetOsdMetadata(
   IN AFSFid *Fid
 ) split = 65562;
 */
+
+RStoreACL(
+  IN  AFSFid *Fid,
+  AFSOpaque *AccessList,
+  AFSVolSync *Sync
+) = 65608;

@@ -97,6 +97,8 @@
 #include <afs/afsutil.h>
 #include <afs/dir.h>
 
+#include "rw_replication.h"
+
 extern void SetDirHandle(DirHandle * dir, Vnode * vnode);
 extern void FidZap(DirHandle * file);
 extern void FidZero(DirHandle * file);
@@ -498,7 +500,7 @@ CallPostamble(struct rx_connection *aconn, afs_int32 ret,
  * type on the vnode is set to lock. Note that both volume/vnode's ref counts
  * are incremented and they must be eventualy released.
  */
-static afs_int32
+afs_int32
 CheckVnodeWithCall(AFSFid * fid, Volume ** volptr, struct VCallByVol *cbv,
                    Vnode ** vptr, int lock)
 {
@@ -3046,7 +3048,7 @@ SRXAFS_StoreACL(struct rx_call * acall, struct AFSFid * Fid,
     /* Get the updated dir's status back to the caller */
     GetStatus(targetptr, OutStatus, rights, anyrights, 0);
 
-  Bad_StoreACL:
+Bad_StoreACL:
     /* Update and store volume/vnode and parent vnodes back */
     PutVolumePackage(parentwhentargetnotdir, targetptr, (Vnode *) 0,
 		     volptr, &client);
@@ -3058,6 +3060,22 @@ SRXAFS_StoreACL(struct rx_call * acall, struct AFSFid * Fid,
     osi_auditU(acall, StoreACLEvent, errorCode,
                AUD_ID, t_client ? t_client->ViceId : 0,
                AUD_FID, Fid, AUD_ACL, AccessList->AFSOpaque_val, AUD_END);
+
+    {
+	struct vldbentry entry;
+	int i;
+	struct rx_connection *rcon;
+	GetSlaveServersForVolume(Fid, &entry);
+
+	for (i = 0; i < entry.nServers; i++) {
+	    if (!(entry.serverFlags[i] & 0x04)) {
+		/* make connections for each Slave */
+		rcon = MakeDummyConnection(entry.serverNumber[i]);
+		RXAFS_RStoreACL(rcon, Fid, AccessList, Sync);
+	    }
+	}
+    }
+
     return errorCode;
 
 }				/*SRXAFS_StoreACL */
