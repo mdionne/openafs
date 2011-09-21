@@ -96,6 +96,8 @@ static afs_int32 Do_VLRegisterRPC(void);
 int eventlog = 0, rxlog = 0;
 FILE *debugFile;
 
+extern afs_int32 queryDbserver;
+
 #ifdef AFS_PTHREAD_ENV
 pthread_mutex_t fsync_glock_mutex;
 pthread_cond_t fsync_cond;
@@ -1596,6 +1598,9 @@ vl_Initialize(const char *confDir)
 		 info.numServers, MAXSERVERS));
 	exit(1);
     }
+
+    queryDbserver = info.hostAddr[0].sin_addr.s_addr;
+
     for (i = 0; i < info.numServers; i++)
 	serverconns[i] =
 	    rx_NewConnection(info.hostAddr[i].sin_addr.s_addr,
