@@ -25,20 +25,6 @@
 #ifndef _AFS_VICED_RW_REPLICATION_H
 #define _AFS_VICED_RW_REPLICATION_H
 
-#include <afsconfig.h>
-#include <afs/param.h>
-#include <afs/stds.h>
-
-#include <roken.h>
-
-afs_int32 DelayedPopFromUpdateList(void);
-afs_int32 PushIntoUpdateList(afs_int32 pRPCCall, struct AFSFid *pInFid1,
-	struct AFSFid *pInFid2, char *pName1, char *pName2,
-	struct AFSStoreStatus *pInStatus, struct AFSVolSync *pSync,
-	struct AFSOpaque *pAccessList, afs_uint64 pPos,
-	afs_uint64 pLength, afs_uint64 pFileLength, char *storebuf,
-	afs_int32 clientViceId);
-
 struct AFSUpdateListItem {
     afs_int32 RPCCall;
     struct AFSFid InFid1;
@@ -55,5 +41,15 @@ struct AFSUpdateListItem {
     struct AFSUpdateListItem *NextItem;
     char *StoreBuffer;
 };
+
+afs_int32 DelayedPopFromUpdateList(void);
+afs_int32 PushIntoUpdateList(afs_int32 pRPCCall, struct AFSFid *pInFid1,
+	struct AFSFid *pInFid2, char *pName1, char *pName2,
+	struct AFSStoreStatus *pInStatus, struct AFSVolSync *pSync,
+	struct AFSOpaque *pAccessList, afs_uint64 pPos,
+	afs_uint64 pLength, afs_uint64 pFileLength, char *storebuf,
+	afs_int32 clientViceId);
+int GetSlaveServersForVolume(struct AFSFid *Fid, struct vldbentry *entry);
+struct rx_connection *MakeDummyConnection(afs_int32 serverIp);
 
 #endif /* _AFS_VICED_RW_REPLICATION_H */
