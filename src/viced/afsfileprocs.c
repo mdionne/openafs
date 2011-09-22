@@ -3026,8 +3026,10 @@ Bad_StoreACL:
 	GetSlaveServersForVolume(Fid, &entry);
 
 	for (i = 0; i < entry.nServers; i++) {
-	    if (!(entry.serverFlags[i] & 0x04)) {
+	    ViceLog(0, ("StoreACL checking for rw slave servers, server %d\n", i));
+	    if (entry.serverFlags[i] & 0x10) {
 		/* make connections for each Slave */
+		ViceLog(0, ("StoreACL calling remote on server %d\n", i));
 		rcon = MakeDummyConnection(entry.serverNumber[i]);
 		RXAFS_RStoreACL(rcon, Fid, AccessList, Sync);
 	    }
