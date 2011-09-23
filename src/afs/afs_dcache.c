@@ -2215,7 +2215,7 @@ afs_GetDCache(struct vcache *avc, afs_size_t abyte,
 		 * tdc->lock(W)
 		 */
 
-		tc = afs_Conn(&avc->f.fid, areq, SHARED_LOCK, &rxconn);
+		tc = afs_Conn(&avc->f.fid, areq, SHARED_LOCK, &rxconn, RWANY);
 		if (tc) {
 #ifndef AFS_NOSTATS
 		    numFetchLoops++;

@@ -170,7 +170,7 @@ extern afs_rwlock_t afs_xconn;
 extern struct afs_conn *afs_Conn(struct VenusFid *afid,
 			     struct vrequest *areq,
 			     afs_int32 locktype,
-                             struct rx_connection **rxconn);
+                             struct rx_connection **rxconn, afs_int32 rwonly);
 extern struct afs_conn *afs_ConnBySA(struct srvAddr *sap, unsigned short aport,
 				 afs_int32 acell, struct unixuser *tu,
 				 int force_if_down, afs_int32 create,

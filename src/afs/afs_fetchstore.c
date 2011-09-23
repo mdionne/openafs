@@ -631,7 +631,7 @@ afs_CacheStoreVCache(struct dcache **dcList, struct vcache *avc,
 		       ICL_HANDLE_OFFSET(length));
 
 	    do {
-	        tc = afs_Conn(&avc->f.fid, areq, 0, &rxconn);
+	        tc = afs_Conn(&avc->f.fid, areq, 0, &rxconn, RWONLY);
 
 #ifdef AFS_64BIT_CLIENT
 	      restart:

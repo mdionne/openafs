@@ -584,7 +584,7 @@ afs_PrefetchNoCache(struct vcache *avc,
 
     tcallspec = (struct tlocal1 *) osi_Alloc(sizeof(struct tlocal1));
     do {
-	tc = afs_Conn(&avc->f.fid, areq, SHARED_LOCK /* ignored */, &rxconn);
+	tc = afs_Conn(&avc->f.fid, areq, SHARED_LOCK /* ignored */, &rxconn, RWANY);
 	if (tc) {
 	    avc->callback = tc->parent->srvr->server;
 	    tcall = rx_NewCall(rxconn);
