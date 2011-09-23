@@ -579,6 +579,8 @@ struct volume {
     char *name;			/* This volume's name, or 0 if unknown */
     struct server *serverHost[AFS_MAXHOSTS];	/* servers serving this volume */
     enum repstate status[AFS_MAXHOSTS];	/* busy, offline, etc */
+    struct server *rwserver;
+    enum repstate rwstatus;
     struct VenusFid dotdot;	/* dir to access as .. */
     struct VenusFid mtpoint;	/* The mount point for this volume. */
     afs_int32 rootVnode, rootUnique;	/* Volume's root fid */
@@ -1590,5 +1592,8 @@ typedef struct afs_event {
 } afs_event_t;
 
 extern afs_event_t *afs_evhasht[AFS_EVHASHSIZE];	/* Hash table for events */
+
+#define RWONLY 1
+#define RWANY 0
 
 #endif /* _AFS_H_ */

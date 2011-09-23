@@ -361,6 +361,11 @@ afs_Analyze(struct afs_conn *aconn, struct rx_connection *rxconn,
 		if (tvp->status[i] == not_busy)
 		    shouldRetry = 1;
 	    }
+	    if (tvp->rwstatus != not_busy && tvp->rwstatus != offline) {
+		tvp->rwstatus = not_busy;
+	    }
+	    if (tvp->rwstatus == not_busy)
+		shouldRetry = 1;
 	    afs_PutVolume(tvp, READ_LOCK);
 	} else {
 	    afs_warnuser("afs: Waiting for busy volume %u\n",
@@ -488,6 +493,8 @@ afs_Analyze(struct afs_conn *aconn, struct rx_connection *rxconn,
 			tvp->status[i] = not_busy;
 		    }
 		}
+		if (tvp->rwserver == tsp)
+		    tvp->rwstatus = not_busy;
 		afs_PutVolume(tvp, READ_LOCK);
 	    }
 	}
@@ -551,6 +558,8 @@ afs_Analyze(struct afs_conn *aconn, struct rx_connection *rxconn,
 		    tvp->status[i] = rdwr_busy;	/* can't tell which yet */
 		    /* to tell which, have to look at the op code. */
 		}
+		if (tvp->rwserver == tsp)
+		    tvp->rwstatus = rdwr_busy;
 	    }
 	    afs_PutVolume(tvp, READ_LOCK);
 	} else {
@@ -680,6 +689,13 @@ afs_Analyze(struct afs_conn *aconn, struct rx_connection *rxconn,
 			tvp->status[i] = not_busy;	/* reset the others */
 		    }
 		}
+		if (tvp->rwserver == tsp) {
+		    if (tvp->rwstatus == end_not_busy)
+			tvp->rwstatus = offline;
+		    else
+			tvp->rwstatus++;
+		} else if (!same)
+		    tvp->rwstatus = not_busy;	/* reset the others */
 		afs_PutVolume(tvp, READ_LOCK);
 	    }
 	}

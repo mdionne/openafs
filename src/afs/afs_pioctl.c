@@ -1441,7 +1441,7 @@ DECL_PIOCTL(PSetAcl)
 	return EINVAL;
 
     do {
-	tconn = afs_Conn(&avc->f.fid, areq, SHARED_LOCK, &rxconn);
+	tconn = afs_Conn(&avc->f.fid, areq, SHARED_LOCK, &rxconn, RWONLY);
 	if (tconn) {
 	    XSTATS_START_TIME(AFS_STATS_FS_RPCIDX_STOREACL);
 	    RX_AFS_GUNLOCK();
@@ -1591,7 +1591,7 @@ DECL_PIOCTL(PGetAcl)
     }
     acl.AFSOpaque_val = aout->ptr;
     do {
-	tconn = afs_Conn(&avc->f.fid, areq, SHARED_LOCK, &rxconn);
+	tconn = afs_Conn(&avc->f.fid, areq, SHARED_LOCK, &rxconn, RWANY);
 	if (tconn) {
 	    acl.AFSOpaque_val[0] = '\0';
 	    XSTATS_START_TIME(AFS_STATS_FS_RPCIDX_FETCHACL);
@@ -1977,7 +1977,7 @@ DECL_PIOCTL(PGetVolumeStatus)
     }
     Name = volName;
     do {
-	tc = afs_Conn(&avc->f.fid, areq, SHARED_LOCK, &rxconn);
+	tc = afs_Conn(&avc->f.fid, areq, SHARED_LOCK, &rxconn, RWANY);
 	if (tc) {
 	    XSTATS_START_TIME(AFS_STATS_FS_RPCIDX_GETVOLUMESTATUS);
 	    RX_AFS_GUNLOCK();
@@ -2091,7 +2091,7 @@ DECL_PIOCTL(PSetVolumeStatus)
 	storeStat.Mask |= AFS_SETMAXQUOTA;
     }
     do {
-	tc = afs_Conn(&avc->f.fid, areq, SHARED_LOCK, &rxconn);
+	tc = afs_Conn(&avc->f.fid, areq, SHARED_LOCK, &rxconn, RWONLY);
 	if (tc) {
 	    XSTATS_START_TIME(AFS_STATS_FS_RPCIDX_SETVOLUMESTATUS);
 	    RX_AFS_GUNLOCK();
@@ -2989,7 +2989,7 @@ DECL_PIOCTL(PRemoveCallBack)
     CallBacks_Array[0].CallBackType = CB_DROPPED;
     if (avc->callback) {
 	do {
-	    tc = afs_Conn(&avc->f.fid, areq, SHARED_LOCK, &rxconn);
+	    tc = afs_Conn(&avc->f.fid, areq, SHARED_LOCK, &rxconn, RWANY);
 	    if (tc) {
 		XSTATS_START_TIME(AFS_STATS_FS_RPCIDX_GIVEUPCALLBACKS);
 		RX_AFS_GUNLOCK();
@@ -3308,7 +3308,7 @@ DECL_PIOCTL(PRemoveMount)
     ObtainWriteLock(&avc->lock, 231);
     osi_dnlc_remove(avc, bufp, tvc);
     do {
-	tc = afs_Conn(&avc->f.fid, areq, SHARED_LOCK, &rxconn);
+	tc = afs_Conn(&avc->f.fid, areq, SHARED_LOCK, &rxconn, RWONLY);
 	if (tc) {
 	    XSTATS_START_TIME(AFS_STATS_FS_RPCIDX_REMOVEFILE);
 	    RX_AFS_GUNLOCK();
@@ -4945,7 +4945,7 @@ DECL_PIOCTL(PPrefetchFromTape)
 	       ICL_TYPE_FID, &tfid, ICL_TYPE_FID, &tvc->f.fid);
 
     do {
-	tc = afs_Conn(&tvc->f.fid, areq, SHARED_LOCK, &rxconn);
+	tc = afs_Conn(&tvc->f.fid, areq, SHARED_LOCK, &rxconn, RWANY);
 	if (tc) {
 
 	    RX_AFS_GUNLOCK();
@@ -5014,7 +5014,7 @@ DECL_PIOCTL(PFsCmd)
 
     if (Inputs->command) {
 	do {
-	    tc = afs_Conn(&tvc->f.fid, areq, SHARED_LOCK, &rxconn);
+	    tc = afs_Conn(&tvc->f.fid, areq, SHARED_LOCK, &rxconn, RWANY);
 	    if (tc) {
 		RX_AFS_GUNLOCK();
 		code =

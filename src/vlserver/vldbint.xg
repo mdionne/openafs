@@ -195,6 +195,7 @@ const VLOP_DUMP        = 0x100;
 %#define	VLSF_ROVOL	    0x02
 %#define	VLSF_RWVOL	    0x04
 %#define	VLSF_BACKVOL	    0x08
+%#define	VLSF_RWSLAVEVOL	    0x10
 %#define	VLSF_DONTUSE	    0x20    /* no conflict with VLSERVER_FLAG_UUID */
 
 typedef	vldbentry bulkentries<>;

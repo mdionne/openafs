@@ -104,7 +104,7 @@ afs_mkdir(OSI_VC_DECL(adp), char *aname, struct vattr *attrs,
 
     if (!AFS_IS_DISCON_RW) {
     	do {
-	    tc = afs_Conn(&adp->f.fid, &treq, SHARED_LOCK, &rxconn);
+	    tc = afs_Conn(&adp->f.fid, &treq, SHARED_LOCK, &rxconn, RWONLY);
 	    if (tc) {
 	    	XSTATS_START_TIME(AFS_STATS_FS_RPCIDX_MAKEDIR);
 	    	now = osi_Time();
@@ -334,7 +334,7 @@ afs_rmdir(OSI_VC_DECL(adp), char *aname, afs_ucred_t *acred)
     if (!AFS_IS_DISCON_RW) {
 	/* Not disconnected, can connect to server. */
     	do {
-	    tc = afs_Conn(&adp->f.fid, &treq, SHARED_LOCK, &rxconn);
+	    tc = afs_Conn(&adp->f.fid, &treq, SHARED_LOCK, &rxconn, RWONLY);
 	    if (tc) {
 	    	XSTATS_START_TIME(AFS_STATS_FS_RPCIDX_REMOVEDIR);
 	    	RX_AFS_GUNLOCK();

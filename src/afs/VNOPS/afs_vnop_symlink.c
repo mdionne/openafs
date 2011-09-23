@@ -157,7 +157,7 @@ afs_symlink(OSI_VC_DECL(adp), char *aname, struct vattr *attrs,
      * the copy will be invalidated */
     if (!AFS_IS_DISCON_RW) {
 	do {
-	    tc = afs_Conn(&adp->f.fid, &treq, SHARED_LOCK, &rxconn);
+	    tc = afs_Conn(&adp->f.fid, &treq, SHARED_LOCK, &rxconn, RWONLY);
 	    if (tc) {
 		hostp = tc->parent->srvr->server;
 		XSTATS_START_TIME(AFS_STATS_FS_RPCIDX_SYMLINK);

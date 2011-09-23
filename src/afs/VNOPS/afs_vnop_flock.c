@@ -326,7 +326,7 @@ HandleFlock(struct vcache *avc, int acom, struct vrequest *areq,
 	    if (!AFS_IS_DISCONNECTED) {
 		struct rx_connection *rxconn;
 	        do {
-		    tc = afs_Conn(&avc->f.fid, areq, SHARED_LOCK, &rxconn);
+		    tc = afs_Conn(&avc->f.fid, areq, SHARED_LOCK, &rxconn, RWONLY);
 		    if (tc) {
 		        XSTATS_START_TIME(AFS_STATS_FS_RPCIDX_RELEASELOCK);
 		        RX_AFS_GUNLOCK();
@@ -385,7 +385,7 @@ HandleFlock(struct vcache *avc, int acom, struct vrequest *areq,
 		    if (!AFS_IS_DISCONNECTED) {
 			struct rx_connection *rxconn;
 		        do {
-			    tc = afs_Conn(&avc->f.fid, areq, SHARED_LOCK, &rxconn);
+			    tc = afs_Conn(&avc->f.fid, areq, SHARED_LOCK, &rxconn, RWONLY);
 			    if (tc) {
 			        XSTATS_START_TIME
 				    (AFS_STATS_FS_RPCIDX_RELEASELOCK);
@@ -427,7 +427,7 @@ HandleFlock(struct vcache *avc, int acom, struct vrequest *areq,
 		    lockType = ((acom & LOCK_EX) ? LockWrite : LockRead);
 		    if (!AFS_IS_DISCONNECTED) {
 		        do {
-			    tc = afs_Conn(&avc->f.fid, areq, SHARED_LOCK, &rxconn);
+			    tc = afs_Conn(&avc->f.fid, areq, SHARED_LOCK, &rxconn, RWONLY);
 			    if (tc) {
 			        XSTATS_START_TIME(AFS_STATS_FS_RPCIDX_SETLOCK);
 			        RX_AFS_GUNLOCK();
@@ -862,7 +862,7 @@ GetFlockCount(struct vcache *avc, struct vrequest *areq)
         return 0;
         
     do {
-	tc = afs_Conn(&avc->f.fid, areq, SHARED_LOCK, &rxconn);
+	tc = afs_Conn(&avc->f.fid, areq, SHARED_LOCK, &rxconn, RWONLY);
 	if (tc) {
 	    XSTATS_START_TIME(AFS_STATS_FS_RPCIDX_FETCHSTATUS);
 	    RX_AFS_GUNLOCK();

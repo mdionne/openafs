@@ -605,7 +605,7 @@ afs_ProcessOpRename(struct vcache *avc, struct vrequest *areq)
 
     /* Send to data to server. */
     do {
-	tc = afs_Conn(&old_pdir_fid, areq, SHARED_LOCK, &rxconn);
+	tc = afs_Conn(&old_pdir_fid, areq, SHARED_LOCK, &rxconn, RWONLY);
     	if (tc) {
 	    XSTATS_START_TIME(AFS_STATS_FS_RPCIDX_RENAME);
 	    RX_AFS_GUNLOCK();
@@ -719,7 +719,7 @@ afs_ProcessOpCreate(struct vcache *avc, struct vrequest *areq,
     InStatus.UnixModeBits = avc->f.m.Mode & 0xffff;
 
     do {
-	tc = afs_Conn(&tdp->f.fid, areq, SHARED_LOCK, &rxconn);
+	tc = afs_Conn(&tdp->f.fid, areq, SHARED_LOCK, &rxconn, RWONLY);
 	if (tc) {
 	    switch (vType(avc)) {
 	    case VREG:
@@ -939,7 +939,7 @@ afs_ProcessOpRemove(struct vcache *avc, struct vrequest *areq)
     if (vType(avc) == VREG || vType(avc) == VLNK) {
     	/* Remove file on server. */
 	do {
-	    tc = afs_Conn(&pdir_fid, areq, SHARED_LOCK, &rxconn);
+	    tc = afs_Conn(&pdir_fid, areq, SHARED_LOCK, &rxconn, RWONLY);
 	    if (tc) {
 	    	XSTATS_START_TIME(AFS_STATS_FS_RPCIDX_REMOVEFILE);
 		RX_AFS_GUNLOCK();
@@ -965,7 +965,7 @@ afs_ProcessOpRemove(struct vcache *avc, struct vrequest *areq)
     } else if (vType(avc) == VDIR) {
     	/* Remove dir on server. */
 	do {
-	    tc = afs_Conn(&pdir_fid, areq, SHARED_LOCK, &rxconn);
+	    tc = afs_Conn(&pdir_fid, areq, SHARED_LOCK, &rxconn, RWONLY);
 	    if (tc) {
 		XSTATS_START_TIME(AFS_STATS_FS_RPCIDX_REMOVEDIR);
 		RX_AFS_GUNLOCK();
@@ -1024,7 +1024,7 @@ afs_SendChanges(struct vcache *avc, struct vrequest *areq)
 	/* Turn dirty vc data into a new store status... */
 	if (afs_GenStoreStatus(avc, &sstat) > 0) {
 	    do {
-		tc = afs_Conn(&avc->f.fid, areq, SHARED_LOCK, &rxconn);
+		tc = afs_Conn(&avc->f.fid, areq, SHARED_LOCK, &rxconn, RWONLY);
 		if (tc) {
 		    /* ... and send it. */
 		    XSTATS_START_TIME(AFS_STATS_FS_RPCIDX_STORESTATUS);
@@ -1063,7 +1063,7 @@ afs_SendChanges(struct vcache *avc, struct vrequest *areq)
 
 	/* Truncate OP: */
 	do {
-	    tc = afs_Conn(&avc->f.fid, areq, SHARED_LOCK, &rxconn);
+	    tc = afs_Conn(&avc->f.fid, areq, SHARED_LOCK, &rxconn, RWONLY);
 	    if (tc) {
 		/* Set storing flags. XXX: A tad inefficient ... */
 		if (avc->f.ddirty_flags & VDisconWriteClose)
@@ -1151,7 +1151,7 @@ afs_ResyncDisconFiles(struct vrequest *areq, afs_ucred_t *acred)
 #if 0
   	/* Get server write lock. */
   	do {
-	    tc = afs_Conn(&tvc->f.fid, areq, SHARED_LOCK, &rxconn);
+	    tc = afs_Conn(&tvc->f.fid, areq, SHARED_LOCK, &rxconn, RWONLY);
   	    if (tc) {
 	    	XSTATS_START_TIME(AFS_STATS_FS_RPCIDX_SETLOCK);
   		RX_AFS_GUNLOCK();
@@ -1185,7 +1185,7 @@ afs_ResyncDisconFiles(struct vrequest *areq, afs_ucred_t *acred)
 
 	/* Issue a FetchStatus to get info about DV and callbacks. */
 	do {
-	    tc = afs_Conn(&tvc->f.fid, areq, SHARED_LOCK, &rxconn);
+	    tc = afs_Conn(&tvc->f.fid, areq, SHARED_LOCK, &rxconn, RWANY);
 	    if (tc) {
 	    	tvc->callback = tc->parent->srvr->server;
 		start = osi_Time();
@@ -1242,7 +1242,7 @@ unlock_srv_file:
 	/* Release server write lock. */
 #if 0
 	do {
-	    tc = afs_Conn(&tvc->f.fid, areq, SHARED_LOCK, &rxconn);
+	    tc = afs_Conn(&tvc->f.fid, areq, SHARED_LOCK, &rxconn, RWONLY);
 	    if (tc) {
 	    	XSTATS_START_TIME(AFS_STATS_FS_RPCIDX_RELEASELOCK);
 	    	RX_AFS_GUNLOCK();

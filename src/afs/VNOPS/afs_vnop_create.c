@@ -298,7 +298,7 @@ afs_create(OSI_VC_DECL(adp), char *aname, struct vattr *attrs,
 
     	InStatus.UnixModeBits = attrs->va_mode & 0xffff;	/* only care about protection bits */
     	do {
-	    tc = afs_Conn(&adp->f.fid, &treq, SHARED_LOCK, &rxconn);
+	    tc = afs_Conn(&adp->f.fid, &treq, SHARED_LOCK, &rxconn, RWONLY);
 	    if (tc) {
 	    	hostp = tc->parent->srvr->server; /* remember for callback processing */
 	    	now = osi_Time();
