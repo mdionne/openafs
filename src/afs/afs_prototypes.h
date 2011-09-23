@@ -170,7 +170,7 @@ extern afs_rwlock_t afs_xconn;
 extern struct afs_conn *afs_Conn(struct VenusFid *afid,
 			     struct vrequest *areq,
 			     afs_int32 locktype,
-                             struct rx_connection **rxconn);
+                             struct rx_connection **rxconn, afs_int32 rwonly);
 extern struct afs_conn *afs_ConnBySA(struct srvAddr *sap, unsigned short aport,
 				 afs_int32 acell, struct unixuser *tu,
 				 int force_if_down, afs_int32 create,
@@ -257,7 +257,7 @@ extern struct dcache *afs_GetDCache(struct vcache *avc,
 				    afs_size_t abyte,
 				    struct vrequest *areq,
 				    afs_size_t * aoffset, afs_size_t * alen,
-				    int aflags);
+				    int aflags, int rwflag);
 extern struct dcache *afs_FindDCache(struct vcache *avc,
 				     afs_size_t abyte);
 extern void afs_StoreWarn(afs_int32 acode, afs_int32 avolume,

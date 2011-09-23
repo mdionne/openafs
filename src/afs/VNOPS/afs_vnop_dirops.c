@@ -99,12 +99,12 @@ afs_mkdir(OSI_VC_DECL(adp), char *aname, struct vattr *attrs,
     InStatus.ClientModTime = osi_Time();
     InStatus.UnixModeBits = attrs->va_mode & 0xffff;	/* only care about protection bits */
     InStatus.Group = (afs_int32) afs_cr_gid(acred);
-    tdc = afs_GetDCache(adp, (afs_size_t) 0, &treq, &offset, &len, 1);
+    tdc = afs_GetDCache(adp, (afs_size_t) 0, &treq, &offset, &len, 1, RWONLY);
     ObtainWriteLock(&adp->lock, 153);
 
     if (!AFS_IS_DISCON_RW) {
     	do {
-	    tc = afs_Conn(&adp->f.fid, &treq, SHARED_LOCK, &rxconn);
+	    tc = afs_Conn(&adp->f.fid, &treq, SHARED_LOCK, &rxconn, RWONLY);
 	    if (tc) {
 	    	XSTATS_START_TIME(AFS_STATS_FS_RPCIDX_MAKEDIR);
 	    	now = osi_Time();
@@ -204,7 +204,7 @@ afs_mkdir(OSI_VC_DECL(adp), char *aname, struct vattr *attrs,
 
 	/* And now make an empty dir, containing . and .. : */
 	/* Get a new dcache for it first. */
-	new_dc = afs_GetDCache(tvc, (afs_size_t) 0, &treq, &offset, &len, 1);
+	new_dc = afs_GetDCache(tvc, (afs_size_t) 0, &treq, &offset, &len, 1, RWONLY);
 	if (!new_dc) {
 	    /* printf("afs_mkdir: can't get new dcache for dir.\n"); */
 	    code = ENOENT;
@@ -228,7 +228,7 @@ afs_mkdir(OSI_VC_DECL(adp), char *aname, struct vattr *attrs,
 	ReleaseWriteLock(&tvc->lock);
     } else {
     	/* now we're done with parent dir, create the real dir's cache entry */
-    	tvc = afs_GetVCache(&newFid, &treq, NULL, NULL);
+	tvc = afs_GetVCache(&newFid, &treq, NULL, NULL);
     	if (tvc) {
 	    code = 0;
 	    *avcp = tvc;
@@ -306,7 +306,7 @@ afs_rmdir(OSI_VC_DECL(adp), char *aname, afs_ucred_t *acred)
         goto done;
     }
 
-    tdc = afs_GetDCache(adp, (afs_size_t) 0, &treq, &offset, &len, 1);	/* test for error below */
+    tdc = afs_GetDCache(adp, (afs_size_t) 0, &treq, &offset, &len, 1, RWONLY);	/* test for error below */
     ObtainWriteLock(&adp->lock, 154);
     if (tdc)
 	ObtainSharedLock(&tdc->lock, 633);
@@ -334,7 +334,7 @@ afs_rmdir(OSI_VC_DECL(adp), char *aname, afs_ucred_t *acred)
     if (!AFS_IS_DISCON_RW) {
 	/* Not disconnected, can connect to server. */
     	do {
-	    tc = afs_Conn(&adp->f.fid, &treq, SHARED_LOCK, &rxconn);
+	    tc = afs_Conn(&adp->f.fid, &treq, SHARED_LOCK, &rxconn, RWONLY);
 	    if (tc) {
 	    	XSTATS_START_TIME(AFS_STATS_FS_RPCIDX_REMOVEDIR);
 	    	RX_AFS_GUNLOCK();

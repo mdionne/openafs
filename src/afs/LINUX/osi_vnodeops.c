@@ -290,7 +290,7 @@ afs_linux_readdir(struct file *fp, void *dirbuf, filldir_t filldir)
 	goto out;
 
     /* get a reference to the entire directory */
-    tdc = afs_GetDCache(avc, (afs_size_t) 0, &treq, &origOffset, &tlen, 1);
+    tdc = afs_GetDCache(avc, (afs_size_t) 0, &treq, &origOffset, &tlen, 1, RWANY);
     len = tlen;
     if (!tdc) {
 	code = -ENOENT;

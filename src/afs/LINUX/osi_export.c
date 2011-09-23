@@ -480,7 +480,7 @@ static struct dentry *get_dentry_from_fid(cred_t *credp, struct VenusFid *afid)
 #endif
 	return ERR_PTR(-afs_CheckCode(code, &treq, 101));
     }
-    vcp = afs_GetVCache(afid, &treq, NULL, NULL);
+    vcp = afs_GetVCache(afid, &treq, NULL, NULL, RWONLY);
     if (vcp == NULL) {
 #ifdef OSI_EXPORT_DEBUG
 	printk("afs: get_dentry_from_fid(0x%08x/%d/%d.%d): no vcache\n",
@@ -675,7 +675,7 @@ static int afs_export_get_name(struct dentry *parent, char *name,
 	       data.fid.Cell,      data.fid.Fid.Volume,
 	       data.fid.Fid.Vnode, data.fid.Fid.Unique);
 #endif
-	vcp = afs_GetVCache(&data.fid, &treq, NULL, NULL);
+	vcp = afs_GetVCache(&data.fid, &treq, NULL, NULL, RWONLY);
 	if (vcp) {
 	    ObtainReadLock(&vcp->lock);
 	    if (strlen(vcp->linkData + 1) <= NAME_MAX)

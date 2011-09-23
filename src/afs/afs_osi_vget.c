@@ -60,7 +60,7 @@ afs_osi_vget(struct vcache **avcpp, struct fid *afidp, struct vrequest *areqp)
 	code = ENOENT;
     } else if (ret == 0) {
 	/* didn't find an entry. */
-	*avcpp = afs_GetVCache(&vfid, &treq, NULL, NULL);
+	*avcpp = afs_GetVCache(&vfid, &treq, NULL, NULL, RWONLY);
     }
     if (!*avcpp) {
 	code = ENOENT;

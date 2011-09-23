@@ -249,7 +249,7 @@ afs_pickSecurityObject(struct afs_conn *conn, int *secLevel)
  */
 struct afs_conn *
 afs_Conn(struct VenusFid *afid, struct vrequest *areq,
-	 afs_int32 locktype, struct rx_connection **rxconn)
+	 afs_int32 locktype, struct rx_connection **rxconn, afs_int32 rw_only)
 {
     u_short fsport = AFS_FSPORT;
     struct volume *tv;
@@ -280,44 +280,60 @@ afs_Conn(struct VenusFid *afid, struct vrequest *areq,
 	VNOSERVERS++;
     }
 
-    /* First is always lowest rank, if it's up */
-    if ((tv->status[0] == not_busy) && tv->serverHost[0]
-	&& !(tv->serverHost[0]->addr->sa_flags & SRVR_ISDOWN) &&
-	!(((areq->idleError > 0) || (areq->tokenError > 0))
-	  && (areq->skipserver[0] == 1)))
-	lowp = tv->serverHost[0]->addr;
+    /* If rw_only is set, we have to connect to the rw server */
+    if (rw_only && tv->rwserver) {
+	if ((tv->rwstatus == not_busy) &&
+		 !(tv->rwserver->addr->sa_flags & SRVR_ISDOWN) &&
+		 !(((areq->idleError > 0) || (areq->tokenError > 0)) && (areq->skipserver[0] == 1)))
+	    lowp = tv->rwserver->addr;
+	else {
+	    printf("rw_only, but lowp will not be set\n");
+	    printf("rwserver addr flags: %d\n", tv->rwserver->addr->sa_flags);
+	    printf("areq idleerror: %d\n", areq->idleError);
+	    printf("areq tokenError: %d\n", areq->tokenError);
+	    printf("areq skipserver 0: %d\n", areq->skipserver[0]);
+	}
+    } else {
+	/* First is always lowest rank, if it's up */
+	if ((tv->status[0] == not_busy) && tv->serverHost[0]
+		&& !(tv->serverHost[0]->addr->sa_flags & SRVR_ISDOWN) &&
+		!(((areq->idleError > 0) || (areq->tokenError > 0))
+		  && (areq->skipserver[0] == 1)))
+	    lowp = tv->serverHost[0]->addr;
 
-    /* Otherwise we look at all of them. There are seven levels of
-     * not_busy. This means we will check a volume seven times before it
-     * is marked offline. Ideally, we only need two levels, but this
-     * serves a second purpose of waiting some number of seconds before
-     * the client decides the volume is offline (ie: a clone could finish
-     * in this time).
-     */
-    for (notbusy = not_busy; (!lowp && (notbusy <= end_not_busy)); notbusy++) {
-	for (i = 0; i < AFS_MAXHOSTS && tv->serverHost[i]; i++) {
-	    if (tv->states & VRO)
-		replicated++;
-	    if (((areq->tokenError > 0)||(areq->idleError > 0))
-		&& (areq->skipserver[i] == 1))
-		continue;
-	    if (tv->status[i] != notbusy) {
-		if (tv->status[i] == rd_busy || tv->status[i] == rdwr_busy) {
-		    if (!areq->busyCount)
-			areq->busyCount++;
-		} else if (tv->status[i] == offline) {
-		    if (!areq->volumeError)
-			areq->volumeError = VOLMISSING;
-		}
-		continue;
-	    }
-	    for (sa1p = tv->serverHost[i]->addr; sa1p; sa1p = sa1p->next_sa) {
-		if (sa1p->sa_flags & SRVR_ISDOWN)
+	/* Otherwise we look at all of them. There are seven levels of
+	 * not_busy. This means we will check a volume seven times before it
+	 * is marked offline. Ideally, we only need two levels, but this
+	 * serves a second purpose of waiting some number of seconds before
+	 * the client decides the volume is offline (ie: a clone could finish
+	 * in this time).
+	 */
+	for (notbusy = not_busy; (!lowp && (notbusy <= end_not_busy)); notbusy++) {
+	    for (i = 0; i < AFS_MAXHOSTS && tv->serverHost[i]; i++) {
+		if (tv->states & VRO)
+		    replicated++;
+		if (((areq->tokenError > 0)||(areq->idleError > 0))
+		    && (areq->skipserver[i] == 1))
 		    continue;
-		if (!lowp || (lowp->sa_iprank > sa1p->sa_iprank))
-		    lowp = sa1p;
+		if (tv->status[i] != notbusy) {
+		    if (tv->status[i] == rd_busy || tv->status[i] == rdwr_busy) {
+			if (!areq->busyCount)
+			    areq->busyCount++;
+		    } else if (tv->status[i] == offline) {
+			if (!areq->volumeError)
+			    areq->volumeError = VOLMISSING;
+		    }
+		    continue;
+		}
+		for (sa1p = tv->serverHost[i]->addr; sa1p; sa1p = sa1p->next_sa) {
+		    if (sa1p->sa_flags & SRVR_ISDOWN)
+			continue;
+		    if (!lowp || (lowp->sa_iprank > sa1p->sa_iprank))
+			lowp = sa1p;
+		}
 	    }
 	}
+	afs_PutVolume(tv, READ_LOCK);
     }
     if ((replicated == -1) && (tv->states & VRO)) {
 	for (i = 0; i < AFS_MAXHOSTS && tv->serverHost[i]; i++) {

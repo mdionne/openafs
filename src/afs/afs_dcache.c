@@ -1623,7 +1623,7 @@ updateV2DC(int lockVc, struct vcache *v, struct dcache *d, int src)
 struct dcache *
 afs_GetDCache(struct vcache *avc, afs_size_t abyte,
 	      struct vrequest *areq, afs_size_t * aoffset,
-	      afs_size_t * alen, int aflags)
+	      afs_size_t * alen, int aflags, int rwflag)
 {
     afs_int32 i, code, shortcut;
 #if	defined(AFS_AIX32_ENV) || defined(AFS_SGI_ENV)
@@ -2215,7 +2215,7 @@ afs_GetDCache(struct vcache *avc, afs_size_t abyte,
 		 * tdc->lock(W)
 		 */
 
-		tc = afs_Conn(&avc->f.fid, areq, SHARED_LOCK, &rxconn);
+		tc = afs_Conn(&avc->f.fid, areq, SHARED_LOCK, &rxconn, rwflag);
 		if (tc) {
 #ifndef AFS_NOSTATS
 		    numFetchLoops++;
@@ -3307,12 +3307,12 @@ afs_ObtainDCacheForWriting(struct vcache *avc, afs_size_t filePos,
 		ObtainWriteLock(&avc->lock, 509);
 	    }
 	    avc->f.states |= CDirty;
-	    tdc = afs_GetDCache(avc, filePos, areq, &offset, &len, 4);
+	    tdc = afs_GetDCache(avc, filePos, areq, &offset, &len, 4, RWONLY);
 	    if (tdc)
 		ObtainWriteLock(&tdc->lock, 659);
 	}
     } else {
-	tdc = afs_GetDCache(avc, filePos, areq, &offset, &len, 4);
+	tdc = afs_GetDCache(avc, filePos, areq, &offset, &len, 4, RWONLY);
 	if (tdc)
 	    ObtainWriteLock(&tdc->lock, 660);
     }
@@ -3524,7 +3524,7 @@ afs_PopulateDCache(struct vcache *avc, afs_size_t apos, struct vrequest *areq)
 
     while (start<end) {
 	len = AFS_CHUNKTOSIZE(start);
-	tdc = afs_GetDCache(avc, AFS_CHUNKTOBASE(start), areq, &offset, &len, 4);
+	tdc = afs_GetDCache(avc, AFS_CHUNKTOBASE(start), areq, &offset, &len, 4, RWONLY);
 	if (tdc)
 	    afs_PutDCache(tdc);
 	start++;

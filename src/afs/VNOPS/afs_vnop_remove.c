@@ -45,7 +45,7 @@ FetchWholeEnchilada(struct vcache *avc, struct vrequest *areq)
 	pos = AFS_CHUNKTOBASE(nextChunk);
 	if (pos >= avc->f.m.Length)
 	    return;		/* all done */
-	tdc = afs_GetDCache(avc, pos, areq, &offset, &len, 0);
+	tdc = afs_GetDCache(avc, pos, areq, &offset, &len, 0, RWONLY);
 	if (!tdc)
 	    return;
 	afs_PutDCache(tdc);
@@ -65,7 +65,7 @@ afsremove(struct vcache *adp, struct dcache *tdc,
     XSTATS_DECLS;
     if (!AFS_IS_DISCONNECTED) {
         do {
-	    tc = afs_Conn(&adp->f.fid, treqp, SHARED_LOCK, &rxconn);
+	    tc = afs_Conn(&adp->f.fid, treqp, SHARED_LOCK, &rxconn, RWONLY);
 	    if (tc) {
 	        XSTATS_START_TIME(AFS_STATS_FS_RPCIDX_REMOVEFILE);
 	        RX_AFS_GUNLOCK();
@@ -235,7 +235,7 @@ afs_remove(OSI_VC_DECL(adp), char *aname, afs_ucred_t *acred)
 	goto done;
     }
     
-    tdc = afs_GetDCache(adp, (afs_size_t) 0, &treq, &offset, &len, 1);	/* test for error below */
+    tdc = afs_GetDCache(adp, (afs_size_t) 0, &treq, &offset, &len, 1, RWONLY);	/* test for error below */
     ObtainWriteLock(&adp->lock, 142);
     if (tdc)
 	ObtainSharedLock(&tdc->lock, 638);

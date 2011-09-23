@@ -57,7 +57,7 @@ afs_StoreMini(struct vcache *avc, struct vrequest *areq)
     avc->f.states &= ~CExtendedFile;
 
     do {
-	tc = afs_Conn(&avc->f.fid, areq, SHARED_LOCK, &rxconn);
+	tc = afs_Conn(&avc->f.fid, areq, SHARED_LOCK, &rxconn, RWONLY);
 	if (tc) {
 #ifdef AFS_64BIT_CLIENT
 	  retry:

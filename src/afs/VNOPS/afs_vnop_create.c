@@ -126,7 +126,7 @@ afs_create(OSI_VC_DECL(adp), char *aname, struct vattr *attrs,
         goto done;
     }
 
-    tdc = afs_GetDCache(adp, (afs_size_t) 0, &treq, &offset, &len, 1);
+    tdc = afs_GetDCache(adp, (afs_size_t) 0, &treq, &offset, &len, 1, RWONLY);
     ObtainWriteLock(&adp->lock, 135);
     if (tdc)
 	ObtainSharedLock(&tdc->lock, 630);
@@ -298,7 +298,7 @@ afs_create(OSI_VC_DECL(adp), char *aname, struct vattr *attrs,
 
     	InStatus.UnixModeBits = attrs->va_mode & 0xffff;	/* only care about protection bits */
     	do {
-	    tc = afs_Conn(&adp->f.fid, &treq, SHARED_LOCK, &rxconn);
+	    tc = afs_Conn(&adp->f.fid, &treq, SHARED_LOCK, &rxconn, RWONLY);
 	    if (tc) {
 	    	hostp = tc->parent->srvr->server; /* remember for callback processing */
 	    	now = osi_Time();
