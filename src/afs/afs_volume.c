@@ -895,14 +895,14 @@ LockAndInstallVolumeEntry(struct volume *av, struct vldbentry *ve, int acell)
     afs_uint32 temp;
     char types = 0;
     struct server *serverHost[AFS_MAXHOSTS];
+    struct server *rwserver = NULL;
 
     AFS_STATCNT(InstallVolumeEntry);
 
     memset(serverHost, 0, sizeof(serverHost));
-printf("afs: In LockAndInstallVolumeEntry\n");
     /* Determine the type of volume we want */
     if ((ve->flags & VLF_RWEXISTS) && (av->volume == ve->volumeId[RWVOL])) {
-	mask = VLSF_RWVOL;
+	mask = VLSF_RWVOL | VLSF_RWSLAVEVOL;
     } else if ((ve->flags & VLF_ROEXISTS)
 	       && (av->volume == ve->volumeId[ROVOL])) {
 	mask = VLSF_ROVOL;
@@ -929,6 +929,10 @@ printf("afs: In LockAndInstallVolumeEntry\n");
 	ts = afs_GetServer(&temp, 1, acell, cellp->fsport, WRITE_LOCK,
 			   (afsUUID *) 0, 0, av);
 	serverHost[j] = ts;
+	/* Take note of the rw server, so we can direct all writes there when we have RW slaves */
+	if ((ve->flags & VLF_RWEXISTS) && (av->volume == ve->volumeId[RWVOL]) && (ve->serverFlags[i] & VLSF_RWVOL)) {
+	    rwserver = ts;
+	}
 
 	/*
 	 * The cell field could be 0 if the server entry was created
@@ -955,6 +959,7 @@ printf("afs: In LockAndInstallVolumeEntry\n");
     av->rwVol = ((ve->flags & VLF_RWEXISTS) ? ve->volumeId[RWVOL] : 0);
     av->roVol = ((ve->flags & VLF_ROEXISTS) ? ve->volumeId[ROVOL] : 0);
     av->backVol = ((ve->flags & VLF_BACKEXISTS) ? ve->volumeId[BACKVOL] : 0);
+    av->rwserver = rwserver;
 
     if (ve->flags & VLF_DFSFILESET)
 	av->states |= VForeign;
@@ -1152,8 +1157,9 @@ LockAndInstallUVolumeEntry(struct volume *av, struct uvldbentry *ve, int acell,
 	}
 	serverHost[j] = ts;
 	/* Take note of the rw server, so we can direct all writes there when we have RW slaves */
-	if ((ve->serverFlags[i] & VLF_RWEXISTS) && (av->volume == ve->volumeId[RWVOL]))
+	if ((ve->flags & VLF_RWEXISTS) && (av->volume == ve->volumeId[RWVOL]) && (ve->serverFlags[i] & VLSF_RWVOL)) {
 	    rwserver = ts;
+	}
 
 	/* The cell field could be 0 if the server entry was created
 	 * first with the 'fs setserverprefs' call which doesn't set
