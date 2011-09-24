@@ -282,13 +282,16 @@ afs_Conn(struct VenusFid *afid, struct vrequest *areq,
 		 !(tv->rwserver->addr->sa_flags & SRVR_ISDOWN) &&
 		 !(((areq->idleError > 0) || (areq->tokenError > 0)) && (areq->skipserver[0] == 1)))
 	lowp = tv->rwserver->addr;
+	printf("afs: rwserver is set, connecting to IP %d (volume %s)\n", lowp->sa_ip, tv->name);
     } else {
 	/* First is always lowest rank, if it's up */
 	if ((tv->status[0] == not_busy) && tv->serverHost[0]
 	    && !(tv->serverHost[0]->addr->sa_flags & SRVR_ISDOWN) &&
 	    !(((areq->idleError > 0) || (areq->tokenError > 0))
-	      && (areq->skipserver[0] == 1)))
+	      && (areq->skipserver[0] == 1))) {
 	    lowp = tv->serverHost[0]->addr;
+	    printf("afs: rwserver is NOT set, connecting to lowest ranked (slot 0) server at IP %d, volume %s\n", lowp->sa_ip, tv->name);
+	}
 
 	/* Otherwise we look at all of them. There are seven levels of
 	 * not_busy. This means we will check a volume seven times before it
@@ -320,6 +323,8 @@ afs_Conn(struct VenusFid *afid, struct vrequest *areq,
 		}
 	    }
 	}
+	if (lowp)
+	    printf("afs: Connecting to server at IP %d, volume %s\n", lowp->sa_ip, tv->name);
 	afs_PutVolume(tv, READ_LOCK);
     }
 
