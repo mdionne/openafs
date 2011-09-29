@@ -51,5 +51,6 @@ afs_int32 PushIntoUpdateList(afs_int32 pRPCCall, struct AFSFid *pInFid1,
 	afs_int32 clientViceId);
 int GetSlaveServersForVolume(struct AFSFid *Fid, struct vldbentry *entry);
 struct rx_connection *MakeDummyConnection(afs_int32 serverIp);
+void FS_PostProc(afs_int32 code);
 
 #endif /* _AFS_VICED_RW_REPLICATION_H */

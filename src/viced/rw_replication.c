@@ -127,7 +127,6 @@ PutReplicaVolumePackage(struct Vnode *targetptr, struct Volume *volptr)
 
     if (targetptr) {
 	VPutVnode(&fileCode,targetptr);
-	osi_Assert(!fileCode);
     }
     if (volptr) {
 	VPutVolume(volptr);
@@ -147,4 +146,10 @@ SRXAFS_RStoreACL(struct rx_call *acall, struct AFSFid *Fid,
     PutReplicaVolumePackage(vptr, volptr);
 
     return 0;
+}
+
+void
+FS_PostProc(afs_int32 code)
+{
+    ViceLog(0, ("FS_PostProc: we got called successfully.  RPC returned code %d\n", code));
 }

@@ -82,6 +82,8 @@
 #endif
 #include <rx/rx_globals.h>
 
+#include "rw_replication.h"
+
 extern int etext;
 
 void *ShutDown(void *);
@@ -2090,6 +2092,7 @@ main(int argc, char *argv[])
         rx_SetSecurityConfiguration(tservice, RXS_CONFIG_FLAGS,
                                     (void *)RXS_CONFIG_FLAGS_DISABLE_DOTCHECK);
     }
+    rx_SetPostProc(tservice, FS_PostProc);
     rx_SetMinProcs(tservice, 3);
     rx_SetMaxProcs(tservice, lwps);
     rx_SetCheckReach(tservice, 1);
