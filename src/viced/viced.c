@@ -2098,6 +2098,9 @@ main(int argc, char *argv[])
                                     (void *)RXS_CONFIG_FLAGS_DISABLE_DOTCHECK);
     }
     rx_SetPostProc(tservice, FS_PostProc);
+#if defined(AFS_PTHREAD_ENV)
+    pthread_key_create(&fs_update, NULL);
+#endif
     rx_SetMinProcs(tservice, 3);
     rx_SetMaxProcs(tservice, lwps);
     rx_SetCheckReach(tservice, 1);

@@ -52,5 +52,13 @@ afs_int32 PushIntoUpdateList(afs_int32 pRPCCall, struct AFSFid *pInFid1,
 int GetSlaveServersForVolume(struct AFSFid *Fid, struct vldbentry *entry);
 struct rx_connection *MakeDummyConnection(afs_int32 serverIp);
 void FS_PostProc(afs_int32 code);
+struct AFSUpdateListItem *StashUpdate(afs_int32 pRPCCall, struct AFSFid *pInFid1,
+        struct AFSFid *pInFid2, char *pName1, char *pName2, struct AFSStoreStatus *pInStatus,
+        struct AFSVolSync *pSync, struct AFSOpaque *pAccessList,
+        afs_uint64 pPos, afs_uint64 pLength, afs_uint64 pFileLength, afs_int32 pClientViceId);
+
+#if defined(AFS_PTHREAD_ENV)
+extern pthread_key_t fs_update;
+#endif
 
 #endif /* _AFS_VICED_RW_REPLICATION_H */
