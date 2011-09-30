@@ -2950,6 +2950,9 @@ SRXAFS_StoreACL(struct rx_call * acall, struct AFSFid * Fid,
     struct client *t_client = NULL;	/* tmp ptr to client data */
     struct in_addr logHostAddr;	/* host ip holder for inet_ntoa */
     struct fsstats fsstats;
+#ifdef AFS_PTHREAD_ENV
+    struct AFSUpdateListItem *update;
+#endif
 
     fsstats_StartOp(&fsstats, FS_STATS_RPCIDX_STOREACL);
 
@@ -3005,6 +3008,13 @@ SRXAFS_StoreACL(struct rx_call * acall, struct AFSFid * Fid,
 
     /* Get the updated dir's status back to the caller */
     GetStatus(targetptr, OutStatus, rights, anyrights, 0);
+
+#ifdef AFS_PTHREAD_ENV
+    /* Stash information about the update, for RW replicas */
+    update = StashUpdate(8,Fid,NULL,NULL,NULL,NULL,Sync,
+                AccessList,0,0,0,t_client ? t_client->ViceId : 0);
+    pthread_setspecific(fs_update, update);
+#endif
 
 Bad_StoreACL:
     /* Update and store volume/vnode and parent vnodes back */
