@@ -3525,6 +3525,7 @@ UV_ReleaseVolume(afs_uint32 afromvol, afs_uint32 afromserver,
     char hoststr[16];
     afs_int32 origflags[NMAXNSERVERS];
     struct volser_status orig_status;
+    afs_int32 *vol_flags;
 
     memset(remembertime, 0, sizeof(remembertime));
     memset(&results, 0, sizeof(results));
@@ -3820,11 +3821,13 @@ UV_ReleaseVolume(afs_uint32 afromvol, afs_uint32 afromserver,
     if (!replicas || !times || !results.manyResults_val || !toconns)
 	ONERROR0(ENOMEM,
 		"Failed to create transaction on the release clone\n");
+    vol_flags = malloc(sizeof(afs_int32) * nservers + 1);
 
     memset(replicas, 0, (sizeof(struct replica) * nservers + 1));
     memset(times, 0, (sizeof(struct release) * nservers + 1));
     memset(toconns, 0, (sizeof(struct rx_connection *) * nservers + 1));
     memset(results.manyResults_val, 0, (sizeof(afs_int32) * nservers + 1));
+    memset(vol_flags, 0, (sizeof(afs_int32) * nservers + 1));
 
     /* Create a transaction on the cloned volume */
     VPRINT1("Starting transaction on cloned volume %u...", cloneVolId);
@@ -3874,13 +3877,14 @@ UV_ReleaseVolume(afs_uint32 afromvol, afs_uint32 afromserver,
 	    replicas[volcount].server.destPort = AFSCONF_VOLUMEPORT;
 	    replicas[volcount].server.destSSID = 1;
 	    times[volcount].vldbEntryIndex = vldbindex;
+	    vol_flags[volcount] = entry.serverFlags[vldbindex];
 
 	    code =
 		GetTrans(&entry, vldbindex, &(toconns[volcount]),
 			 &(replicas[volcount].trans),
 			 &(times[volcount].crtime),
 			 &(times[volcount].uptime),
-			 origflags, (entry.serverFlags[vldbindex] & ITSRWSLAVEVOL));
+			 origflags, (vol_flags[volcount] & ITSRWSLAVEVOL));
 	    if (code)
 		continue;
 
@@ -3994,8 +3998,13 @@ UV_ReleaseVolume(afs_uint32 afromvol, afs_uint32 afromserver,
 		    continue;
 		}
 
-		code =
-		    AFSVolSetIdsTypes(toconns[m], replicas[m].trans, vname,
+		if (vol_flags[m] & ITSRWSLAVEVOL)
+		    code =
+			AFSVolSetIdsTypes(toconns[m], replicas[m].trans, entry.name,
+				      RWSLAVEVOL, entry.volumeId[RWVOL], 0, 0);
+		else
+		    code =
+			AFSVolSetIdsTypes(toconns[m], replicas[m].trans, vname,
 				      ROVOL, entry.volumeId[RWVOL], 0, 0);
 		if (code) {
 		    if ((m == 0) || (code != ENOENT)) {

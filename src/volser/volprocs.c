@@ -583,7 +583,9 @@ VolCreateVolume(struct rx_call *acid, afs_int32 apart, char *aname,
     V_uniquifier(vp) = 1;
     V_updateDate(vp) = V_creationDate(vp) = V_copyDate(vp);
     V_inService(vp) = V_blessed(vp) = 1;
+    Log("1 Volser: CreateVolume: volume %u setting type to %d\n", volumeID, atype);
     V_type(vp) = atype;
+    Log("1 Volser: CreateVolume: volume %u setting name to %s\n", volumeID, aname);
     AssignVolumeName(&V_disk(vp), aname, 0);
     if (doCreateRoot) {
 	error = ViceCreateRoot(vp);

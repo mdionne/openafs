@@ -499,6 +499,8 @@ DisplayFormat(volintInfo *pntr, afs_uint32 server, afs_int32 part,
 		fprintf(STDOUT, "RO ");
 	    if (pntr->type == 2)
 		fprintf(STDOUT, "BK ");
+	    if (pntr->type == 3)
+		fprintf(STDOUT, "SL");
 	    fprintf(STDOUT, "%10d K  ", pntr->size);
 	    if (pntr->inUse == 1) {
 		fprintf(STDOUT, "On-line");
@@ -570,6 +572,8 @@ DisplayFormat(volintInfo *pntr, afs_uint32 server, afs_int32 part,
 		fprintf(STDOUT, "RO ");
 	    if (pntr->type == 2)
 		fprintf(STDOUT, "BK ");
+	    if (pntr->type == 3)
+		fprintf(STDOUT, "SL ");
 	    fprintf(STDOUT, "%10d K ", pntr->size);
 	    if (pntr->inUse == 1) {
 		fprintf(STDOUT, "On-line");
