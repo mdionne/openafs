@@ -20,6 +20,7 @@
 #define readwriteVolume		RWVOL
 #define readonlyVolume		ROVOL
 #define backupVolume		BACKVOL
+#define rwslaveVolume		RWSLAVEVOL
 
 #define RWVOL			0
 #define ROVOL			1

@@ -168,7 +168,7 @@ static int DelVol(struct rx_connection *conn, afs_uint32 vid, afs_int32 part,
 static int GetTrans(struct nvldbentry *vldbEntryPtr, afs_int32 index,
 		    struct rx_connection **connPtr, afs_int32 * transPtr,
 		    afs_uint32 * crtimePtr, afs_uint32 * uptimePtr,
-		    afs_int32 *origflags);
+		    afs_int32 *origflags, int rwslave);
 static int SimulateForwardMultiple(struct rx_connection *fromconn,
 				   afs_int32 fromtid, afs_int32 fromdate,
 				   manyDests * tr, afs_int32 flags,
@@ -3226,7 +3226,7 @@ static int
 GetTrans(struct nvldbentry *vldbEntryPtr, afs_int32 index,
 	 struct rx_connection **connPtr, afs_int32 * transPtr,
 	 afs_uint32 * crtimePtr, afs_uint32 * uptimePtr,
-	 afs_int32 *origflags)
+	 afs_int32 *origflags, int rwslave)
 {
     afs_uint32 volid;
     struct volser_status tstatus;
@@ -3244,7 +3244,10 @@ GetTrans(struct nvldbentry *vldbEntryPtr, afs_int32 index,
     if (!*connPtr)
 	goto fail;		/* server is down */
 
-    volid = vldbEntryPtr->volumeId[ROVOL];
+    if (rwslave)
+	volid = vldbEntryPtr->volumeId[RWVOL];
+    else
+	volid = vldbEntryPtr->volumeId[ROVOL];
     if (volid) {
 	code =
 	    AFSVolTransCreate_retry(*connPtr, volid,
@@ -3294,6 +3297,7 @@ GetTrans(struct nvldbentry *vldbEntryPtr, afs_int32 index,
     if (!volid || code) {
 	char volname[64];
         char hoststr[16];
+	afs_int32 voltype;
 
 	if (volid && (code != VNOVOL)) {
 	    PrintError("Failed to start a transaction on the RO volume.\n",
@@ -3302,7 +3306,10 @@ GetTrans(struct nvldbentry *vldbEntryPtr, afs_int32 index,
 	}
 
 	strcpy(volname, vldbEntryPtr->name);
-	strcat(volname, ".readonly");
+
+	/* If this is a RW slave, don't tag on the .readonly suffix */
+	if (rwslave == 0)
+	    strcat(volname, ".readonly");
 
 	if (verbose) {
 	    fprintf(STDOUT,
@@ -3314,10 +3321,14 @@ GetTrans(struct nvldbentry *vldbEntryPtr, afs_int32 index,
 					   serverNumber[index]));
 	    fflush(STDOUT);
 	}
+	if (rwslave)
+	    voltype = volser_RWSLAVE;
+	else
+	    voltype = volser_RO;
 
 	code =
 	    AFSVolCreateVolume(*connPtr, vldbEntryPtr->serverPartition[index],
-			       volname, volser_RO,
+			       volname, voltype,
 			       vldbEntryPtr->volumeId[RWVOL], &volid,
 			       transPtr);
 	if (code) {
@@ -3863,7 +3874,7 @@ UV_ReleaseVolume(afs_uint32 afromvol, afs_uint32 afromserver,
 			 &(replicas[volcount].trans),
 			 &(times[volcount].crtime),
 			 &(times[volcount].uptime),
-			 origflags);
+			 origflags, (entry.serverFlags[vldbindex] & ITSRWSLAVEVOL));
 	    if (code)
 		continue;
 
