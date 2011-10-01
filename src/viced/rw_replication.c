@@ -160,14 +160,29 @@ void
 FS_PostProc(afs_int32 code)
 {
 #if defined(AFS_PTHREAD_ENV)
+    struct vldbentry entry;
+    int i;
+    struct rx_connection *rcon;
     struct AFSUpdateListItem *item;
 #endif
 
-    ViceLog(0, ("FS_PostProc: we got called successfully.  RPC returned code %d\n", code));
 #if defined(AFS_PTHREAD_ENV)
     item = pthread_getspecific(fs_update);
     if (item) {
-	ViceLog(0, ("FS_PostProc: got update item to process, OP is %d\n", item->RPCCall));
+	GetSlaveServersForVolume(&item->InFid1, &entry);
+	for (i = 0; i < entry.nServers; i++) {
+	    ViceLog(0, ("StoreACL checking for rw slave servers, server %d\n", i));
+	    if (entry.serverFlags[i] & 0x10) {
+		/* make connections for each Slave */
+		ViceLog(0, ("StoreACL calling remote on server %d\n", i));
+		rcon = MakeDummyConnection(entry.serverNumber[i]);
+		switch(item->RPCCall) {
+		    case RPC_StoreACL:
+			RXAFS_RStoreACL(rcon, &item->InFid1, &item->AccessList, &item->Sync);
+			break;
+	    }
+	}
+	}
     } else {
 	ViceLog(0, ("FS_PostProc: no items to process\n"));
     }
