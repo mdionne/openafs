@@ -1119,7 +1119,6 @@ VGetVnode_r(Error * ec, Volume * vp, VnodeId vnodeNumber, int locktype)
     struct VnodeClassInfo *vcp;
 
     *ec = 0;
-
     if (vnodeNumber == 0) {
 	*ec = VNOVNODE;
 	return NULL;

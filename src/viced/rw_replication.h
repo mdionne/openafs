@@ -56,6 +56,9 @@ struct AFSUpdateListItem *StashUpdate(afs_int32 pRPCCall, struct AFSFid *pInFid1
         struct AFSFid *pInFid2, char *pName1, char *pName2, struct AFSStoreStatus *pInStatus,
         struct AFSVolSync *pSync, struct AFSOpaque *pAccessList,
         afs_uint64 pPos, afs_uint64 pLength, afs_uint64 pFileLength, afs_int32 pClientViceId);
+afs_int32 GetReplicaVolumePackage(struct AFSFid *Fid, Volume **volptr,
+	    Vnode **targetptr, int chkforDir, int locktype);
+void PutReplicaVolumePackage(struct Vnode *targetptr, struct Volume *volptr);
 
 #if defined(AFS_PTHREAD_ENV)
 extern pthread_key_t fs_update;
@@ -72,5 +75,8 @@ extern pthread_key_t fs_update;
 #define RPC_MakeDir 141;
 #define RPC_RemoveDir 142;
 #define RPC_StoreData64 65538;
+
+#define LOCAL_RPC 0
+#define REMOTE_RPC 1
 
 #endif /* _AFS_VICED_RW_REPLICATION_H */

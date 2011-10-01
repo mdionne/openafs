@@ -46,6 +46,11 @@ afs_uint32 queryDbserver;
 
 afs_int32 CheckVnodeWithCall(AFSFid *fid, Volume **volptr, struct VCallByVol *cbv,
                    Vnode **vptr, int lock);
+afs_int32 SAFS_StoreACL(struct rx_call * acall, struct AFSFid * Fid,
+                struct AFSOpaque * AccessList,
+                struct AFSFetchStatus * OutStatus, struct AFSVolSync * Sync,
+                int remote_flag);
+
 
 #if defined(AFS_PTHREAD_ENV)
 pthread_key_t fs_update;
@@ -92,7 +97,8 @@ GetSlaveServersForVolume(struct AFSFid *Fid,
 }
 
 /* Make dummy COnnection to make fileserver->fileserver RPC call*/
-struct rx_connection *MakeDummyConnection(afs_int32 serverIp)
+struct rx_connection *
+MakeDummyConnection(afs_int32 serverIp)
 {
     struct rx_connection *tcon;
     struct rx_securityClass *sc;
@@ -110,7 +116,7 @@ struct rx_connection *MakeDummyConnection(afs_int32 serverIp)
     return tcon;
 }
 
-static afs_int32
+afs_int32
 GetReplicaVolumePackage(struct AFSFid *Fid, Volume **volptr,
 	Vnode **targetptr, int chkforDir, int locktype)
 {
@@ -128,7 +134,7 @@ GetReplicaVolumePackage(struct AFSFid *Fid, Volume **volptr,
     return errorCode;
 }
 
-static void
+void
 PutReplicaVolumePackage(struct Vnode *targetptr, struct Volume *volptr)
 {
     Error fileCode = 0;
@@ -146,14 +152,9 @@ afs_int32
 SRXAFS_RStoreACL(struct rx_call *acall, struct AFSFid *Fid,
 	struct AFSOpaque *AccessList, struct AFSVolSync *Sync)
 {
-    Vnode *vptr = 0;
-    Volume *volptr = 0;
+    ViceLog(0, ("Processing RStoreACL call, calling SAFS_StoreACL\n"));
 
-    ViceLog(0, ("Got RStoreACL call. Return success, no operation done.\n"));
-    GetReplicaVolumePackage(Fid, &volptr, &vptr, MustBeDIR, WRITE_LOCK);
-    PutReplicaVolumePackage(vptr, volptr);
-
-    return 0;
+    return SAFS_StoreACL(acall, Fid, AccessList, NULL, Sync, REMOTE_RPC);
 }
 
 void
@@ -171,13 +172,13 @@ FS_PostProc(afs_int32 code)
     if (item) {
 	GetSlaveServersForVolume(&item->InFid1, &entry);
 	for (i = 0; i < entry.nServers; i++) {
-	    ViceLog(0, ("StoreACL checking for rw slave servers, server %d\n", i));
 	    if (entry.serverFlags[i] & 0x10) {
 		/* make connections for each Slave */
 		ViceLog(0, ("StoreACL calling remote on server %d\n", i));
 		rcon = MakeDummyConnection(entry.serverNumber[i]);
 		switch(item->RPCCall) {
 		    case RPC_StoreACL:
+			ViceLog(0, ("Calling remote StoreACL\n"));
 			RXAFS_RStoreACL(rcon, &item->InFid1, &item->AccessList, &item->Sync);
 			break;
 	    }

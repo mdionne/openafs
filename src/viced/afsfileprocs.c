@@ -2976,9 +2976,10 @@ SRXAFS_StoreData64(struct rx_call * acall, struct AFSFid * Fid,
 }
 
 afs_int32
-SRXAFS_StoreACL(struct rx_call * acall, struct AFSFid * Fid,
+SAFS_StoreACL(struct rx_call * acall, struct AFSFid * Fid,
 		struct AFSOpaque * AccessList,
-		struct AFSFetchStatus * OutStatus, struct AFSVolSync * Sync)
+		struct AFSFetchStatus * OutStatus, struct AFSVolSync * Sync,
+		int remote_flag)
 {
     Vnode *targetptr = 0;	/* pointer to input fid */
     Vnode *parentwhentargetnotdir = 0;	/* parent of Fid to get ACL */
@@ -2998,16 +2999,22 @@ SRXAFS_StoreACL(struct rx_call * acall, struct AFSFid * Fid,
 
     fsstats_StartOp(&fsstats, FS_STATS_RPCIDX_STOREACL);
 
-    if ((errorCode = CallPreamble(acall, ACTIVECALL, &tcon, &thost)))
-	goto Bad_StoreACL;
-
-    /* Get ptr to client data for user Id for logging */
-    t_client = (struct client *)rx_GetSpecific(tcon, rxcon_client_key);
-    logHostAddr.s_addr = rxr_HostOf(tcon);
-    ViceLog(1,
+    if (!remote_flag) {
+	if ((errorCode = CallPreamble(acall, ACTIVECALL, &tcon, &thost)))
+	    goto Bad_StoreACL;
+	/* Get ptr to client data for user Id for logging */
+	t_client = (struct client *)rx_GetSpecific(tcon, rxcon_client_key);
+	logHostAddr.s_addr = rxr_HostOf(tcon);
+	ViceLog(1,
 	    ("SAFS_StoreACL, Fid = %u.%u.%u, ACL=%s, Host %s:%d, Id %d\n",
 	     Fid->Volume, Fid->Vnode, Fid->Unique, AccessList->AFSOpaque_val,
 	     inet_ntoa(logHostAddr), ntohs(rxr_PortOf(tcon)), t_client->ViceId));
+    } else {
+	ViceLog(1,
+	    ("SAFS_StoreACL (remote), Fid = %u.%u.%u, ACL=%s\n",
+	     Fid->Volume, Fid->Vnode, Fid->Unique, AccessList->AFSOpaque_val));
+    }
+
     FS_LOCK;
     AFSCallStats.StoreACL++, AFSCallStats.TotalCalls++;
     FS_UNLOCK;
@@ -3017,21 +3024,27 @@ SRXAFS_StoreACL(struct rx_call * acall, struct AFSFid * Fid,
      * Get associated volume/vnode for the target dir; caller's rights
      * are also returned.
      */
-    if ((errorCode =
-	 GetVolumePackage(tcon, Fid, &volptr, &targetptr, MustBeDIR,
+    if (remote_flag)
+	errorCode = GetReplicaVolumePackage(Fid, &volptr, &targetptr, MustBeDIR, WRITE_LOCK);
+    else
+	errorCode = GetVolumePackage(tcon, Fid, &volptr, &targetptr, MustBeDIR,
 			  &parentwhentargetnotdir, &client, WRITE_LOCK,
-			  &rights, &anyrights))) {
+			  &rights, &anyrights);
+    ViceLog(1,
+	    ("SAFS_StoreACL got package. errorCode: %d\n", errorCode));
+    if (errorCode)
 	goto Bad_StoreACL;
-    }
 
     /* set volume synchronization information */
     SetVolumeSync(Sync, volptr);
 
-    /* Check if we have permission to change the dir's ACL */
-    if ((errorCode =
-	 Check_PermissionRights(targetptr, client, rights, CHK_STOREACL,
-				&InStatus))) {
-	goto Bad_StoreACL;
+    if (!remote_flag) {
+	/* Check if we have permission to change the dir's ACL */
+	if ((errorCode =
+	     Check_PermissionRights(targetptr, client, rights, CHK_STOREACL,
+				    &InStatus))) {
+	    goto Bad_StoreACL;
+	}
     }
 
     /* Build and store the new Access List for the dir */
@@ -3046,24 +3059,31 @@ SRXAFS_StoreACL(struct rx_call * acall, struct AFSFid * Fid,
     osi_Assert(!errorCode || errorCode == VSALVAGE);
 
     /* break call backs on the directory  */
-    BreakCallBack(client->host, Fid, 0);
+    BreakCallBack(remote_flag ? NULL : client->host, Fid, 0);
 
     /* Get the updated dir's status back to the caller */
-    GetStatus(targetptr, OutStatus, rights, anyrights, 0);
+    if (!remote_flag) {
+	GetStatus(targetptr, OutStatus, rights, anyrights, 0);
 
 #ifdef AFS_PTHREAD_ENV
-    /* Stash information about the update, for RW replicas */
-    update = StashUpdate(RPC_StoreACL, Fid, NULL, NULL, NULL, NULL, Sync,
+	/* Stash information about the update, for RW replicas */
+	update = StashUpdate(RPC_StoreACL, Fid, NULL, NULL, NULL, NULL, Sync,
                 AccessList, 0, 0, 0, t_client ? t_client->ViceId : 0);
-    pthread_setspecific(fs_update, update);
+	pthread_setspecific(fs_update, update);
 #endif
+    }
 
 Bad_StoreACL:
     /* Update and store volume/vnode and parent vnodes back */
-    PutVolumePackage(parentwhentargetnotdir, targetptr, (Vnode *) 0,
+    if (remote_flag)
+	PutReplicaVolumePackage( targetptr, volptr);
+    else
+	PutVolumePackage(parentwhentargetnotdir, targetptr, (Vnode *) 0,
 		     volptr, &client);
     ViceLog(2, ("SAFS_StoreACL returns %d\n", errorCode));
-    errorCode = CallPostamble(tcon, errorCode, thost);
+
+    if (!remote_flag)
+	errorCode = CallPostamble(tcon, errorCode, thost);
 
     fsstats_FinishOp(&fsstats, errorCode);
 
@@ -3073,8 +3093,15 @@ Bad_StoreACL:
 
     return errorCode;
 
-}				/*SRXAFS_StoreACL */
+}
 
+afs_int32
+SRXAFS_StoreACL(struct rx_call * acall, struct AFSFid * Fid,
+		struct AFSOpaque * AccessList,
+		struct AFSFetchStatus * OutStatus, struct AFSVolSync * Sync)
+{
+    return SAFS_StoreACL(acall, Fid, AccessList, OutStatus, Sync, LOCAL_RPC);
+}				/*SRXAFS_StoreACL */
 
 /*
  * Note: This routine is called exclusively from SRXAFS_StoreStatus(), and
