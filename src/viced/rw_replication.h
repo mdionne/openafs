@@ -61,4 +61,16 @@ struct AFSUpdateListItem *StashUpdate(afs_int32 pRPCCall, struct AFSFid *pInFid1
 extern pthread_key_t fs_update;
 #endif
 
+#define RPC_StoreData 133
+#define RPC_StoreACL 134
+#define RPC_StoreStatus 135;
+#define RPC_RemoveFile 136;
+#define RPC_CreateFile 137;
+#define RPC_Rename 138;
+#define RPC_Symlink 139;
+#define RPC_Link 140;
+#define RPC_MakeDir 141;
+#define RPC_RemoveDir 142;
+#define RPC_StoreData64 65538;
+
 #endif /* _AFS_VICED_RW_REPLICATION_H */

@@ -3053,8 +3053,8 @@ SRXAFS_StoreACL(struct rx_call * acall, struct AFSFid * Fid,
 
 #ifdef AFS_PTHREAD_ENV
     /* Stash information about the update, for RW replicas */
-    update = StashUpdate(8,Fid,NULL,NULL,NULL,NULL,Sync,
-                AccessList,0,0,0,t_client ? t_client->ViceId : 0);
+    update = StashUpdate(RPC_StoreACL, Fid, NULL, NULL, NULL, NULL, Sync,
+                AccessList, 0, 0, 0, t_client ? t_client->ViceId : 0);
     pthread_setspecific(fs_update, update);
 #endif
 
@@ -3070,23 +3070,6 @@ Bad_StoreACL:
     osi_auditU(acall, StoreACLEvent, errorCode,
                AUD_ID, t_client ? t_client->ViceId : 0,
                AUD_FID, Fid, AUD_ACL, AccessList->AFSOpaque_val, AUD_END);
-
-    {
-	struct vldbentry entry;
-	int i;
-	struct rx_connection *rcon;
-	GetSlaveServersForVolume(Fid, &entry);
-
-	for (i = 0; i < entry.nServers; i++) {
-	    ViceLog(0, ("StoreACL checking for rw slave servers, server %d\n", i));
-	    if (entry.serverFlags[i] & 0x10) {
-		/* make connections for each Slave */
-		ViceLog(0, ("StoreACL calling remote on server %d\n", i));
-		rcon = MakeDummyConnection(entry.serverNumber[i]);
-		RXAFS_RStoreACL(rcon, Fid, AccessList, Sync);
-	    }
-	}
-    }
 
     return errorCode;
 
