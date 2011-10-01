@@ -22,7 +22,7 @@
 #include <afs/afssyscalls.h>
 #include "voldefs.h"
 #include "ihandle.h"
-#define VolumeWriteable(vp)		(V_type(vp)==readwriteVolume)
+#define VolumeWriteable(vp)		(V_type(vp)==readwriteVolume || V_type(vp)==rwslaveVolume)
 #define VolumeWriteable2(vol)		(vol.type == readwriteVolume)
 typedef bit32 FileOffset;	/* Offset in this file */
 #define Date afs_uint32
