@@ -279,10 +279,8 @@ afs_Conn(struct VenusFid *afid, struct vrequest *areq,
     if (rw_only) {
 	if ((tv->rwstatus == not_busy) &&
 		 tv->rwserver &&
-		 !(tv->rwserver->addr->sa_flags & SRVR_ISDOWN) &&
-		 !(((areq->idleError > 0) || (areq->tokenError > 0)) && (areq->skipserver[0] == 1)))
-	lowp = tv->rwserver->addr;
-	printf("afs: rwserver is set, connecting to IP %d (volume %s)\n", lowp->sa_ip, tv->name);
+		 !(tv->rwserver->addr->sa_flags & SRVR_ISDOWN))
+	    lowp = tv->rwserver->addr;
     } else {
 	/* First is always lowest rank, if it's up */
 	if ((tv->status[0] == not_busy) && tv->serverHost[0]
@@ -290,7 +288,6 @@ afs_Conn(struct VenusFid *afid, struct vrequest *areq,
 	    !(((areq->idleError > 0) || (areq->tokenError > 0))
 	      && (areq->skipserver[0] == 1))) {
 	    lowp = tv->serverHost[0]->addr;
-	    printf("afs: rwserver is NOT set, connecting to lowest ranked (slot 0) server at IP %d, volume %s\n", lowp->sa_ip, tv->name);
 	}
 
 	/* Otherwise we look at all of them. There are seven levels of
@@ -323,8 +320,6 @@ afs_Conn(struct VenusFid *afid, struct vrequest *areq,
 		}
 	    }
 	}
-	if (lowp)
-	    printf("afs: Connecting to server at IP %d, volume %s\n", lowp->sa_ip, tv->name);
 	afs_PutVolume(tv, READ_LOCK);
     }
 
