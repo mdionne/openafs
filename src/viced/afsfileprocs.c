@@ -3033,7 +3033,7 @@ SAFS_StoreACL(struct rx_call * acall, struct AFSFid * Fid,
 #if defined(AFS_PTHREAD_ENV)
 	/* Stash information about the update, for RW replicas */
 	update = StashUpdate(RPC_StoreACL, Fid, NULL,
-		NULL, NULL, NULL, Sync, AccessList,
+		NULL, NULL, NULL, AccessList,
 		0, 0, 0, t_client ? t_client->ViceId : 0);
 	pthread_setspecific(fs_update, update);
 #endif
@@ -4519,7 +4519,7 @@ SRXAFS_MakeDir(struct rx_call * acall, struct AFSFid * DirFid, char *Name,
 #if defined(AFS_PTHREAD_ENV)
     /* Stash information about the update, for RW replicas */
     update = StashUpdate(RPC_MakeDir, DirFid, OutFid,
-		Name, NULL, InStatus, Sync, NULL,
+		Name, NULL, InStatus, NULL,
 		0, 0, 0, t_client ? t_client->ViceId : 0);
     pthread_setspecific(fs_update, update);
 #endif

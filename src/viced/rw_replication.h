@@ -54,7 +54,7 @@ struct rx_connection *MakeDummyConnection(afs_int32 serverIp);
 void FS_PostProc(afs_int32 code);
 struct AFSUpdateListItem *StashUpdate(afs_int32 pRPCCall, struct AFSFid *pInFid1,
         struct AFSFid *pInFid2, char *pName1, char *pName2, struct AFSStoreStatus *pInStatus,
-        struct AFSVolSync *pSync, struct AFSOpaque *pAccessList,
+        struct AFSOpaque *pAccessList,
         afs_uint64 pPos, afs_uint64 pLength, afs_uint64 pFileLength, afs_int32 pClientViceId);
 afs_int32 GetReplicaVolumePackage(struct AFSFid *Fid, Volume **volptr,
 	    Vnode **targetptr, int chkforDir, int locktype);
