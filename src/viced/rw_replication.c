@@ -199,13 +199,19 @@ FS_PostProc(afs_int32 code)
 	for (i = 0; i < entry.nServers; i++) {
 	    if (entry.serverFlags[i] & 0x10) {
 		/* make connections for each Slave */
-		ViceLog(0, ("StoreACL calling remote on server %d\n", i));
+		ViceLog(0, ("Calling remote on server %d\n", i));
 		rcon = MakeDummyConnection(entry.serverNumber[i]);
 		switch(item->RPCCall) {
+		    case RPC_MakeDir:
+			ViceLog(0, ("Calling remote MakeDir\n"));
+			RXAFS_RMakeDir(rcon, &item->InFid1, item->Name1, &item->InStatus, &item->InFid2);
+			break;
 		    case RPC_StoreACL:
 			ViceLog(0, ("Calling remote StoreACL\n"));
 			RXAFS_RStoreACL(rcon, &item->InFid1, &item->AccessList, &item->Sync);
 			break;
+		    default:
+			ViceLog(0, ("Warning: unhandled stashed RPC, op: %d\n", item->RPCCall));
 	    }
 	}
 	}
