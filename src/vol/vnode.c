@@ -536,11 +536,11 @@ VLookupVnode(Volume * vp, VnodeId vnodeId)
 
 
 Vnode *
-VAllocVnode(Error * ec, Volume * vp, VnodeType type)
+VAllocVnode(Error * ec, Volume * vp, VnodeType type, VnodeId vnode, Unique unique)
 {
     Vnode *retVal;
     VOL_LOCK;
-    retVal = VAllocVnode_r(ec, vp, type);
+    retVal = VAllocVnode_r(ec, vp, type, vnode, unique);
     VOL_UNLOCK;
     return retVal;
 }
@@ -560,7 +560,7 @@ VAllocVnode(Error * ec, Volume * vp, VnodeType type)
  * @post vnode allocated and returned
  */
 Vnode *
-VAllocVnode_r(Error * ec, Volume * vp, VnodeType type)
+VAllocVnode_r(Error * ec, Volume * vp, VnodeType type, VnodeId in_vnode, Unique in_unique)
 {
     Vnode *vnp;
     VnodeId vnodeNumber;
@@ -568,9 +568,18 @@ VAllocVnode_r(Error * ec, Volume * vp, VnodeType type)
     struct VnodeClassInfo *vcp;
     VnodeClass class;
     Unique unique;
+    struct vnodeIndex *index;
+    unsigned int offset;
+    byte *bp;
+
 #ifdef AFS_DEMAND_ATTACH_FS
     VolState vol_state_save;
 #endif
+
+    /*
+     * If in_vnode and in_unique are specified, we are asked to
+     * allocate a specifc vnode slot
+     */
 
     *ec = 0;
 
@@ -604,10 +613,6 @@ VAllocVnode_r(Error * ec, Volume * vp, VnodeType type)
 	return NULL;
     }
 
-    unique = vp->nextVnodeUnique++;
-    if (!unique)
-	unique = vp->nextVnodeUnique++;
-
     if (vp->nextVnodeUnique > V_uniquifier(vp)) {
 	VUpdateVolume_r(ec, vp, 0);
 	if (*ec)
@@ -620,17 +625,57 @@ VAllocVnode_r(Error * ec, Volume * vp, VnodeType type)
 	    return NULL;
     }
 
-    /* Find a slot in the bit map */
-    bitNumber = VAllocBitmapEntry_r(ec, vp, &vp->vnodeIndex[class],
-				    VOL_ALLOC_BITMAP_WAIT);
-    if (*ec)
-	return NULL;
-    vnodeNumber = bitNumberToVnodeNumber(bitNumber, class);
+    if (!in_vnode) {
+	unique = vp->nextVnodeUnique++;
+	if (!unique)
+	    unique = vp->nextVnodeUnique++;
 
-    /*
-     * DAFS:
-     * at this point we should be assured that V_attachState(vp) is non-exclusive
-     */
+	/* Find a slot in the bit map */
+	bitNumber = VAllocBitmapEntry_r(ec, vp, &vp->vnodeIndex[class],
+				    VOL_ALLOC_BITMAP_WAIT);
+	if (*ec)
+	    return NULL;
+	vnodeNumber = bitNumberToVnodeNumber(bitNumber, class);
+
+	/*
+	 * DAFS:
+	 * at this point we should be assured that V_attachState(vp) is non-exclusive
+	 */
+    } else {
+	index = &vp->vnodeIndex[class];
+	if (!in_unique){
+	    *ec = VNOVNODE;
+	    ViceLog(0,("VAllocVnode (specific): Failed 3\n"));
+	    return NULL;
+	}
+	/* Catch us up to where the master is */
+	if (in_unique > vp->nextVnodeUnique)
+	    vp->nextVnodeUnique = in_unique+1;
+
+	unique = in_unique;
+	bitNumber = vnodeIdToBitNumber(in_vnode);
+	offset = bitNumber >> 3;
+
+	/* Mark vnode in use. Grow bitmap if needed. */
+	if ((offset >= index->bitmapSize)
+		|| ((*(index->bitmap + offset) & (1 << (bitNumber & 0x7))) == 0)) {
+	    bp = (byte *)
+	    realloc(index->bitmap, index->bitmapSize + VOLUME_BITMAP_GROWSIZE);
+	    index->bitmap = bp;
+	    bp += index->bitmapSize;
+	    memset(bp, 0, VOLUME_BITMAP_GROWSIZE);
+	    index->bitmapOffset = index->bitmapSize;
+	    index->bitmapSize += VOLUME_BITMAP_GROWSIZE;
+	}
+	/* Should not happen */
+	if (*(index->bitmap + offset) & (1 << (bitNumber & 0x7))) {
+	    *ec = VNOVNODE;
+	    return NULL;
+	}
+
+	*(index->bitmap + offset) |= (1 << (bitNumber & 0x7));
+	vnodeNumber = in_vnode;
+    }
 
  vnrehash:
     VNLog(2, 1, vnodeNumber, 0, 0, 0);

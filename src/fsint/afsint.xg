@@ -784,6 +784,13 @@ GetOsdMetadata(
 ) split = 65562;
 */
 
+RMakeDir(
+  IN  AFSFid *DirFid,
+  string Name<AFSNAMEMAX>,
+  AFSStoreStatus *InStatus,
+  AFSFid *InFid
+) = 65605;
+
 RStoreACL(
   IN  AFSFid *Fid,
   AFSOpaque *AccessList,

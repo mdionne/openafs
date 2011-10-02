@@ -1032,7 +1032,8 @@ extern int VWalkVolumeHeaders(struct DiskPartition64 *dp, const char *partpath,
 #define VOL_SALVAGE_INVALIDATE_HEADER 0x1 /* for demand attach fs, invalidate volume header cache */
 #define VOL_SALVAGE_NO_OFFLINE        0x2 /* we do not need to wait to offline the volume; it has
                                            * not been fully attached */
-
+#define VOLUME_BITMAP_GROWSIZE  16      /* bytes, => 128vnodes */
+                                        /* Must be a multiple of 4 (1 word) !! */
 
 #if	defined(NEARINODE_HINT)
 #define V_pref(vp,nearInode)  nearInodeHash(V_id(vp),(nearInode)); (nearInode) %= V_partition(vp)->f_files

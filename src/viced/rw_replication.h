@@ -45,7 +45,7 @@ struct AFSUpdateListItem {
 afs_int32 DelayedPopFromUpdateList(void);
 afs_int32 PushIntoUpdateList(afs_int32 pRPCCall, struct AFSFid *pInFid1,
 	struct AFSFid *pInFid2, char *pName1, char *pName2,
-	struct AFSStoreStatus *pInStatus, struct AFSVolSync *pSync,
+	struct AFSStoreStatus *pInStatus,
 	struct AFSOpaque *pAccessList, afs_uint64 pPos,
 	afs_uint64 pLength, afs_uint64 pFileLength, char *storebuf,
 	afs_int32 clientViceId);
@@ -54,11 +54,11 @@ struct rx_connection *MakeDummyConnection(afs_int32 serverIp);
 void FS_PostProc(afs_int32 code);
 struct AFSUpdateListItem *StashUpdate(afs_int32 pRPCCall, struct AFSFid *pInFid1,
         struct AFSFid *pInFid2, char *pName1, char *pName2, struct AFSStoreStatus *pInStatus,
-        struct AFSVolSync *pSync, struct AFSOpaque *pAccessList,
+        struct AFSOpaque *pAccessList,
         afs_uint64 pPos, afs_uint64 pLength, afs_uint64 pFileLength, afs_int32 pClientViceId);
 afs_int32 GetReplicaVolumePackage(struct AFSFid *Fid, Volume **volptr,
 	    Vnode **targetptr, int chkforDir, int locktype);
-void PutReplicaVolumePackage(struct Vnode *targetptr, struct Volume *volptr);
+void PutReplicaVolumePackage(struct Vnode *targetptr, struct Vnode *parentptr, struct Volume *volptr);
 
 #if defined(AFS_PTHREAD_ENV)
 extern pthread_key_t fs_update;
@@ -66,15 +66,15 @@ extern pthread_key_t fs_update;
 
 #define RPC_StoreData 133
 #define RPC_StoreACL 134
-#define RPC_StoreStatus 135;
-#define RPC_RemoveFile 136;
-#define RPC_CreateFile 137;
-#define RPC_Rename 138;
-#define RPC_Symlink 139;
-#define RPC_Link 140;
-#define RPC_MakeDir 141;
-#define RPC_RemoveDir 142;
-#define RPC_StoreData64 65538;
+#define RPC_StoreStatus 135
+#define RPC_RemoveFile 136
+#define RPC_CreateFile 137
+#define RPC_Rename 138
+#define RPC_Symlink 139
+#define RPC_Link 140
+#define RPC_MakeDir 141
+#define RPC_RemoveDir 142
+#define RPC_StoreData64 65538
 
 #define LOCAL_RPC 0
 #define REMOTE_RPC 1

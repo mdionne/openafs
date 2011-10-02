@@ -180,9 +180,6 @@ pthread_t vol_glock_holder = 0;
 #endif
 
 
-#define VOLUME_BITMAP_GROWSIZE	16	/* bytes, => 128vnodes */
-					/* Must be a multiple of 4 (1 word) !! */
-
 /* this parameter needs to be tunable at runtime.
  * 128 was really inadequate for largish servers -- at 16384 volumes this
  * puts average chain length at 128, thus an average 65 deref's to find a volptr.
