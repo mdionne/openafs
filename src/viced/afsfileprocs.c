@@ -1747,9 +1747,10 @@ AdjustDiskUsage(Volume * volptr, afs_sfsize_t length,
  * SAFS_Symlink) or a new dir (SAFS_MakeDir)
  */
 static afs_int32
-Alloc_NewVnode(Vnode * parentptr, DirHandle * dir, Volume * volptr,
-	       Vnode ** targetptr, char *Name, struct AFSFid *OutFid,
-	       int FileType, afs_sfsize_t BlocksPreallocatedForVnode)
+Alloc_NewVnode(Vnode *parentptr, DirHandle *dir, Volume *volptr,
+	Vnode **targetptr, char *Name, struct AFSFid *Fid,
+	int FileType, afs_sfsize_t BlocksPreallocatedForVnode,
+	int remote_flag)
 {
     Error errorCode = 0;		/* Error code returned back */
     Error temp;
@@ -1772,14 +1773,20 @@ Alloc_NewVnode(Vnode * parentptr, DirHandle * dir, Volume * volptr,
 	return VSALVAGE;
     }
 
-    *targetptr = VAllocVnode(&errorCode, volptr, FileType);
+    if (remote_flag)
+	*targetptr = VAllocVnode(&errorCode, volptr, FileType, Fid->Vnode, Fid->Unique);
+    else
+	*targetptr = VAllocVnode(&errorCode, volptr, FileType, 0, 0);
+
     if (errorCode != 0) {
 	VAdjustDiskUsage(&temp, volptr, -BlocksPreallocatedForVnode, 0);
 	return (errorCode);
     }
-    OutFid->Volume = V_id(volptr);
-    OutFid->Vnode = (*targetptr)->vnodeNumber;
-    OutFid->Unique = (*targetptr)->disk.uniquifier;
+    if (!remote_flag) {
+	Fid->Volume = V_id(volptr);
+	Fid->Vnode = (*targetptr)->vnodeNumber;
+	Fid->Unique = (*targetptr)->disk.uniquifier;
+    }
 
     nearInode = VN_GET_INO(parentptr);	/* parent is also in same vol */
 
@@ -1826,7 +1833,7 @@ Alloc_NewVnode(Vnode * parentptr, DirHandle * dir, Volume * volptr,
 
     /* add the name to the directory */
     SetDirHandle(dir, parentptr);
-    if ((errorCode = afs_dir_Create(dir, Name, OutFid))) {
+    if ((errorCode = afs_dir_Create(dir, Name, Fid))) {
 	(*targetptr)->delete = 1;
 	VAdjustDiskUsage(&temp, volptr, -BlocksPreallocatedForVnode, 0);
 	IH_REALLYCLOSE((*targetptr)->handle);
@@ -3023,10 +3030,11 @@ SAFS_StoreACL(struct rx_call * acall, struct AFSFid * Fid,
     if (!remote_flag) {
 	GetStatus(targetptr, OutStatus, rights, anyrights, 0);
 
-#ifdef AFS_PTHREAD_ENV
+#if defined(AFS_PTHREAD_ENV)
 	/* Stash information about the update, for RW replicas */
-	update = StashUpdate(RPC_StoreACL, Fid, NULL, NULL, NULL, NULL, Sync,
-                AccessList, 0, 0, 0, t_client ? t_client->ViceId : 0);
+	update = StashUpdate(RPC_StoreACL, Fid, NULL,
+		NULL, NULL, NULL, Sync, AccessList,
+		0, 0, 0, t_client ? t_client->ViceId : 0);
 	pthread_setspecific(fs_update, update);
 #endif
     }
@@ -3034,7 +3042,7 @@ SAFS_StoreACL(struct rx_call * acall, struct AFSFid * Fid,
 Bad_StoreACL:
     /* Update and store volume/vnode and parent vnodes back */
     if (remote_flag)
-	PutReplicaVolumePackage( targetptr, volptr);
+	PutReplicaVolumePackage(targetptr, NULL, volptr);
     else
 	PutVolumePackage(parentwhentargetnotdir, targetptr, (Vnode *) 0,
 		     volptr, &client);
@@ -3375,7 +3383,7 @@ SAFSS_CreateFile(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
     /* get a new vnode for the file to be created and set it up */
     if ((errorCode =
 	 Alloc_NewVnode(parentptr, &dir, volptr, &targetptr, Name, OutFid,
-			vFile, nBlocks(0)))) {
+		vFile, nBlocks(0), LOCAL_RPC))) {
 	goto Bad_CreateFile;
     }
 
@@ -4051,7 +4059,7 @@ SAFSS_Symlink(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
     /* get a new vnode for the symlink and set it up */
     if ((errorCode =
 	 Alloc_NewVnode(parentptr, &dir, volptr, &targetptr, Name, OutFid,
-			vSymlink, nBlocks(strlen((char *)LinkContents))))) {
+			vSymlink, nBlocks(strlen((char *)LinkContents)), LOCAL_RPC))) {
 	goto Bad_SymLink;
     }
 
@@ -4334,12 +4342,13 @@ SRXAFS_Link(struct rx_call * acall, struct AFSFid * DirFid, char *Name,
  * This routine is called exclusively by SRXAFS_MakeDir(), and should be
  * merged into it when possible.
  */
-static afs_int32
+afs_int32
 SAFSS_MakeDir(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
 	      struct AFSStoreStatus *InStatus, struct AFSFid *OutFid,
 	      struct AFSFetchStatus *OutFidStatus,
 	      struct AFSFetchStatus *OutDirStatus,
-	      struct AFSCallBack *CallBack, struct AFSVolSync *Sync)
+	      struct AFSCallBack *CallBack, struct AFSVolSync *Sync,
+		int remote_flag, struct AFSFid *InFid)
 {
     Vnode *parentptr = 0;	/* vnode of input Directory */
     Vnode *targetptr = 0;	/* vnode of the new file */
@@ -4355,17 +4364,24 @@ SAFSS_MakeDir(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
     struct client *t_client;	/* tmp ptr to client data */
     struct in_addr logHostAddr;	/* host ip holder for inet_ntoa */
     struct rx_connection *tcon = rx_ConnectionOf(acall);
+    char InSameNetwork;
 
     FidZero(&dir);
     FidZero(&parentdir);
 
-    /* Get ptr to client data for user Id for logging */
-    t_client = (struct client *)rx_GetSpecific(tcon, rxcon_client_key);
-    logHostAddr.s_addr = rxr_HostOf(tcon);
-    ViceLog(1,
-	    ("SAFS_MakeDir %s,  Did = %u.%u.%u, Host %s:%d, Id %d\n", Name,
-	     DirFid->Volume, DirFid->Vnode, DirFid->Unique,
-	     inet_ntoa(logHostAddr), ntohs(rxr_PortOf(tcon)), t_client->ViceId));
+    if (remote_flag == LOCAL_RPC) {
+	/* Get ptr to client data for user Id for logging */
+	t_client = (struct client *)rx_GetSpecific(tcon, rxcon_client_key);
+	logHostAddr.s_addr = rxr_HostOf(tcon);
+	ViceLog(1,
+		("SAFS_MakeDir %s,  Did = %u.%u.%u, Host %s:%d, Id %d\n", Name,
+		 DirFid->Volume, DirFid->Vnode, DirFid->Unique,
+		 inet_ntoa(logHostAddr), ntohs(rxr_PortOf(tcon)), t_client->ViceId));
+    } else {
+	ViceLog(1,
+		("SAFS_MakeDir (remote) %s,  Did = %u.%u.%u\n", Name,
+		 DirFid->Volume, DirFid->Vnode, DirFid->Unique));
+    }
     FS_LOCK;
     AFSCallStats.MakeDir++, AFSCallStats.TotalCalls++;
     FS_UNLOCK;
@@ -4378,49 +4394,51 @@ SAFSS_MakeDir(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
      * Get the vnode and volume for the parent dir along with the caller's
      * rights to it.
      */
-    if ((errorCode =
-	 GetVolumePackage(tcon, DirFid, &volptr, &parentptr, MustBeDIR,
-			  &parentwhentargetnotdir, &client, WRITE_LOCK,
-			  &rights, &anyrights))) {
+    if (remote_flag == LOCAL_RPC)
+	errorCode = GetVolumePackage(tcon, DirFid, &volptr, &parentptr, MustBeDIR,
+		&parentwhentargetnotdir, &client, WRITE_LOCK,
+		&rights, &anyrights);
+    else
+	errorCode = GetReplicaVolumePackage(DirFid, &volptr, &parentptr,
+		MustBeDIR, WRITE_LOCK);
+    if (errorCode)
 	goto Bad_MakeDir;
-    }
 
     /* set volume synchronization information */
     SetVolumeSync(Sync, volptr);
 
     /* Write access to the parent directory? */
+    if (remote_flag == LOCAL_RPC) {
 #ifdef DIRCREATE_NEED_WRITE
-    /*
-     * requires w access for the user to create a directory. this
-     * closes a loophole in the current security arrangement, since a
-     * user with i access only can create a directory and get the
-     * implcit a access that goes with dir ownership, and proceed to
-     * subvert quota in the volume.
-     */
-    if ((errorCode = CheckWriteMode(parentptr, rights, PRSFS_INSERT))
-	|| (errorCode = CheckWriteMode(parentptr, rights, PRSFS_WRITE))) {
+	/*
+	 * requires w access for the user to create a directory. this
+	 * closes a loophole in the current security arrangement, since a
+	 * user with i access only can create a directory and get the
+	 * implcit a access that goes with dir ownership, and proceed to
+	 * subvert quota in the volume.
+	 */
+	if ((errorCode = CheckWriteMode(parentptr, rights, PRSFS_INSERT))
+	    || (errorCode = CheckWriteMode(parentptr, rights, PRSFS_WRITE))) {
 #else
-    if ((errorCode = CheckWriteMode(parentptr, rights, PRSFS_INSERT))) {
+	if ((errorCode = CheckWriteMode(parentptr, rights, PRSFS_INSERT))) {
 #endif /* DIRCREATE_NEED_WRITE */
-	goto Bad_MakeDir;
+	    goto Bad_MakeDir;
+	}
     }
 #define EMPTYDIRBLOCKS 2
     /* get a new vnode and set it up */
-    if ((errorCode =
-	 Alloc_NewVnode(parentptr, &parentdir, volptr, &targetptr, Name,
-			OutFid, vDirectory, EMPTYDIRBLOCKS))) {
+    errorCode = Alloc_NewVnode(parentptr, &parentdir, volptr, &targetptr, Name,
+			OutFid, vDirectory, EMPTYDIRBLOCKS, remote_flag);
+    if (errorCode)
 	goto Bad_MakeDir;
-    }
 
     /* Update the status for the parent dir */
-#if FS_STATS_DETAILED
+    if (remote_flag == LOCAL_RPC)
+	InSameNetwork = client->InSameNetwork;
+    else
+	InSameNetwork = 1;
     Update_ParentVnodeStatus(parentptr, volptr, &parentdir, client->ViceId,
-			     parentptr->disk.linkCount + 1,
-			     client->InSameNetwork);
-#else
-    Update_ParentVnodeStatus(parentptr, volptr, &parentdir, client->ViceId,
-			     parentptr->disk.linkCount + 1);
-#endif /* FS_STATS_DETAILED */
+	     parentptr->disk.linkCount + 1, InSameNetwork);
 
     /* Point to target's ACL buffer and copy the parent's ACL contents to it */
     osi_Assert((SetAccessList
@@ -4439,24 +4457,30 @@ SAFSS_MakeDir(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
     DFlush();
     VN_SET_LEN(targetptr, (afs_fsize_t) afs_dir_Length(&dir));
 
-    /* set up return status */
-    GetStatus(targetptr, OutFidStatus, rights, anyrights, parentptr);
-    GetStatus(parentptr, OutDirStatus, rights, anyrights, NULL);
+    if (remote_flag == LOCAL_RPC) {
+	/* set up return status */
+	GetStatus(targetptr, OutFidStatus, rights, anyrights, parentptr);
+	GetStatus(parentptr, OutDirStatus, rights, anyrights, NULL);
+    }
 
     /* convert the write lock to a read lock before breaking callbacks */
     VVnodeWriteToRead(&errorCode, parentptr);
     osi_Assert(!errorCode || errorCode == VSALVAGE);
 
     /* break call back on DirFid */
-    BreakCallBack(client->host, DirFid, 0);
+    BreakCallBack(remote_flag ? NULL : client->host, DirFid, 0);
 
     /* Return a callback promise to caller */
-    SetCallBackStruct(AddCallBack(client->host, OutFid), CallBack);
+    if (remote_flag == LOCAL_RPC)
+	SetCallBackStruct(AddCallBack(client->host, OutFid), CallBack);
 
-  Bad_MakeDir:
+Bad_MakeDir:
     /* Write the all modified vnodes (parent, new files) and volume back */
-    (void)PutVolumePackage(parentwhentargetnotdir, targetptr, parentptr,
+    if (remote_flag == LOCAL_RPC)
+	PutVolumePackage(parentwhentargetnotdir, targetptr, parentptr,
 			   volptr, &client);
+    else
+	PutReplicaVolumePackage(targetptr, parentptr, volptr);
     FidZap(&dir);
     FidZap(&parentdir);
     ViceLog(2, ("SAFS_MakeDir returns %d\n", errorCode));
@@ -4477,6 +4501,9 @@ SRXAFS_MakeDir(struct rx_call * acall, struct AFSFid * DirFid, char *Name,
     struct host *thost;
     struct client *t_client = NULL;	/* tmp ptr to client data */
     struct fsstats fsstats;
+#if defined(AFS_PTHREAD_ENV)
+    struct AFSUpdateListItem *update;
+#endif
 
     fsstats_StartOp(&fsstats, FS_STATS_RPCIDX_MAKEDIR);
 
@@ -4485,12 +4512,21 @@ SRXAFS_MakeDir(struct rx_call * acall, struct AFSFid * DirFid, char *Name,
 
     code =
 	SAFSS_MakeDir(acall, DirFid, Name, InStatus, OutFid, OutFidStatus,
-		      OutDirStatus, CallBack, Sync);
-
-  Bad_MakeDir:
-    code = CallPostamble(tcon, code, thost);
+		      OutDirStatus, CallBack, Sync, LOCAL_RPC, NULL);
 
     t_client = (struct client *)rx_GetSpecific(tcon, rxcon_client_key);
+
+#if defined(AFS_PTHREAD_ENV)
+    /* Stash information about the update, for RW replicas */
+    update = StashUpdate(RPC_MakeDir, DirFid, OutFid,
+		Name, NULL, InStatus, Sync, NULL,
+		0, 0, 0, t_client ? t_client->ViceId : 0);
+    pthread_setspecific(fs_update, update);
+#endif
+
+Bad_MakeDir:
+    code = CallPostamble(tcon, code, thost);
+
 
     fsstats_FinishOp(&fsstats, code);
 

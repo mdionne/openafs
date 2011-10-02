@@ -47,9 +47,15 @@ afs_uint32 queryDbserver;
 afs_int32 CheckVnodeWithCall(AFSFid *fid, Volume **volptr, struct VCallByVol *cbv,
                    Vnode **vptr, int lock);
 afs_int32 SAFS_StoreACL(struct rx_call * acall, struct AFSFid * Fid,
-                struct AFSOpaque * AccessList,
-                struct AFSFetchStatus * OutStatus, struct AFSVolSync * Sync,
-                int remote_flag);
+	struct AFSOpaque * AccessList,
+	struct AFSFetchStatus * OutStatus, struct AFSVolSync * Sync,
+	int remote_flag);
+afs_int32 SAFSS_MakeDir(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
+	struct AFSStoreStatus *InStatus, struct AFSFid *OutFid,
+	struct AFSFetchStatus *OutFidStatus,
+	struct AFSFetchStatus *OutDirStatus,
+	struct AFSCallBack *CallBack, struct AFSVolSync *sync,
+	int remote_flag, struct AFSFid *InFid);
 
 
 #if defined(AFS_PTHREAD_ENV)
@@ -135,17 +141,36 @@ GetReplicaVolumePackage(struct AFSFid *Fid, Volume **volptr,
 }
 
 void
-PutReplicaVolumePackage(struct Vnode *targetptr, struct Volume *volptr)
+PutReplicaVolumePackage(struct Vnode *targetptr, struct Vnode *parentptr, struct Volume *volptr)
 {
     Error fileCode = 0;
 
     if (targetptr) {
-	VPutVnode(&fileCode,targetptr);
+	VPutVnode(&fileCode, targetptr);
+    }
+    if (parentptr) {
+	VPutVnode(&fileCode, parentptr);
     }
     if (volptr) {
 	VPutVolume(volptr);
     }
     return;
+}
+
+afs_int32
+SRXAFS_RMakeDir(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
+	struct AFSStoreStatus *InStatus, struct AFSFid *InFid)
+{
+    struct AFSFetchStatus OutFidStatus;
+    struct AFSFetchStatus OutDirStatus;
+    struct AFSCallBack CallBack;
+    struct AFSVolSync Sync;
+    struct AFSFid OutFid;
+
+    ViceLog(0, ("Processing RMakeDir call, calling SAFS_StoreACL\n"));
+
+    return SAFSS_MakeDir(acall, DirFid, Name, InStatus, &OutFid, &OutFidStatus,
+	    &OutDirStatus, &CallBack, &Sync, REMOTE_RPC, InFid);
 }
 
 afs_int32
