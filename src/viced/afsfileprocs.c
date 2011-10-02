@@ -1597,7 +1597,7 @@ static void
 Update_TargetVnodeStatus(Vnode * targetptr, afs_uint32 Caller,
 			 struct client *client, AFSStoreStatus * InStatus,
 			 Vnode * parentptr, Volume * volptr,
-			 afs_fsize_t length)
+			 afs_fsize_t length, int remote_flag)
 {
 #if FS_STATS_DETAILED
     Date currDate;		/*Current date */
@@ -1662,7 +1662,7 @@ Update_TargetVnodeStatus(Vnode * targetptr, afs_uint32 Caller,
 	targetptr->disk.author = client->ViceId;
     if (Caller & TVS_SDATA) {
 	targetptr->disk.dataVersion++;
-	if (VanillaUser(client)) {
+	if (!remote_flag && VanillaUser(client)) {
 	    targetptr->disk.modeBits &= ~04000;	/* turn off suid for file. */
 #ifdef CREATE_SGUID_ADMIN_ONLY
 	    targetptr->disk.modeBits &= ~02000;	/* turn off sgid for file. */
@@ -1680,7 +1680,7 @@ Update_TargetVnodeStatus(Vnode * targetptr, afs_uint32 Caller,
     }
     if (InStatus->Mask & AFS_SETOWNER) {
 	/* admin is allowed to do chmod, chown as well as chown, chmod. */
-	if (VanillaUser(client)) {
+	if (!remote_flag && VanillaUser(client)) {
 	    targetptr->disk.modeBits &= ~04000;	/* turn off suid for file. */
 #ifdef CREATE_SGUID_ADMIN_ONLY
 	    targetptr->disk.modeBits &= ~02000;	/* turn off sgid for file. */
@@ -1698,10 +1698,10 @@ Update_TargetVnodeStatus(Vnode * targetptr, afs_uint32 Caller,
 	int modebits = InStatus->UnixModeBits;
 #define	CREATE_SGUID_ADMIN_ONLY 1
 #ifdef CREATE_SGUID_ADMIN_ONLY
-	if (VanillaUser(client))
+	if (!remote_flag && VanillaUser(client))
 	    modebits = modebits & 0777;
 #endif
-	if (VanillaUser(client)) {
+	if (!remote_flag && VanillaUser(client)) {
 	    targetptr->disk.modeBits = modebits;
 	} else {
 	    targetptr->disk.modeBits = modebits;
@@ -2924,7 +2924,7 @@ common_StoreData64(struct rx_call *acall, struct AFSFid *Fid,
 
     /* Update the status of the target's vnode */
     Update_TargetVnodeStatus(targetptr, TVS_SDATA, client, InStatus,
-			     targetptr, volptr, 0);
+			     targetptr, volptr, 0, LOCAL_RPC);
 
     /* Get the updated File's status back to the caller */
     GetStatus(targetptr, OutStatus, rights, anyrights,
@@ -3172,7 +3172,7 @@ SAFSS_StoreStatus(struct rx_call *acall, struct AFSFid *Fid,
     /* Update the status of the target's vnode */
     Update_TargetVnodeStatus(targetptr, TVS_SSTATUS, client, InStatus,
 			     (parentwhentargetnotdir ? parentwhentargetnotdir
-			      : targetptr), volptr, 0);
+			      : targetptr), volptr, 0, LOCAL_RPC);
 
     /* convert the write lock to a read lock before breaking callbacks */
     VVnodeWriteToRead(&errorCode, targetptr);
@@ -3441,7 +3441,7 @@ SAFSS_CreateFile(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
 
     /* update the status of the new file's vnode */
     Update_TargetVnodeStatus(targetptr, TVS_CFILE, client, InStatus,
-			     parentptr, volptr, 0);
+			     parentptr, volptr, 0, LOCAL_RPC);
 
     /* set up the return status for the parent dir and the newly created file, and since the newly created file is owned by the creator, give it PRSFS_ADMINISTER to tell the client its the owner of the file */
     GetStatus(targetptr, OutFidStatus, rights | PRSFS_ADMINISTER, anyrights, parentptr);
@@ -4114,7 +4114,7 @@ SAFSS_Symlink(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
 
     /* update the status of the new symbolic link file vnode */
     Update_TargetVnodeStatus(targetptr, TVS_SLINK, client, InStatus,
-			     parentptr, volptr, strlen((char *)LinkContents));
+			     parentptr, volptr, strlen((char *)LinkContents), LOCAL_RPC);
 
     /* Write the contents of the symbolic link name into the target inode */
     fdP = IH_OPEN(targetptr->handle);
@@ -4403,7 +4403,6 @@ SAFSS_MakeDir(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
     struct client *t_client;	/* tmp ptr to client data */
     struct in_addr logHostAddr;	/* host ip holder for inet_ntoa */
     struct rx_connection *tcon = rx_ConnectionOf(acall);
-    char InSameNetwork;
 
     FidZero(&dir);
     FidZero(&parentdir);
@@ -4471,16 +4470,14 @@ SAFSS_MakeDir(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
     if (errorCode)
 	goto Bad_MakeDir;
 
-    /* Update the status for the parent dir */
-    if (remote_flag == LOCAL_RPC) {
-	InSameNetwork = client->InSameNetwork;
-	Update_ParentVnodeStatus(parentptr, volptr, &parentdir, client->ViceId,
-		 parentptr->disk.linkCount + 1, InSameNetwork);
-    } else {
-	InSameNetwork = 1;
-	Update_ParentVnodeStatus(parentptr, volptr, &parentdir, clientViceId,
-		 parentptr->disk.linkCount + 1, InSameNetwork);
+    if (remote_flag) {
+	client = malloc(sizeof(struct client));
+	client->ViceId = clientViceId;
+	client->InSameNetwork = 1;
     }
+    /* Update the status for the parent dir */
+    Update_ParentVnodeStatus(parentptr, volptr, &parentdir, client->ViceId,
+		 parentptr->disk.linkCount + 1, client->InSameNetwork);
 
     /* Point to target's ACL buffer and copy the parent's ACL contents to it */
     osi_Assert((SetAccessList
@@ -4491,7 +4488,7 @@ SAFSS_MakeDir(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
 
     /* update the status for the target vnode */
     Update_TargetVnodeStatus(targetptr, TVS_MKDIR, client, InStatus,
-			     parentptr, volptr, 0);
+			     parentptr, volptr, 0, remote_flag);
 
     /* Actually create the New directory in the directory package */
     SetDirHandle(&dir, targetptr);
