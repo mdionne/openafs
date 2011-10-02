@@ -4348,7 +4348,7 @@ SAFSS_MakeDir(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
 	      struct AFSFetchStatus *OutFidStatus,
 	      struct AFSFetchStatus *OutDirStatus,
 	      struct AFSCallBack *CallBack, struct AFSVolSync *Sync,
-		int remote_flag, struct AFSFid *InFid)
+		int remote_flag, struct AFSFid *InFid, afs_int32 clientViceId)
 {
     Vnode *parentptr = 0;	/* vnode of input Directory */
     Vnode *targetptr = 0;	/* vnode of the new file */
@@ -4433,12 +4433,15 @@ SAFSS_MakeDir(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
 	goto Bad_MakeDir;
 
     /* Update the status for the parent dir */
-    if (remote_flag == LOCAL_RPC)
+    if (remote_flag == LOCAL_RPC) {
 	InSameNetwork = client->InSameNetwork;
-    else
+	Update_ParentVnodeStatus(parentptr, volptr, &parentdir, client->ViceId,
+		 parentptr->disk.linkCount + 1, InSameNetwork);
+    } else {
 	InSameNetwork = 1;
-    Update_ParentVnodeStatus(parentptr, volptr, &parentdir, client->ViceId,
-	     parentptr->disk.linkCount + 1, InSameNetwork);
+	Update_ParentVnodeStatus(parentptr, volptr, &parentdir, clientViceId,
+		 parentptr->disk.linkCount + 1, InSameNetwork);
+    }
 
     /* Point to target's ACL buffer and copy the parent's ACL contents to it */
     osi_Assert((SetAccessList
@@ -4512,7 +4515,7 @@ SRXAFS_MakeDir(struct rx_call * acall, struct AFSFid * DirFid, char *Name,
 
     code =
 	SAFSS_MakeDir(acall, DirFid, Name, InStatus, OutFid, OutFidStatus,
-		      OutDirStatus, CallBack, Sync, LOCAL_RPC, NULL);
+		      OutDirStatus, CallBack, Sync, LOCAL_RPC, NULL, 0);
 
     t_client = (struct client *)rx_GetSpecific(tcon, rxcon_client_key);
 

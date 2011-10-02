@@ -788,7 +788,8 @@ RMakeDir(
   IN  AFSFid *DirFid,
   string Name<AFSNAMEMAX>,
   AFSStoreStatus *InStatus,
-  AFSFid *InFid
+  AFSFid *InFid,
+  afs_int32 clientViceId
 ) = 65605;
 
 RStoreACL(

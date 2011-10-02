@@ -55,7 +55,7 @@ afs_int32 SAFSS_MakeDir(struct rx_call *acall, struct AFSFid *DirFid, char *Name
 	struct AFSFetchStatus *OutFidStatus,
 	struct AFSFetchStatus *OutDirStatus,
 	struct AFSCallBack *CallBack, struct AFSVolSync *sync,
-	int remote_flag, struct AFSFid *InFid);
+	int remote_flag, struct AFSFid *InFid, afs_int32 clientViceId);
 
 
 #if defined(AFS_PTHREAD_ENV)
@@ -159,7 +159,7 @@ PutReplicaVolumePackage(struct Vnode *targetptr, struct Vnode *parentptr, struct
 
 afs_int32
 SRXAFS_RMakeDir(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
-	struct AFSStoreStatus *InStatus, struct AFSFid *InFid)
+	struct AFSStoreStatus *InStatus, struct AFSFid *InFid, afs_int32 clientViceId)
 {
     struct AFSFetchStatus OutFidStatus;
     struct AFSFetchStatus OutDirStatus;
@@ -170,7 +170,7 @@ SRXAFS_RMakeDir(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
     ViceLog(0, ("Processing RMakeDir call, calling SAFS_StoreACL\n"));
 
     return SAFSS_MakeDir(acall, DirFid, Name, InStatus, &OutFid, &OutFidStatus,
-	    &OutDirStatus, &CallBack, &Sync, REMOTE_RPC, InFid);
+	    &OutDirStatus, &CallBack, &Sync, REMOTE_RPC, InFid, clientViceId);
 }
 
 afs_int32
@@ -204,7 +204,7 @@ FS_PostProc(afs_int32 code)
 		switch(item->RPCCall) {
 		    case RPC_MakeDir:
 			ViceLog(0, ("Calling remote MakeDir\n"));
-			RXAFS_RMakeDir(rcon, &item->InFid1, item->Name1, &item->InStatus, &item->InFid2);
+			RXAFS_RMakeDir(rcon, &item->InFid1, item->Name1, &item->InStatus, &item->InFid2, item->ClientViceId);
 			break;
 		    case RPC_StoreACL:
 			ViceLog(0, ("Calling remote StoreACL\n"));
