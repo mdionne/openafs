@@ -220,7 +220,7 @@ FS_PostProc(afs_int32 code)
 struct AFSUpdateListItem *
 StashUpdate(afs_int32 pRPCCall, struct AFSFid *pInFid1,
 	struct AFSFid *pInFid2, char *pName1, char *pName2, struct AFSStoreStatus *pInStatus,
-	struct AFSVolSync *pSync, struct AFSOpaque *pAccessList,
+	struct AFSOpaque *pAccessList,
 	afs_uint64 pPos, afs_uint64 pLength, afs_uint64 pFileLength, afs_int32 pClientViceId)
 {
     struct AFSUpdateListItem *item;
@@ -277,14 +277,6 @@ StashUpdate(afs_int32 pRPCCall, struct AFSFid *pInFid1,
 	item->InStatus.Group = pInStatus->Group;
 	item->InStatus.UnixModeBits = pInStatus->UnixModeBits;
 	item->InStatus.SegSize = pInStatus->SegSize;
-    }
-    if (pSync) {
-	item->Sync.spare1 = pSync->spare1;
-	item->Sync.spare2 = pSync->spare2;
-	item->Sync.spare3 = pSync->spare3;
-	item->Sync.spare4 = pSync->spare4;
-	item->Sync.spare5 = pSync->spare5;
-	item->Sync.spare6 = pSync->spare6;
     }
     if (pAccessList) {
 	item->AccessList.AFSOpaque_len = pAccessList->AFSOpaque_len;
