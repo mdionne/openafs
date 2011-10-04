@@ -1832,7 +1832,7 @@ VAllocReplicaVnode(Error * ec, Volume * vp,  VnodeId vnodeNumber,
     /*    *bp = 1;*/
 
     *(index->bitmap + offset) |= (1 << (bitNumber & 0x7));
-    vnrehash:
+vnrehash:
     VNLog(2, 1, vnodeNumber);
     /* Prepare to move it to the new hash chain */
     newHash = VNODE_HASH(vp, vnodeNumber);
