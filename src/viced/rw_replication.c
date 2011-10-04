@@ -55,7 +55,7 @@ afs_int32 SAFSS_MakeDir(struct rx_call *acall, struct AFSFid *DirFid, char *Name
 	struct AFSFetchStatus *OutFidStatus,
 	struct AFSFetchStatus *OutDirStatus,
 	struct AFSCallBack *CallBack, struct AFSVolSync *sync,
-	int remote_flag, struct AFSFid *InFid, afs_int32 clientViceId);
+	int remote_flag, afs_int32 clientViceId);
 
 
 #if defined(AFS_PTHREAD_ENV)
@@ -165,12 +165,11 @@ SRXAFS_RMakeDir(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
     struct AFSFetchStatus OutDirStatus;
     struct AFSCallBack CallBack;
     struct AFSVolSync Sync;
-    struct AFSFid OutFid;
 
     ViceLog(0, ("Processing RMakeDir call, calling SAFS_StoreACL\n"));
 
-    return SAFSS_MakeDir(acall, DirFid, Name, InStatus, &OutFid, &OutFidStatus,
-	    &OutDirStatus, &CallBack, &Sync, REMOTE_RPC, InFid, clientViceId);
+    return SAFSS_MakeDir(acall, DirFid, Name, InStatus, InFid, &OutFidStatus,
+	    &OutDirStatus, &CallBack, &Sync, REMOTE_RPC, clientViceId);
 }
 
 afs_int32
