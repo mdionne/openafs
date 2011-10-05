@@ -228,7 +228,7 @@ afs_mkdir(OSI_VC_DECL(adp), char *aname, struct vattr *attrs,
 	ReleaseWriteLock(&tvc->lock);
     } else {
     	/* now we're done with parent dir, create the real dir's cache entry */
-    	tvc = afs_GetVCache(&newFid, &treq, NULL, NULL);
+	tvc = afs_GetVCache(&newFid, &treq, NULL, NULL, 1);
     	if (tvc) {
 	    code = 0;
 	    *avcp = tvc;

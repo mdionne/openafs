@@ -2213,7 +2213,7 @@ DECL_PIOCTL(PNewStatMount)
     if (!tfid.Fid.Unique && (avc->f.states & CForeign)) {
 	tvc = afs_LookupVCache(&tfid, areq, NULL, avc, bufp);
     } else {
-	tvc = afs_GetVCache(&tfid, areq, NULL, NULL);
+	tvc = afs_GetVCache(&tfid, areq, NULL, NULL, 0);
     }
     if (!tvc) {
 	code = ENOENT;
@@ -3276,7 +3276,7 @@ DECL_PIOCTL(PRemoveMount)
     if (!tfid.Fid.Unique && (avc->f.states & CForeign)) {
 	tvc = afs_LookupVCache(&tfid, areq, NULL, avc, bufp);
     } else {
-	tvc = afs_GetVCache(&tfid, areq, NULL, NULL);
+	tvc = afs_GetVCache(&tfid, areq, NULL, NULL, 0);
     }
     if (!tvc) {
 	code = ENOENT;
@@ -4790,7 +4790,7 @@ DECL_PIOCTL(PFlushMount)
     if (!tfid.Fid.Unique && (avc->f.states & CForeign)) {
 	tvc = afs_LookupVCache(&tfid, areq, NULL, avc, bufp);
     } else {
-	tvc = afs_GetVCache(&tfid, areq, NULL, NULL);
+	tvc = afs_GetVCache(&tfid, areq, NULL, NULL, 0);
     }
     if (!tvc) {
 	code = ENOENT;
@@ -4935,7 +4935,7 @@ DECL_PIOCTL(PPrefetchFromTape)
     tfid.Fid.Vnode = Fid->Vnode;
     tfid.Fid.Unique = Fid->Unique;
 
-    tvc = afs_GetVCache(&tfid, areq, NULL, NULL);
+    tvc = afs_GetVCache(&tfid, areq, NULL, NULL, 0);
     if (!tvc) {
 	afs_Trace3(afs_iclSetp, CM_TRACE_PREFETCHCMD, ICL_TYPE_POINTER, tvc,
 		   ICL_TYPE_FID, &tfid, ICL_TYPE_FID, &avc->f.fid);
@@ -4966,7 +4966,7 @@ DECL_PIOCTL(PPrefetchFromTape)
 	     (tc, rxconn, code, &tvc->f.fid, areq, AFS_STATS_FS_RPCIDX_RESIDENCYRPCS,
 	      SHARED_LOCK, NULL));
     /* This call is done only to have the callback things handled correctly */
-    afs_FetchStatus(tvc, &tfid, areq, &OutStatus);
+    afs_FetchStatus(tvc, &tfid, areq, &OutStatus, 0);
     afs_PutVCache(tvc);
 
     if (code)
@@ -5006,7 +5006,7 @@ DECL_PIOCTL(PFsCmd)
     tfid.Fid.Vnode = Fid->Vnode;
     tfid.Fid.Unique = Fid->Unique;
 
-    tvc = afs_GetVCache(&tfid, areq, NULL, NULL);
+    tvc = afs_GetVCache(&tfid, areq, NULL, NULL, 0);
     afs_Trace3(afs_iclSetp, CM_TRACE_RESIDCMD, ICL_TYPE_POINTER, tvc,
 	       ICL_TYPE_INT32, Inputs->command, ICL_TYPE_FID, &tfid);
     if (!tvc)
@@ -5027,10 +5027,10 @@ DECL_PIOCTL(PFsCmd)
 		 (tc, rxconn, code, &tvc->f.fid, areq,
 		  AFS_STATS_FS_RPCIDX_RESIDENCYRPCS, SHARED_LOCK, NULL));
 	/* This call is done to have the callback things handled correctly */
-	afs_FetchStatus(tvc, &tfid, areq, &Outputs->status);
+	afs_FetchStatus(tvc, &tfid, areq, &Outputs->status, 0);
     } else {		/* just a status request, return also link data */
 	code = 0;
-	Outputs->code = afs_FetchStatus(tvc, &tfid, areq, &Outputs->status);
+	Outputs->code = afs_FetchStatus(tvc, &tfid, areq, &Outputs->status, 0);
 	Outputs->chars[0] = 0;
 	if (vType(tvc) == VLNK) {
 	    ObtainWriteLock(&tvc->lock, 555);

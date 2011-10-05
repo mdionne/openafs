@@ -1193,7 +1193,7 @@ afs_VerifyVCache2(struct vcache *avc, struct vrequest *areq)
 	osi_dnlc_purgevp(avc);
 
     /* fetch the status info */
-    tvc = afs_GetVCache(&avc->f.fid, areq, NULL, avc);
+    tvc = afs_GetVCache(&avc->f.fid, areq, NULL, avc, 0);
     if (!tvc)
 	return ENOENT;
     /* Put it back; caller has already incremented vrefCount */
@@ -1643,7 +1643,7 @@ afs_RemoteLookup(struct VenusFid *afid, struct vrequest *areq,
  */
 struct vcache *
 afs_GetVCache(struct VenusFid *afid, struct vrequest *areq,
-	      afs_int32 * cached, struct vcache *avc)
+	      afs_int32 * cached, struct vcache *avc, int rw_flag)
 {
 
     afs_int32 code, newvcache = 0;
@@ -1838,7 +1838,7 @@ afs_GetVCache(struct VenusFid *afid, struct vrequest *areq,
 		code = ENETDOWN;
 		/* printf("Network is down in afs_GetCache"); */
 	    } else
-	        code = afs_FetchStatus(tvc, afid, areq, &OutStatus);
+	        code = afs_FetchStatus(tvc, afid, areq, &OutStatus, rw_flag);
 
 	    /* For the NFS translator's benefit, make sure
 	     * non-directory vnodes always have their parent FID set
@@ -2353,7 +2353,7 @@ afs_UpdateStatus(struct vcache *avc, struct VenusFid *afid,
  */
 afs_int32
 afs_FetchStatus(struct vcache * avc, struct VenusFid * afid,
-		struct vrequest * areq, struct AFSFetchStatus * Outsp)
+		struct vrequest * areq, struct AFSFetchStatus * Outsp, int rw_flag)
 {
     int code;
     afs_uint32 start = 0;
@@ -2363,7 +2363,7 @@ afs_FetchStatus(struct vcache * avc, struct VenusFid * afid,
     struct rx_connection *rxconn;
     XSTATS_DECLS;
     do {
-	tc = afs_Conn(afid, areq, SHARED_LOCK, &rxconn, RWANY);
+	tc = afs_Conn(afid, areq, SHARED_LOCK, &rxconn, rw_flag ? RWONLY : RWANY);
 	avc->dchint = NULL;	/* invalidate hints */
 	if (tc) {
 	    avc->callback = tc->parent->srvr->server;

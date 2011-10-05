@@ -379,7 +379,7 @@ afs_CheckRootVolume(void)
 		    credp = crref();
 		    if (afs_InitReq(&treq, credp))
 			goto out;
-		    vcp = afs_GetVCache(&afs_rootFid, &treq, NULL, NULL);
+		    vcp = afs_GetVCache(&afs_rootFid, &treq, NULL, NULL, 0);
 		    if (!vcp)
 			goto out;
 		    afs_getattr(vcp, &vattr, credp);
