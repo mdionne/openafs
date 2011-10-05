@@ -365,7 +365,7 @@ afsrename(struct vcache *aodp, char *aname1, struct vcache *andp,
 	    tvc = afs_LookupVCache(&unlinkFid, areq, NULL, aodp, aname1);
 	}
 	if (!tvc)		/* lookup failed or wasn't called */
-	    tvc = afs_GetVCache(&unlinkFid, areq, NULL, NULL);
+	    tvc = afs_GetVCache(&unlinkFid, areq, NULL, NULL, 0);
 
 	if (tvc) {
 #ifdef AFS_BOZONLOCK_ENV
@@ -401,7 +401,7 @@ afsrename(struct vcache *aodp, char *aname1, struct vcache *andp,
 	if (!fileFid.Fid.Unique)
 	    tvc = afs_LookupVCache(&fileFid, areq, NULL, andp, aname2);
 	else
-	    tvc = afs_GetVCache(&fileFid, areq, NULL, (struct vcache *)0);
+	    tvc = afs_GetVCache(&fileFid, areq, NULL, (struct vcache *)0, 0);
 	if (tvc && (vType(tvc) == VDIR)) {
 	    ObtainWriteLock(&tvc->lock, 152);
 	    tdc1 = afs_FindDCache(tvc, (afs_size_t) 0);

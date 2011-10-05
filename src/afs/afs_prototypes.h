@@ -1071,7 +1071,7 @@ extern struct vcache *afs_FindVCache(struct VenusFid *afid, afs_int32 * retry,
 				     afs_int32 flag);
 extern afs_int32 afs_FetchStatus(struct vcache *avc, struct VenusFid *afid,
 				 struct vrequest *areq,
-				 struct AFSFetchStatus *Outsp);
+				 struct AFSFetchStatus *Outsp, int rw_flag);
 
 extern afs_int32 afs_FlushVCBs(afs_int32 lockit);
 extern void afs_InactiveVCache(struct vcache *avc, afs_ucred_t *acred);
@@ -1092,7 +1092,7 @@ extern struct vcache *afs_NewBulkVCache(struct VenusFid *afid,
 extern int afs_VerifyVCache2(struct vcache *avc, struct vrequest *areq);
 extern struct vcache *afs_GetVCache(struct VenusFid *afid,
 				    struct vrequest *areq, afs_int32 * cached,
-				    struct vcache *avc);
+				    struct vcache *avc, int rw_flag);
 extern void afs_PutVCache(struct vcache *avc);
 extern int afs_RefVCache(struct vcache *avc);
 extern void afs_ProcessFS(struct vcache *avc,

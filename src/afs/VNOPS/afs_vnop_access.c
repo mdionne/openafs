@@ -96,7 +96,7 @@ afs_GetAccessBits(struct vcache *avc, afs_int32 arights,
 	struct AFSFetchStatus OutStatus;
 	afs_int32 code;
 
-	code = afs_FetchStatus(avc, &avc->f.fid, areq, &OutStatus);
+	code = afs_FetchStatus(avc, &avc->f.fid, areq, &OutStatus, 0);
 	return (code ? 0 : OutStatus.CallerAccess & arights);
     }
 }
@@ -145,7 +145,7 @@ afs_AccessOK(struct vcache *avc, afs_int32 arights, struct vrequest *areq,
 	    dirFid.Fid.Vnode = avc->f.parent.vnode;
 	    dirFid.Fid.Unique = avc->f.parent.unique;
 	    /* Avoid this GetVCache call */
-	    tvc = afs_GetVCache(&dirFid, areq, NULL, NULL);
+	    tvc = afs_GetVCache(&dirFid, areq, NULL, NULL, 0);
 	    if (tvc) {
 		dirBits = afs_GetAccessBits(tvc, arights, areq);
 		afs_PutVCache(tvc);
