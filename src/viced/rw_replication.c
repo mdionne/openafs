@@ -56,6 +56,9 @@ afs_int32 SAFSS_MakeDir(struct rx_call *acall, struct AFSFid *DirFid, char *Name
 	struct AFSFetchStatus *OutDirStatus,
 	struct AFSCallBack *CallBack, struct AFSVolSync *sync,
 	int remote_flag, afs_int32 clientViceId);
+afs_int32 SAFSS_RemoveDir(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
+	struct AFSFetchStatus *OutDirStatus, struct AFSVolSync *Sync, int remote_flag,
+	afs_int32 clientViceId);
 
 
 #if defined(AFS_PTHREAD_ENV)
@@ -158,6 +161,17 @@ PutReplicaVolumePackage(struct Vnode *targetptr, struct Vnode *parentptr, struct
 }
 
 afs_int32
+SRXAFS_RRemoveDir(struct rx_call *acall, struct AFSFid *DirFid, char *Name, afs_int32 clientViceId)
+{
+    struct AFSFetchStatus OutDirStatus;
+    struct AFSVolSync Sync;
+
+    ViceLog(0, ("Processing RRemoveDir call\n"));
+    return SAFSS_RemoveDir(acall, DirFid, Name, &OutDirStatus, &Sync, REMOTE_RPC, clientViceId);
+
+}
+
+afs_int32
 SRXAFS_RMakeDir(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
 	struct AFSStoreStatus *InStatus, struct AFSFid *InFid, afs_int32 clientViceId)
 {
@@ -203,6 +217,10 @@ FS_PostProc(afs_int32 code)
 		ViceLog(0, ("Calling remote on server %d\n", i));
 		rcon = MakeDummyConnection(entry.serverNumber[i]);
 		switch(item->RPCCall) {
+		    case RPC_RemoveDir:
+			ViceLog(0, ("Calling remote RemoveDir\n"));
+			RXAFS_RRemoveDir(rcon, &item->InFid1, item->Name1, item->ClientViceId);
+			break;
 		    case RPC_MakeDir:
 			ViceLog(0, ("Calling remote MakeDir\n"));
 			RXAFS_RMakeDir(rcon, &item->InFid1, item->Name1, &item->InStatus, &item->InFid2, item->ClientViceId);

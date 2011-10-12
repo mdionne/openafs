@@ -4551,9 +4551,9 @@ Bad_MakeDir:
  * This routine is called exclusively by SRXAFS_RemoveDir(), and should be
  * merged into it when possible.
  */
-static afs_int32
+afs_int32
 SAFSS_RemoveDir(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
-		struct AFSFetchStatus *OutDirStatus, struct AFSVolSync *Sync)
+		struct AFSFetchStatus *OutDirStatus, struct AFSVolSync *Sync, int remote_flag, afs_int32 clientViceId)
 {
     Vnode *parentptr = 0;	/* vnode of input Directory */
     Vnode *parentwhentargetnotdir = 0;	/* parent for use in SetAccessList */
@@ -4570,13 +4570,19 @@ SAFSS_RemoveDir(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
 
     FidZero(&dir);
 
-    /* Get ptr to client data for user Id for logging */
-    t_client = (struct client *)rx_GetSpecific(tcon, rxcon_client_key);
-    logHostAddr.s_addr = rxr_HostOf(tcon);
-    ViceLog(1,
-	    ("SAFS_RemoveDir	%s,  Did = %u.%u.%u, Host %s:%d, Id %d\n", Name,
-	     DirFid->Volume, DirFid->Vnode, DirFid->Unique,
-	     inet_ntoa(logHostAddr), ntohs(rxr_PortOf(tcon)), t_client->ViceId));
+    if (remote_flag == LOCAL_RPC) {
+	/* Get ptr to client data for user Id for logging */
+	t_client = (struct client *)rx_GetSpecific(tcon, rxcon_client_key);
+	logHostAddr.s_addr = rxr_HostOf(tcon);
+	ViceLog(1,
+		("SAFSS_RemoveDir	%s,  Did = %u.%u.%u, Host %s:%d, Id %d\n", Name,
+		 DirFid->Volume, DirFid->Vnode, DirFid->Unique,
+		 inet_ntoa(logHostAddr), ntohs(rxr_PortOf(tcon)), t_client->ViceId));
+    } else {
+	ViceLog(1,
+		("SAFSS_RemoveDir (remote)	%s,  Did = %u.%u.%u, Id %d\n", Name,
+		 DirFid->Volume, DirFid->Vnode, DirFid->Unique, clientViceId));
+    }
     FS_LOCK;
     AFSCallStats.RemoveDir++, AFSCallStats.TotalCalls++;
     FS_UNLOCK;
@@ -4584,19 +4590,24 @@ SAFSS_RemoveDir(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
      * Get the vnode and volume for the parent dir along with the caller's
      * rights to it
      */
-    if ((errorCode =
-	 GetVolumePackage(tcon, DirFid, &volptr, &parentptr, MustBeDIR,
+    if (remote_flag == LOCAL_RPC)
+	errorCode = GetVolumePackage(tcon, DirFid, &volptr, &parentptr, MustBeDIR,
 			  &parentwhentargetnotdir, &client, WRITE_LOCK,
-			  &rights, &anyrights))) {
+			  &rights, &anyrights);
+    else
+	errorCode = GetReplicaVolumePackage(DirFid, &volptr, &parentptr,
+                MustBeDIR, WRITE_LOCK);
+    if (errorCode)
 	goto Bad_RemoveDir;
-    }
 
     /* set volume synchronization information */
     SetVolumeSync(Sync, volptr);
 
-    /* Does the caller has delete (&write) access to the parent dir? */
-    if ((errorCode = CheckWriteMode(parentptr, rights, PRSFS_DELETE))) {
-	goto Bad_RemoveDir;
+    if (remote_flag == LOCAL_RPC) {
+	/* Does the caller has delete (&write) access to the parent dir? */
+	if ((errorCode = CheckWriteMode(parentptr, rights, PRSFS_DELETE))) {
+	    goto Bad_RemoveDir;
+	}
     }
 
     /* Do the actual delete of the desired (empty) directory, Name */
@@ -4606,15 +4617,16 @@ SAFSS_RemoveDir(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
 	goto Bad_RemoveDir;
     }
 
+    if (remote_flag) {
+	client = malloc(sizeof(struct client));
+	client->ViceId = clientViceId;
+	client->InSameNetwork = 1;
+    }
+
     /* Update the status for the parent dir; link count is also adjusted */
-#if FS_STATS_DETAILED
     Update_ParentVnodeStatus(parentptr, volptr, &dir, client->ViceId,
 			     parentptr->disk.linkCount - 1,
 			     client->InSameNetwork);
-#else
-    Update_ParentVnodeStatus(parentptr, volptr, &dir, client->ViceId,
-			     parentptr->disk.linkCount - 1);
-#endif /* FS_STATS_DETAILED */
 
     /* Return to the caller the updated parent dir status */
     GetStatus(parentptr, OutDirStatus, rights, anyrights, NULL);
@@ -4660,7 +4672,7 @@ SRXAFS_RemoveDir(struct rx_call * acall, struct AFSFid * DirFid, char *Name,
     if ((code = CallPreamble(acall, ACTIVECALL, &tcon, &thost)))
 	goto Bad_RemoveDir;
 
-    code = SAFSS_RemoveDir(acall, DirFid, Name, OutDirStatus, Sync);
+    code = SAFSS_RemoveDir(acall, DirFid, Name, OutDirStatus, Sync, LOCAL_RPC, 0);
 
   Bad_RemoveDir:
     code = CallPostamble(tcon, code, thost);
