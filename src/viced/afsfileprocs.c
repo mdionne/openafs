@@ -4705,6 +4705,10 @@ SRXAFS_RemoveDir(struct rx_call * acall, struct AFSFid * DirFid, char *Name,
     struct host *thost;
     struct client *t_client = NULL;	/* tmp ptr to client data */
     struct fsstats fsstats;
+#if defined(AFS_PTHREAD_ENV)
+    struct AFSUpdateListItem *update;
+#endif
+
 
     fsstats_StartOp(&fsstats, FS_STATS_RPCIDX_REMOVEDIR);
 
@@ -4712,6 +4716,16 @@ SRXAFS_RemoveDir(struct rx_call * acall, struct AFSFid * DirFid, char *Name,
 	goto Bad_RemoveDir;
 
     code = SAFSS_RemoveDir(acall, DirFid, Name, OutDirStatus, Sync, LOCAL_RPC, 0);
+
+#if defined(AFS_PTHREAD_ENV)
+    if (code == 0) {
+	/* Stash information about the update, for RW replicas */
+	update = StashUpdate(RPC_RemoveDir, NULL, NULL,
+		Name, NULL, NULL, NULL,
+		0, 0, 0, t_client ? t_client->ViceId : 0);
+	pthread_setspecific(fs_update, update);
+    }
+#endif
 
   Bad_RemoveDir:
     code = CallPostamble(tcon, code, thost);
