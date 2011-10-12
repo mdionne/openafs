@@ -4720,7 +4720,7 @@ SRXAFS_RemoveDir(struct rx_call * acall, struct AFSFid * DirFid, char *Name,
 #if defined(AFS_PTHREAD_ENV)
     if (code == 0) {
 	/* Stash information about the update, for RW replicas */
-	update = StashUpdate(RPC_RemoveDir, NULL, NULL,
+	update = StashUpdate(RPC_RemoveDir, DirFid, NULL,
 		Name, NULL, NULL, NULL,
 		0, 0, 0, t_client ? t_client->ViceId : 0);
 	pthread_setspecific(fs_update, update);
