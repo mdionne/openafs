@@ -794,6 +794,5 @@ RMakeDir(
 
 RStoreACL(
   IN  AFSFid *Fid,
-  AFSOpaque *AccessList,
-  AFSVolSync *Sync
+  AFSOpaque *AccessList
 ) = 65608;
