@@ -32,7 +32,6 @@ struct AFSUpdateListItem {
     char *Name1;
     char *Name2;
     AFSStoreStatus InStatus;
-    AFSVolSync Sync;
     AFSOpaque AccessList;
     afs_uint64 Pos;
     afs_uint64 Length;

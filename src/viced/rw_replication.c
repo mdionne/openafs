@@ -174,11 +174,13 @@ SRXAFS_RMakeDir(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
 
 afs_int32
 SRXAFS_RStoreACL(struct rx_call *acall, struct AFSFid *Fid,
-	struct AFSOpaque *AccessList, struct AFSVolSync *Sync)
+	struct AFSOpaque *AccessList)
 {
+    struct AFSVolSync Sync;
+
     ViceLog(0, ("Processing RStoreACL call, calling SAFS_StoreACL\n"));
 
-    return SAFS_StoreACL(acall, Fid, AccessList, NULL, Sync, REMOTE_RPC);
+    return SAFS_StoreACL(acall, Fid, AccessList, NULL, &Sync, REMOTE_RPC);
 }
 
 void
@@ -207,7 +209,7 @@ FS_PostProc(afs_int32 code)
 			break;
 		    case RPC_StoreACL:
 			ViceLog(0, ("Calling remote StoreACL\n"));
-			RXAFS_RStoreACL(rcon, &item->InFid1, &item->AccessList, &item->Sync);
+			RXAFS_RStoreACL(rcon, &item->InFid1, &item->AccessList);
 			break;
 		    default:
 			ViceLog(0, ("Warning: unhandled stashed RPC, op: %d\n", item->RPCCall));
