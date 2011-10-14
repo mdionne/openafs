@@ -784,6 +784,14 @@ GetOsdMetadata(
 ) split = 65562;
 */
 
+RCreateFile(
+  IN  AFSFid *DirFid,
+  string Name<AFSNAMEMAX>,
+  AFSStoreStatus *InStatus,
+  AFSFid *InFid,
+  afs_int32 clientViceId
+) = 65600;
+
 RRemoveDir(
   IN  AFSFid *DirFid,
   string Name<AFSNAMEMAX>,
