@@ -49,6 +49,7 @@ extern int BreakLaterCallBacks(void);
 extern int BreakVolumeCallBacksLater(afs_uint32);
 
 /* rw_replication.c */
+extern void FS_PostProc(afs_int32 code);
 #if defined(REPL_PROTOTYPES)
 extern afs_int32 DelayedPopFromUpdateList(void);
 extern afs_int32 PushIntoUpdateList(afs_int32 pRPCCall, struct AFSFid *pInFid1,
@@ -59,7 +60,6 @@ extern afs_int32 PushIntoUpdateList(afs_int32 pRPCCall, struct AFSFid *pInFid1,
 	afs_int32 clientViceId);
 extern int GetSlaveServersForVolume(struct AFSFid *Fid, struct vldbentry *entry);
 extern struct rx_connection *MakeDummyConnection(afs_int32 serverIp);
-extern void FS_PostProc(afs_int32 code);
 extern struct AFSUpdateListItem *StashUpdate(afs_int32 pRPCCall, struct AFSFid *pInFid1,
 	struct AFSFid *pInFid2, char *pName1, char *pName2,
 	struct AFSStoreStatus *pInStatus, struct AFSOpaque *pAccessList,
