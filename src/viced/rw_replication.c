@@ -35,6 +35,7 @@
 #include <afs/vnode.h>
 #include <afs/volume.h>
 #include "rw_replication.h"
+#include "viced_prototypes.h"
 
 #if defined(AFS_PTHREAD_ENV)
 #include <pthread.h>
@@ -43,29 +44,6 @@
 afs_uint32 queryDbserver;
 #define MustBeDIR	2
 #define MustNOTBeDIR	1
-
-afs_int32 CheckVnodeWithCall(AFSFid *fid, Volume **volptr, struct VCallByVol *cbv,
-                   Vnode **vptr, int lock);
-afs_int32 SAFSS_StoreACL(struct rx_call * acall, struct AFSFid * Fid,
-	struct AFSOpaque * AccessList,
-	struct AFSFetchStatus * OutStatus, struct AFSVolSync * Sync,
-	int remote_flag);
-afs_int32 SAFSS_MakeDir(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
-	struct AFSStoreStatus *InStatus, struct AFSFid *OutFid,
-	struct AFSFetchStatus *OutFidStatus,
-	struct AFSFetchStatus *OutDirStatus,
-	struct AFSCallBack *CallBack, struct AFSVolSync *sync,
-	int remote_flag, afs_int32 clientViceId);
-afs_int32 SAFSS_RemoveDir(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
-	struct AFSFetchStatus *OutDirStatus, struct AFSVolSync *Sync, int remote_flag,
-	afs_int32 clientViceId);
-afs_int32 SAFSS_CreateFile(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
-	 struct AFSStoreStatus *InStatus, struct AFSFid *Fid,
-	 struct AFSFetchStatus *OutFidStatus,
-	 struct AFSFetchStatus *OutDirStatus,
-	 struct AFSCallBack *CallBack, struct AFSVolSync *Sync,
-	 int remote_flag, afs_int32 clientViceId);
-
 
 #if defined(AFS_PTHREAD_ENV)
 pthread_key_t fs_update;
