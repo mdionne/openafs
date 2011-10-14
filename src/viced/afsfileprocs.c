@@ -3368,12 +3368,13 @@ SRXAFS_RemoveFile(struct rx_call * acall, struct AFSFid * DirFid, char *Name,
  * This routine is called exclusively from SRXAFS_CreateFile(), and should
  * be merged in when possible.
  */
-static afs_int32
+afs_int32
 SAFSS_CreateFile(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
 		 struct AFSStoreStatus *InStatus, struct AFSFid *OutFid,
 		 struct AFSFetchStatus *OutFidStatus,
 		 struct AFSFetchStatus *OutDirStatus,
-		 struct AFSCallBack *CallBack, struct AFSVolSync *Sync)
+		 struct AFSCallBack *CallBack, struct AFSVolSync *Sync,
+		 int remote_flag, afs_int32 clientViceId)
 {
     Vnode *parentptr = 0;	/* vnode of input Directory */
     Vnode *targetptr = 0;	/* vnode of the new file */
@@ -3389,13 +3390,19 @@ SAFSS_CreateFile(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
 
     FidZero(&dir);
 
-    /* Get ptr to client data for user Id for logging */
-    t_client = (struct client *)rx_GetSpecific(tcon, rxcon_client_key);
-    logHostAddr.s_addr = rxr_HostOf(tcon);
-    ViceLog(1,
+    if (remote_flag == LOCAL_RPC) {
+	/* Get ptr to client data for user Id for logging */
+	t_client = (struct client *)rx_GetSpecific(tcon, rxcon_client_key);
+	logHostAddr.s_addr = rxr_HostOf(tcon);
+	ViceLog(1,
 	    ("SAFS_CreateFile %s,  Did = %u.%u.%u, Host %s:%d, Id %d\n", Name,
 	     DirFid->Volume, DirFid->Vnode, DirFid->Unique,
 	     inet_ntoa(logHostAddr), ntohs(rxr_PortOf(tcon)), t_client->ViceId));
+    } else {
+	ViceLog(1,
+	    ("SAFS_CreateFile (remote) %s,  Did = %u.%u.%u, Id %d\n", Name,
+	     DirFid->Volume, DirFid->Vnode, DirFid->Unique, clientViceId));
+    }
     FS_LOCK;
     AFSCallStats.CreateFile++, AFSCallStats.TotalCalls++;
     FS_UNLOCK;
@@ -3408,59 +3415,75 @@ SAFSS_CreateFile(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
      * Get associated volume/vnode for the parent dir; caller long are
      * also returned
      */
-    if ((errorCode =
-	 GetVolumePackage(tcon, DirFid, &volptr, &parentptr, MustBeDIR,
+    if (remote_flag == LOCAL_RPC)
+	errorCode = GetVolumePackage(tcon, DirFid, &volptr, &parentptr, MustBeDIR,
 			  &parentwhentargetnotdir, &client, WRITE_LOCK,
-			  &rights, &anyrights))) {
+			  &rights, &anyrights);
+    else
+	errorCode = GetReplicaVolumePackage(DirFid, &volptr, &parentptr, MustBeDIR,
+			  WRITE_LOCK);
+    if (errorCode)
 	goto Bad_CreateFile;
-    }
 
     /* set volume synchronization information */
     SetVolumeSync(Sync, volptr);
 
-    /* Can we write (and insert) onto the parent directory? */
-    if ((errorCode = CheckWriteMode(parentptr, rights, PRSFS_INSERT))) {
-	goto Bad_CreateFile;
+    if (remote_flag == LOCAL_RPC) {
+	/* Can we write (and insert) onto the parent directory? */
+	if ((errorCode = CheckWriteMode(parentptr, rights, PRSFS_INSERT))) {
+	    goto Bad_CreateFile;
+	}
     }
+
     /* get a new vnode for the file to be created and set it up */
     if ((errorCode =
 	 Alloc_NewVnode(parentptr, &dir, volptr, &targetptr, Name, OutFid,
-		vFile, nBlocks(0), LOCAL_RPC))) {
+		vFile, nBlocks(0), remote_flag))) {
 	goto Bad_CreateFile;
     }
 
     /* update the status of the parent vnode */
-#if FS_STATS_DETAILED
+    if (remote_flag) {
+	client = malloc(sizeof(struct client));
+	client->ViceId = clientViceId;
+	client->InSameNetwork = 1;
+    }
+
     Update_ParentVnodeStatus(parentptr, volptr, &dir, client->ViceId,
-			     parentptr->disk.linkCount,
-			     client->InSameNetwork);
-#else
-    Update_ParentVnodeStatus(parentptr, volptr, &dir, client->ViceId,
-			     parentptr->disk.linkCount);
-#endif /* FS_STATS_DETAILED */
+	     parentptr->disk.linkCount, client->InSameNetwork);
 
     /* update the status of the new file's vnode */
     Update_TargetVnodeStatus(targetptr, TVS_CFILE, client, InStatus,
-			     parentptr, volptr, 0, LOCAL_RPC);
+			     parentptr, volptr, 0, remote_flag);
 
-    /* set up the return status for the parent dir and the newly created file, and since the newly created file is owned by the creator, give it PRSFS_ADMINISTER to tell the client its the owner of the file */
-    GetStatus(targetptr, OutFidStatus, rights | PRSFS_ADMINISTER, anyrights, parentptr);
-    GetStatus(parentptr, OutDirStatus, rights, anyrights, 0);
+    if (remote_flag == LOCAL_RPC) {
+	/*
+	 * Set up the return status for the parent dir and the newly created file,
+	 * and since the newly created file is owned by the creator, give it
+	 * PRSFS_ADMINISTER to tell the client its the owner of the file
+	 */
+	GetStatus(targetptr, OutFidStatus, rights | PRSFS_ADMINISTER, anyrights, parentptr);
+	GetStatus(parentptr, OutDirStatus, rights, anyrights, 0);
+    }
 
     /* convert the write lock to a read lock before breaking callbacks */
     VVnodeWriteToRead(&errorCode, parentptr);
     osi_Assert(!errorCode || errorCode == VSALVAGE);
 
     /* break call back on parent dir */
-    BreakCallBack(client->host, DirFid, 0);
+    BreakCallBack(remote_flag ? NULL : client->host, DirFid, 0);
 
     /* Return a callback promise for the newly created file to the caller */
-    SetCallBackStruct(AddCallBack(client->host, OutFid), CallBack);
+    if (remote_flag == LOCAL_RPC)
+	SetCallBackStruct(AddCallBack(client->host, OutFid), CallBack);
 
   Bad_CreateFile:
     /* Update and store volume/vnode and parent vnodes back */
-    (void)PutVolumePackage(parentwhentargetnotdir, targetptr, parentptr,
+    if (remote_flag == LOCAL_RPC)
+	PutVolumePackage(parentwhentargetnotdir, targetptr, parentptr,
 			   volptr, &client);
+    else
+	PutReplicaVolumePackage(targetptr, parentptr, volptr);
     FidZap(&dir);
     ViceLog(2, ("SAFS_CreateFile returns %d\n", errorCode));
     return errorCode;
@@ -3490,7 +3513,7 @@ SRXAFS_CreateFile(struct rx_call * acall, struct AFSFid * DirFid, char *Name,
 
     code =
 	SAFSS_CreateFile(acall, DirFid, Name, InStatus, OutFid, OutFidStatus,
-			 OutDirStatus, CallBack, Sync);
+			 OutDirStatus, CallBack, Sync, LOCAL_RPC, 0);
 
   Bad_CreateFile:
     code = CallPostamble(tcon, code, thost);
