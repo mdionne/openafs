@@ -3192,9 +3192,10 @@ SRXAFS_StoreStatus(struct rx_call * acall, struct AFSFid * Fid,
  * This routine is called exclusively by SRXAFS_RemoveFile(), and should be
  * merged in when possible.
  */
-static afs_int32
+afs_int32
 SAFSS_RemoveFile(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
-		 struct AFSFetchStatus *OutDirStatus, struct AFSVolSync *Sync)
+		 struct AFSFetchStatus *OutDirStatus, struct AFSVolSync *Sync,
+		int remote_flag, afs_int32 clientViceId)
 {
     Vnode *parentptr = 0;	/* vnode of input Directory */
     Vnode *parentwhentargetnotdir = 0;	/* parent for use in SetAccessList */
@@ -3210,13 +3211,21 @@ SAFSS_RemoveFile(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
     struct rx_connection *tcon = rx_ConnectionOf(acall);
 
     FidZero(&dir);
-    /* Get ptr to client data for user Id for logging */
-    t_client = (struct client *)rx_GetSpecific(tcon, rxcon_client_key);
-    logHostAddr.s_addr = rxr_HostOf(tcon);
-    ViceLog(1,
+
+    if (remote_flag == LOCAL_RPC) {
+	/* Get ptr to client data for user Id for logging */
+	t_client = (struct client *)rx_GetSpecific(tcon, rxcon_client_key);
+	logHostAddr.s_addr = rxr_HostOf(tcon);
+	ViceLog(1,
 	    ("SAFS_RemoveFile %s,  Did = %u.%u.%u, Host %s:%d, Id %d\n", Name,
 	     DirFid->Volume, DirFid->Vnode, DirFid->Unique,
 	     inet_ntoa(logHostAddr), ntohs(rxr_PortOf(tcon)), t_client->ViceId));
+    } else {
+	ViceLog(1,
+	    ("SAFS_RemoveFile (remote) %s,  Did = %u.%u.%u, Id %d\n", Name,
+	     DirFid->Volume, DirFid->Vnode, DirFid->Unique, clientViceId));
+    }
+
     FS_LOCK;
     AFSCallStats.RemoveFile++, AFSCallStats.TotalCalls++;
     FS_UNLOCK;
@@ -3224,18 +3233,24 @@ SAFSS_RemoveFile(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
      * Get volume/vnode for the parent dir; caller's access rights are
      * also returned
      */
-    if ((errorCode =
-	 GetVolumePackage(tcon, DirFid, &volptr, &parentptr, MustBeDIR,
-			  &parentwhentargetnotdir, &client, WRITE_LOCK,
-			  &rights, &anyrights))) {
+    if (remote_flag == LOCAL_RPC)
+	GetVolumePackage(tcon, DirFid, &volptr, &parentptr, MustBeDIR,
+		  &parentwhentargetnotdir, &client, WRITE_LOCK,
+		  &rights, &anyrights);
+    else
+	GetReplicaVolumePackage(DirFid, &volptr, &parentptr, MustBeDIR, WRITE_LOCK);
+
+    if (errorCode)
 	goto Bad_RemoveFile;
-    }
+
     /* set volume synchronization information */
     SetVolumeSync(Sync, volptr);
 
-    /* Does the caller has delete (& write) access to the parent directory? */
-    if ((errorCode = CheckWriteMode(parentptr, rights, PRSFS_DELETE))) {
-	goto Bad_RemoveFile;
+    if (remote_flag == LOCAL_RPC) {
+	/* Does the caller has delete (& write) access to the parent directory? */
+	if ((errorCode = CheckWriteMode(parentptr, rights, PRSFS_DELETE))) {
+	    goto Bad_RemoveFile;
+	}
     }
 
     /* Actually delete the desired file */
@@ -3245,18 +3260,21 @@ SAFSS_RemoveFile(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
 	goto Bad_RemoveFile;
     }
 
-    /* Update the vnode status of the parent dir */
-#if FS_STATS_DETAILED
-    Update_ParentVnodeStatus(parentptr, volptr, &dir, client->ViceId,
-			     parentptr->disk.linkCount,
-			     client->InSameNetwork);
-#else
-    Update_ParentVnodeStatus(parentptr, volptr, &dir, client->ViceId,
-			     parentptr->disk.linkCount);
-#endif /* FS_STATS_DETAILED */
+    /* update the status of the parent vnode */
+    if (remote_flag) {
+	client = malloc(sizeof(struct client));
+	client->ViceId = clientViceId;
+	client->InSameNetwork = 1;
+    }
 
-    /* Return the updated parent dir's status back to caller */
-    GetStatus(parentptr, OutDirStatus, rights, anyrights, 0);
+    /* Update the vnode status of the parent dir */
+    Update_ParentVnodeStatus(parentptr, volptr, &dir, client->ViceId,
+	    parentptr->disk.linkCount, client->InSameNetwork);
+
+    if (remote_flag == LOCAL_RPC) {
+	/* Return the updated parent dir's status back to caller */
+	GetStatus(parentptr, OutDirStatus, rights, anyrights, 0);
+    }
 
     /* Handle internal callback state for the parent and the deleted file */
     if (targetptr->disk.linkCount == 0) {
@@ -3273,16 +3291,19 @@ SAFSS_RemoveFile(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
 	VVnodeWriteToRead(&errorCode, targetptr);
 	osi_Assert(!errorCode || errorCode == VSALVAGE);
 	/* tell all the file has changed */
-	BreakCallBack(client->host, &fileFid, 1);
+	BreakCallBack(remote_flag ? NULL : client->host, &fileFid, 1);
     }
 
     /* break call back on the directory */
-    BreakCallBack(client->host, DirFid, 0);
+    BreakCallBack(remote_flag ? NULL : client->host, DirFid, 0);
 
   Bad_RemoveFile:
-    /* Update and store volume/vnode and parent vnodes back */
-    PutVolumePackage(parentwhentargetnotdir, targetptr, parentptr,
-		     volptr, &client);
+    if (remote_flag == LOCAL_RPC)
+	/* Update and store volume/vnode and parent vnodes back */
+	PutVolumePackage(parentwhentargetnotdir, targetptr, parentptr,
+		volptr, &client);
+    else
+	PutReplicaVolumePackage(targetptr, parentptr, volptr);
     FidZap(&dir);
     ViceLog(2, ("SAFS_RemoveFile returns %d\n", errorCode));
     return errorCode;
@@ -3300,13 +3321,26 @@ SRXAFS_RemoveFile(struct rx_call * acall, struct AFSFid * DirFid, char *Name,
     struct host *thost;
     struct client *t_client = NULL;	/* tmp ptr to client data */
     struct fsstats fsstats;
+#if defined(AFS_PTHREAD_ENV)
+    struct AFSUpdateListItem *update;
+#endif
 
     fsstats_StartOp(&fsstats, FS_STATS_RPCIDX_REMOVEFILE);
 
     if ((code = CallPreamble(acall, ACTIVECALL, &tcon, &thost)))
 	goto Bad_RemoveFile;
 
-    code = SAFSS_RemoveFile(acall, DirFid, Name, OutDirStatus, Sync);
+    code = SAFSS_RemoveFile(acall, DirFid, Name, OutDirStatus, Sync, LOCAL_RPC, 0);
+
+#if defined(AFS_PTHREAD_ENV)
+    if (code == 0) {
+	/* Stash information about the update, for RW replicas */
+	update = StashUpdate(RPC_RemoveFile, DirFid, NULL,
+		Name, NULL, NULL, NULL,
+		0, 0, 0, t_client ? t_client->ViceId : 0);
+	pthread_setspecific(fs_update, update);
+    }
+#endif
 
   Bad_RemoveFile:
     code = CallPostamble(tcon, code, thost);
