@@ -3461,6 +3461,9 @@ SRXAFS_CreateFile(struct rx_call * acall, struct AFSFid * DirFid, char *Name,
     struct host *thost;
     struct client *t_client = NULL;	/* tmp ptr to client data */
     struct fsstats fsstats;
+#if defined(AFS_PTHREAD_ENV)
+    struct AFSUpdateListItem *update;
+#endif
 
     fsstats_StartOp(&fsstats, FS_STATS_RPCIDX_CREATEFILE);
 
@@ -3472,6 +3475,16 @@ SRXAFS_CreateFile(struct rx_call * acall, struct AFSFid * DirFid, char *Name,
     code =
 	SAFSS_CreateFile(acall, DirFid, Name, InStatus, OutFid, OutFidStatus,
 			 OutDirStatus, CallBack, Sync, LOCAL_RPC, 0);
+
+#if defined(AFS_PTHREAD_ENV)
+    if (code == 0) {
+	/* Stash information about the update, for RW replicas */
+	update = StashUpdate(RPC_CreateFile, DirFid, OutFid,
+		Name, NULL, InStatus, NULL,
+		0, 0, 0, t_client ? t_client->ViceId : 0);
+	pthread_setspecific(fs_update, update);
+    }
+#endif
 
   Bad_CreateFile:
     code = CallPostamble(tcon, code, thost);
