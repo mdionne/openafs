@@ -4643,12 +4643,15 @@ SAFSS_RemoveDir(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
     osi_Assert(!errorCode || errorCode == VSALVAGE);
 
     /* break call back on DirFid and fileFid */
-    BreakCallBack(client->host, DirFid, 0);
+    BreakCallBack(remote_flag ? NULL : client->host, DirFid, 0);
 
   Bad_RemoveDir:
     /* Write the all modified vnodes (parent, new files) and volume back */
-    (void)PutVolumePackage(parentwhentargetnotdir, targetptr, parentptr,
+    if (remote_flag == LOCAL_RPC)
+	(void)PutVolumePackage(parentwhentargetnotdir, targetptr, parentptr,
 			   volptr, &client);
+    else
+        PutReplicaVolumePackage(targetptr, parentptr, volptr);
     FidZap(&dir);
     ViceLog(2, ("SAFS_RemoveDir	returns	%d\n", errorCode));
     return errorCode;
