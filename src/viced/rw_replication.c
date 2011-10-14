@@ -46,7 +46,7 @@ afs_uint32 queryDbserver;
 
 afs_int32 CheckVnodeWithCall(AFSFid *fid, Volume **volptr, struct VCallByVol *cbv,
                    Vnode **vptr, int lock);
-afs_int32 SAFS_StoreACL(struct rx_call * acall, struct AFSFid * Fid,
+afs_int32 SAFSS_StoreACL(struct rx_call * acall, struct AFSFid * Fid,
 	struct AFSOpaque * AccessList,
 	struct AFSFetchStatus * OutStatus, struct AFSVolSync * Sync,
 	int remote_flag);
@@ -212,9 +212,9 @@ SRXAFS_RStoreACL(struct rx_call *acall, struct AFSFid *Fid,
 {
     struct AFSVolSync Sync;
 
-    ViceLog(0, ("Processing RStoreACL call, calling SAFS_StoreACL\n"));
+    ViceLog(0, ("Processing RStoreACL call, calling SAFSS_StoreACL\n"));
 
-    return SAFS_StoreACL(acall, Fid, AccessList, NULL, &Sync, REMOTE_RPC);
+    return SAFSS_StoreACL(acall, Fid, AccessList, NULL, &Sync, REMOTE_RPC);
 }
 
 void
