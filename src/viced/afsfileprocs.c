@@ -88,6 +88,7 @@
 #include <afs/keys.h>
 
 #include <afs/partition.h>
+#define REPL_PROTOTYPES
 #include "viced_prototypes.h"
 #include "viced.h"
 #include "host.h"
