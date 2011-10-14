@@ -20,6 +20,7 @@ extern afs_int32 BlocksSpare;
 extern afs_int32 PctSpare;
 extern afs_int32 CheckVnodeWithCall(AFSFid *fid, Volume **volptr,
 	struct VCallByVol *cbv, Vnode **vptr, int lock);
+#if defined(REPL_PROTOTYPES)
 extern afs_int32 SAFSS_StoreACL(struct rx_call * acall, struct AFSFid * Fid,
 	struct AFSOpaque * AccessList, struct AFSFetchStatus * OutStatus,
 	struct AFSVolSync * Sync, int remote_flag);
@@ -36,6 +37,10 @@ extern afs_int32 SAFSS_CreateFile(struct rx_call *acall, struct AFSFid *DirFid,
 	struct AFSFetchStatus *OutFidStatus, struct AFSFetchStatus *OutDirStatus,
 	struct AFSCallBack *CallBack, struct AFSVolSync *Sync,
 	int remote_flag, afs_int32 clientViceId);
+extern afs_int32 SAFSS_RemoveFile(struct rx_call *acall, struct AFSFid *DirFid,
+	char *Name, struct AFSFetchStatus *OutDirStatus, struct AFSVolSync *Sync,
+	int remote_flag, afs_int32 clientViceId);
+#endif
 
 
 /* callback.c */
@@ -44,6 +49,7 @@ extern int BreakLaterCallBacks(void);
 extern int BreakVolumeCallBacksLater(afs_uint32);
 
 /* rw_replication.c */
+#if defined(REPL_PROTOTYPES)
 extern afs_int32 DelayedPopFromUpdateList(void);
 extern afs_int32 PushIntoUpdateList(afs_int32 pRPCCall, struct AFSFid *pInFid1,
 	struct AFSFid *pInFid2, char *pName1, char *pName2,
@@ -63,6 +69,7 @@ extern afs_int32 GetReplicaVolumePackage(struct AFSFid *Fid, Volume **volptr,
 	Vnode **targetptr, int chkforDir, int locktype);
 extern void PutReplicaVolumePackage(struct Vnode *targetptr, struct Vnode *parentptr,
 	struct Volume *volptr);
+#endif
 
 #ifdef AFS_DEMAND_ATTACH_FS
 /*

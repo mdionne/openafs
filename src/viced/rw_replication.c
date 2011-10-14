@@ -35,6 +35,7 @@
 #include <afs/vnode.h>
 #include <afs/volume.h>
 #include "rw_replication.h"
+#define REPL_PROTOTYPES
 #include "viced_prototypes.h"
 
 #if defined(AFS_PTHREAD_ENV)
@@ -159,6 +160,18 @@ SRXAFS_RCreateFile(struct rx_call *acall, IN  AFSFid *DirFid, char *Name,
 }
 
 afs_int32
+SRXAFS_RRemoveFile(struct rx_call *acall, IN  AFSFid *DirFid, char *Name,
+	afs_int32 clientViceId)
+{
+    struct AFSFetchStatus OutDirStatus;
+    struct AFSVolSync Sync;
+
+    ViceLog(0, ("Processing RRemoveFile call\n"));
+    return SAFSS_RemoveFile(acall, DirFid, Name, &OutDirStatus, &Sync,
+	    REMOTE_RPC, clientViceId);
+}
+
+afs_int32
 SRXAFS_RRemoveDir(struct rx_call *acall, struct AFSFid *DirFid, char *Name, afs_int32 clientViceId)
 {
     struct AFSFetchStatus OutDirStatus;
@@ -219,6 +232,10 @@ FS_PostProc(afs_int32 code)
 			ViceLog(0, ("Calling remote CreateFile\n"));
 			RXAFS_RCreateFile(rcon, &item->InFid1, item->Name1, &item->InStatus, &item->InFid2,
 				item->ClientViceId);
+			break;
+		    case RPC_RemoveFile:
+			ViceLog(0, ("Calling remote RemoveFile\n"));
+			RXAFS_RRemoveFile(rcon, &item->InFid1, item->Name1, item->ClientViceId);
 			break;
 		    case RPC_RemoveDir:
 			ViceLog(0, ("Calling remote RemoveDir\n"));

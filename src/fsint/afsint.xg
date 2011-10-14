@@ -792,6 +792,12 @@ RCreateFile(
   afs_int32 clientViceId
 ) = 65600;
 
+RRemoveFile(
+  IN  AFSFid *DirFid,
+  string Name<AFSNAMEMAX>,
+  afs_int32 clientViceId
+) = 65601;
+
 RRemoveDir(
   IN  AFSFid *DirFid,
   string Name<AFSNAMEMAX>,
