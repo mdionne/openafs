@@ -2983,7 +2983,7 @@ SRXAFS_StoreData64(struct rx_call * acall, struct AFSFid * Fid,
 }
 
 afs_int32
-SAFS_StoreACL(struct rx_call * acall, struct AFSFid * Fid,
+SAFSS_StoreACL(struct rx_call * acall, struct AFSFid * Fid,
 		struct AFSOpaque * AccessList,
 		struct AFSFetchStatus * OutStatus, struct AFSVolSync * Sync,
 		int remote_flag)
@@ -3013,12 +3013,12 @@ SAFS_StoreACL(struct rx_call * acall, struct AFSFid * Fid,
 	t_client = (struct client *)rx_GetSpecific(tcon, rxcon_client_key);
 	logHostAddr.s_addr = rxr_HostOf(tcon);
 	ViceLog(1,
-	    ("SAFS_StoreACL, Fid = %u.%u.%u, ACL=%s, Host %s:%d, Id %d\n",
+	    ("SAFSS_StoreACL, Fid = %u.%u.%u, ACL=%s, Host %s:%d, Id %d\n",
 	     Fid->Volume, Fid->Vnode, Fid->Unique, AccessList->AFSOpaque_val,
 	     inet_ntoa(logHostAddr), ntohs(rxr_PortOf(tcon)), t_client->ViceId));
     } else {
 	ViceLog(1,
-	    ("SAFS_StoreACL (remote), Fid = %u.%u.%u, ACL=%s\n",
+	    ("SAFSS_StoreACL (remote), Fid = %u.%u.%u, ACL=%s\n",
 	     Fid->Volume, Fid->Vnode, Fid->Unique, AccessList->AFSOpaque_val));
     }
 
@@ -3038,7 +3038,7 @@ SAFS_StoreACL(struct rx_call * acall, struct AFSFid * Fid,
 			  &parentwhentargetnotdir, &client, WRITE_LOCK,
 			  &rights, &anyrights);
     ViceLog(1,
-	    ("SAFS_StoreACL got package. errorCode: %d\n", errorCode));
+	    ("SAFSS_StoreACL got package. errorCode: %d\n", errorCode));
     if (errorCode)
 	goto Bad_StoreACL;
 
@@ -3088,7 +3088,7 @@ Bad_StoreACL:
     else
 	PutVolumePackage(parentwhentargetnotdir, targetptr, (Vnode *) 0,
 		     volptr, &client);
-    ViceLog(2, ("SAFS_StoreACL returns %d\n", errorCode));
+    ViceLog(2, ("SAFSS_StoreACL returns %d\n", errorCode));
 
     if (!remote_flag)
 	errorCode = CallPostamble(tcon, errorCode, thost);
@@ -3108,7 +3108,7 @@ SRXAFS_StoreACL(struct rx_call * acall, struct AFSFid * Fid,
 		struct AFSOpaque * AccessList,
 		struct AFSFetchStatus * OutStatus, struct AFSVolSync * Sync)
 {
-    return SAFS_StoreACL(acall, Fid, AccessList, OutStatus, Sync, LOCAL_RPC);
+    return SAFSS_StoreACL(acall, Fid, AccessList, OutStatus, Sync, LOCAL_RPC);
 }				/*SRXAFS_StoreACL */
 
 /*
