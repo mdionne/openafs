@@ -172,6 +172,19 @@ SRXAFS_RRemoveFile(struct rx_call *acall, IN  AFSFid *DirFid, char *Name,
 }
 
 afs_int32
+SRXAFS_RStoreData64(struct rx_call *acall, struct AFSFid *Fid,
+	struct AFSStoreStatus *InStatus, afs_uint64 Pos, afs_uint64 Length,
+	afs_uint64 FileLength, afs_int32 clientViceId)
+{
+    struct AFSFetchStatus OutStatus;
+    struct AFSVolSync Sync;
+
+    ViceLog(0, ("Processing RStoreData64 call\n"));
+    return SAFSS_StoreData64(acall, Fid, InStatus, Pos, Length, FileLength,
+	    &OutStatus, &Sync, REMOTE_RPC, clientViceId);
+}
+
+afs_int32
 SRXAFS_RRemoveDir(struct rx_call *acall, struct AFSFid *DirFid, char *Name, afs_int32 clientViceId)
 {
     struct AFSFetchStatus OutDirStatus;
@@ -220,6 +233,40 @@ SRXAFS_RStoreStatus(struct rx_call *acall, struct AFSFid *Fid, struct AFSStoreSt
     return SAFSS_StoreStatus(acall, Fid, InStatus, &OutStatus, &Sync, REMOTE_RPC, clientViceId);
 }
 
+#if defined (AFS_PTHREAD_ENV)
+static afs_int32
+rw_StoreData64(struct rx_connection *rcon, struct AFSFid *Fid,
+        struct AFSStoreStatus *InStatus, afs_uint64 Pos, afs_uint64 Length,
+        afs_uint64 FileLength, afs_int32 clientViceId, char *StoreBuffer)
+{
+    struct rx_call *call;
+    unsigned long bytes;
+    char *pos;
+
+    /*
+     * This is more complex than the other remote calls, since we
+     * need to replay the rx_Write calls to the remote server.
+     */
+    ViceLog(0, ("Processing rw_StoreData64\n"));
+    ViceLog(0, ("Calling StartRXAFS_RStoreData64\n"));
+    call = rx_NewCall(rcon);
+    StartRXAFS_RStoreData64(call, Fid, InStatus, Pos, Length, FileLength, clientViceId);
+    /* Loop, sending data with rx_Write */
+    ViceLog(0, ("Looping over rx_Write to send data\n"));
+    pos = StoreBuffer;
+    while (Length > 0) {
+	bytes = rx_Write(call, pos, Length);
+	ViceLog(0, ("Loop, rx_Write wrote %ld bytes\n", bytes));
+	Length -= bytes;
+	pos += bytes;
+    }
+    ViceLog(0, ("Calling EndRXAFS_RStoreData64\n"));
+    EndRXAFS_RStoreData64(call);
+
+    return 0;
+}
+#endif
+
 void
 FS_PostProc(afs_int32 code)
 {
@@ -248,6 +295,12 @@ FS_PostProc(afs_int32 code)
 		    case RPC_RemoveFile:
 			ViceLog(0, ("Calling remote RemoveFile\n"));
 			RXAFS_RRemoveFile(rcon, &item->InFid1, item->Name1, item->ClientViceId);
+			break;
+		    case RPC_StoreData64:
+			ViceLog(0, ("Calling remote StoreData64\n"));
+			rw_StoreData64(rcon, &item->InFid1, &item->InStatus, item->Pos,
+				item->Length, item->FileLength, item->ClientViceId,
+				item->StoreBuffer);
 			break;
 		    case RPC_RemoveDir:
 			ViceLog(0, ("Calling remote RemoveDir\n"));
@@ -282,7 +335,7 @@ struct AFSUpdateListItem *
 StashUpdate(afs_int32 pRPCCall, struct AFSFid *pInFid1,
 	struct AFSFid *pInFid2, char *pName1, char *pName2, struct AFSStoreStatus *pInStatus,
 	struct AFSOpaque *pAccessList,
-	afs_uint64 pPos, afs_uint64 pLength, afs_uint64 pFileLength, afs_int32 pClientViceId)
+	afs_uint64 pPos, afs_uint64 pLength, afs_uint64 pFileLength, afs_int32 pClientViceId, char *buf)
 {
     struct AFSUpdateListItem *item;
 
@@ -356,6 +409,7 @@ StashUpdate(afs_int32 pRPCCall, struct AFSFid *pInFid1,
     item->Pos = pPos;
     item->Length = pLength;
     item->FileLength = pFileLength;
+    item->StoreBuffer = buf;
 
     return item;
 }

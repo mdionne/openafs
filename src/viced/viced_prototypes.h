@@ -43,7 +43,10 @@ extern afs_int32 SAFSS_RemoveFile(struct rx_call *acall, struct AFSFid *DirFid,
 extern afs_int32 SAFSS_StoreStatus(struct rx_call *acall, struct AFSFid *Fid,
 	struct AFSStoreStatus *InStatus, struct AFSFetchStatus *OutStatus,
 	struct AFSVolSync *Sync, int remote_flag, afs_int32 clientViceId);
-
+extern afs_int32 SAFSS_StoreData64(struct rx_call *acall, struct AFSFid *Fid,
+	struct AFSStoreStatus *InStatus, afs_fsize_t Pos, afs_fsize_t Length,
+	afs_fsize_t FileLength, struct AFSFetchStatus *OutStatus,
+	struct AFSVolSync *Sync, int remote_flag, afs_int32 clientViceId);
 #endif
 
 
@@ -68,7 +71,7 @@ extern struct AFSUpdateListItem *StashUpdate(afs_int32 pRPCCall, struct AFSFid *
 	struct AFSFid *pInFid2, char *pName1, char *pName2,
 	struct AFSStoreStatus *pInStatus, struct AFSOpaque *pAccessList,
 	afs_uint64 pPos, afs_uint64 pLength, afs_uint64 pFileLength,
-	afs_int32 pClientViceId);
+	afs_int32 pClientViceId, char *StoreBuffer);
 extern afs_int32 GetReplicaVolumePackage(struct AFSFid *Fid, Volume **volptr,
 	Vnode **targetptr, int chkforDir, int locktype);
 extern void PutReplicaVolumePackage(struct Vnode *targetptr, struct Vnode *parentptr,
