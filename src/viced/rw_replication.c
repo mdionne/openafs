@@ -242,6 +242,7 @@ rw_StoreData64(struct rx_connection *rcon, struct AFSFid *Fid,
     struct rx_call *call;
     unsigned long bytes;
     char *pos;
+    int code;
 
     /*
      * This is more complex than the other remote calls, since we
@@ -250,9 +251,9 @@ rw_StoreData64(struct rx_connection *rcon, struct AFSFid *Fid,
     ViceLog(0, ("Processing rw_StoreData64\n"));
     ViceLog(0, ("Calling StartRXAFS_RStoreData64\n"));
     call = rx_NewCall(rcon);
-    StartRXAFS_RStoreData64(call, Fid, InStatus, Pos, Length, FileLength, clientViceId);
+    code = StartRXAFS_RStoreData64(call, Fid, InStatus, Pos, Length, FileLength, clientViceId);
     /* Loop, sending data with rx_Write */
-    ViceLog(0, ("Looping over rx_Write to send data\n"));
+    ViceLog(0, ("Looping over rx_Write to send data.  Start StoreData64 returned %d\n", code));
     pos = StoreBuffer;
     while (Length > 0) {
 	bytes = rx_Write(call, pos, Length);
@@ -261,9 +262,10 @@ rw_StoreData64(struct rx_connection *rcon, struct AFSFid *Fid,
 	pos += bytes;
     }
     ViceLog(0, ("Calling EndRXAFS_RStoreData64\n"));
-    EndRXAFS_RStoreData64(call);
+    code = EndRXAFS_RStoreData64(call);
+    ViceLog(0, ("End of rw_RStoreData64 returned %d\n", code));
 
-    return 0;
+    return code;
 }
 #endif
 
