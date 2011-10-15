@@ -2886,11 +2886,11 @@ SAFSS_StoreData64(struct rx_call *acall, struct AFSFid *Fid,
      * are also returned
      */
     if (remote_flag == LOCAL_RPC)
-	 GetVolumePackage(tcon, Fid, &volptr, &targetptr, MustNOTBeDIR,
+	 errorCode = GetVolumePackage(tcon, Fid, &volptr, &targetptr, MustNOTBeDIR,
 		&parentwhentargetnotdir, &client, WRITE_LOCK,
 		&rights, &anyrights);
     else
-	 GetReplicaVolumePackage(Fid, &volptr, &targetptr, MustNOTBeDIR, WRITE_LOCK);
+	 errorCode = GetReplicaVolumePackage(Fid, &volptr, &targetptr, MustNOTBeDIR, WRITE_LOCK);
 
     if (errorCode)
 	goto Bad_StoreData;
@@ -3185,11 +3185,11 @@ SAFSS_StoreStatus(struct rx_call *acall, struct AFSFid *Fid,
      * also returned
      */
     if (remote_flag == LOCAL_RPC)
-	 GetVolumePackage(tcon, Fid, &volptr, &targetptr, DONTCHECK,
+	 errorCode = GetVolumePackage(tcon, Fid, &volptr, &targetptr, DONTCHECK,
 		&parentwhentargetnotdir, &client, WRITE_LOCK,
 		&rights, &anyrights);
     else
-	 GetReplicaVolumePackage(Fid, &volptr, &targetptr, DONTCHECK, WRITE_LOCK);
+	 errorCode = GetReplicaVolumePackage(Fid, &volptr, &targetptr, DONTCHECK, WRITE_LOCK);
 
     if (errorCode)
 	goto Bad_StoreStatus;
@@ -3344,11 +3344,11 @@ SAFSS_RemoveFile(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
      * also returned
      */
     if (remote_flag == LOCAL_RPC)
-	GetVolumePackage(tcon, DirFid, &volptr, &parentptr, MustBeDIR,
+	errorCode = GetVolumePackage(tcon, DirFid, &volptr, &parentptr, MustBeDIR,
 		  &parentwhentargetnotdir, &client, WRITE_LOCK,
 		  &rights, &anyrights);
     else
-	GetReplicaVolumePackage(DirFid, &volptr, &parentptr, MustBeDIR, WRITE_LOCK);
+	errorCode = GetReplicaVolumePackage(DirFid, &volptr, &parentptr, MustBeDIR, WRITE_LOCK);
 
     if (errorCode)
 	goto Bad_RemoveFile;
