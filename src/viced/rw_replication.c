@@ -208,6 +208,18 @@ SRXAFS_RStoreACL(struct rx_call *acall, struct AFSFid *Fid,
     return SAFSS_StoreACL(acall, Fid, AccessList, NULL, &Sync, REMOTE_RPC);
 }
 
+afs_int32
+SRXAFS_RStoreStatus(struct rx_call *acall, struct AFSFid *Fid, struct AFSStoreStatus *InStatus,
+	afs_int32 clientViceId)
+{
+    struct AFSFetchStatus OutStatus;
+    struct AFSVolSync Sync;
+
+    ViceLog(0, ("Processing RStoreStatus call, calling SAFSS_StoreStatus\n"));
+
+    return SAFSS_StoreStatus(acall, Fid, InStatus, &OutStatus, &Sync, REMOTE_RPC, clientViceId);
+}
+
 void
 FS_PostProc(afs_int32 code)
 {
@@ -248,6 +260,10 @@ FS_PostProc(afs_int32 code)
 		    case RPC_StoreACL:
 			ViceLog(0, ("Calling remote StoreACL\n"));
 			RXAFS_RStoreACL(rcon, &item->InFid1, &item->AccessList);
+			break;
+		    case RPC_StoreStatus:
+			ViceLog(0, ("Calling remote StoreStatus\n"));
+			RXAFS_RStoreStatus(rcon, &item->InFid1, &item->InStatus, item->ClientViceId);
 			break;
 		    default:
 			ViceLog(0, ("Warning: unhandled stashed RPC, op: %d\n", item->RPCCall));

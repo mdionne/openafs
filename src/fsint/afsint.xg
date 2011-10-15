@@ -816,3 +816,9 @@ RStoreACL(
   IN  AFSFid *Fid,
   AFSOpaque *AccessList
 ) = 65608;
+
+RStoreStatus(
+  IN  AFSFid *Fid,
+  AFSStoreStatus *InStatus,
+  afs_int32 clientViceId
+) = 65609;

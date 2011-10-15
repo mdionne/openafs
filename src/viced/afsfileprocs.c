@@ -3116,10 +3116,10 @@ SRXAFS_StoreACL(struct rx_call * acall, struct AFSFid * Fid,
  * Note: This routine is called exclusively from SRXAFS_StoreStatus(), and
  * should be merged when possible.
  */
-static afs_int32
+afs_int32
 SAFSS_StoreStatus(struct rx_call *acall, struct AFSFid *Fid,
-		  struct AFSStoreStatus *InStatus,
-		  struct AFSFetchStatus *OutStatus, struct AFSVolSync *Sync)
+	struct AFSStoreStatus *InStatus, struct AFSFetchStatus *OutStatus,
+	struct AFSVolSync *Sync, int remote_flag, afs_int32 clientViceId)
 {
     Vnode *targetptr = 0;	/* pointer to input fid */
     Vnode *parentwhentargetnotdir = 0;	/* parent of Fid to get ACL */
@@ -3131,13 +3131,19 @@ SAFSS_StoreStatus(struct rx_call *acall, struct AFSFid *Fid,
     struct in_addr logHostAddr;	/* host ip holder for inet_ntoa */
     struct rx_connection *tcon = rx_ConnectionOf(acall);
 
-    /* Get ptr to client data for user Id for logging */
-    t_client = (struct client *)rx_GetSpecific(tcon, rxcon_client_key);
-    logHostAddr.s_addr = rxr_HostOf(tcon);
-    ViceLog(1,
+    if (remote_flag == LOCAL_RPC) {
+	/* Get ptr to client data for user Id for logging */
+	t_client = (struct client *)rx_GetSpecific(tcon, rxcon_client_key);
+	logHostAddr.s_addr = rxr_HostOf(tcon);
+	ViceLog(1,
 	    ("SAFS_StoreStatus,  Fid	= %u.%u.%u, Host %s:%d, Id %d\n",
 	     Fid->Volume, Fid->Vnode, Fid->Unique, inet_ntoa(logHostAddr),
 	     ntohs(rxr_PortOf(tcon)), t_client->ViceId));
+    } else {
+	ViceLog(1,
+	    ("SAFS_StoreStatus (remote),  Fid	= %u.%u.%u, Id %d\n",
+	     Fid->Volume, Fid->Vnode, Fid->Unique, clientViceId));
+    }
     FS_LOCK;
     AFSCallStats.StoreStatus++, AFSCallStats.TotalCalls++;
     FS_UNLOCK;
@@ -3145,22 +3151,27 @@ SAFSS_StoreStatus(struct rx_call *acall, struct AFSFid *Fid,
      * Get volume/vnode for the target file; caller's rights to it are
      * also returned
      */
-    if ((errorCode =
+    if (remote_flag == LOCAL_RPC)
 	 GetVolumePackage(tcon, Fid, &volptr, &targetptr, DONTCHECK,
-			  &parentwhentargetnotdir, &client, WRITE_LOCK,
-			  &rights, &anyrights))) {
+		&parentwhentargetnotdir, &client, WRITE_LOCK,
+		&rights, &anyrights);
+    else
+	 GetReplicaVolumePackage(Fid, &volptr, &targetptr, DONTCHECK, WRITE_LOCK);
+
+    if (errorCode)
 	goto Bad_StoreStatus;
-    }
 
     /* set volume synchronization information */
     SetVolumeSync(Sync, volptr);
 
-    /* Check if the caller has proper permissions to store status to Fid */
-    if ((errorCode =
-	 Check_PermissionRights(targetptr, client, rights, CHK_STORESTATUS,
-				InStatus))) {
-	goto Bad_StoreStatus;
+    if (remote_flag == LOCAL_RPC) {
+	/* Check if the caller has proper permissions to store status to Fid */
+	if ((errorCode = Check_PermissionRights(targetptr, client, rights,
+		CHK_STORESTATUS, InStatus))) {
+	    goto Bad_StoreStatus;
+	}
     }
+
     /*
      * Check for a symbolic link; we can't chmod these (otherwise could
      * change a symlink to a mt pt or vice versa)
@@ -3170,26 +3181,36 @@ SAFSS_StoreStatus(struct rx_call *acall, struct AFSFid *Fid,
 	goto Bad_StoreStatus;
     }
 
+    /* update the status of the parent vnode */
+    if (remote_flag) {
+        client = malloc(sizeof(struct client));
+        client->ViceId = clientViceId;
+        client->InSameNetwork = 1;
+    }
+
     /* Update the status of the target's vnode */
     Update_TargetVnodeStatus(targetptr, TVS_SSTATUS, client, InStatus,
 			     (parentwhentargetnotdir ? parentwhentargetnotdir
-			      : targetptr), volptr, 0, LOCAL_RPC);
+			      : targetptr), volptr, 0, remote_flag);
 
     /* convert the write lock to a read lock before breaking callbacks */
     VVnodeWriteToRead(&errorCode, targetptr);
     osi_Assert(!errorCode || errorCode == VSALVAGE);
 
     /* Break call backs on Fid */
-    BreakCallBack(client->host, Fid, 0);
+    BreakCallBack(remote_flag ? NULL : client->host, Fid, 0);
 
-    /* Return the updated status back to caller */
-    GetStatus(targetptr, OutStatus, rights, anyrights,
-	      parentwhentargetnotdir);
+    if (remote_flag == LOCAL_RPC) {
+	/* Return the updated status back to caller */
+	GetStatus(targetptr, OutStatus, rights, anyrights, parentwhentargetnotdir);
+    }
 
   Bad_StoreStatus:
     /* Update and store volume/vnode and parent vnodes back */
-    PutVolumePackage(parentwhentargetnotdir, targetptr, (Vnode *) 0,
-		     volptr, &client);
+    if (remote_flag == LOCAL_RPC)
+	PutVolumePackage(parentwhentargetnotdir, targetptr, (Vnode *) 0, volptr, &client);
+    else
+	PutReplicaVolumePackage(targetptr, (Vnode *) 0, volptr);
     ViceLog(2, ("SAFS_StoreStatus returns %d\n", errorCode));
     return errorCode;
 
@@ -3207,13 +3228,27 @@ SRXAFS_StoreStatus(struct rx_call * acall, struct AFSFid * Fid,
     struct host *thost;
     struct client *t_client = NULL;	/* tmp ptr to client data */
     struct fsstats fsstats;
+#if defined(AFS_PTHREAD_ENV)
+    struct AFSUpdateListItem *update;
+#endif
 
     fsstats_StartOp(&fsstats, FS_STATS_RPCIDX_STORESTATUS);
 
     if ((code = CallPreamble(acall, ACTIVECALL, &tcon, &thost)))
 	goto Bad_StoreStatus;
 
-    code = SAFSS_StoreStatus(acall, Fid, InStatus, OutStatus, Sync);
+    code = SAFSS_StoreStatus(acall, Fid, InStatus, OutStatus, Sync, LOCAL_RPC, 0);
+
+#if defined(AFS_PTHREAD_ENV)
+    if (code == 0) {
+	/* Stash information about the update, for RW replicas */
+	update = StashUpdate(RPC_StoreStatus, Fid, NULL,
+		NULL, NULL, InStatus, NULL,
+		0, 0, 0, t_client ? t_client->ViceId : 0);
+	pthread_setspecific(fs_update, update);
+    }
+#endif
+
 
   Bad_StoreStatus:
     code = CallPostamble(tcon, code, thost);
