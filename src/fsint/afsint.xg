@@ -798,6 +798,15 @@ RRemoveFile(
   afs_int32 clientViceId
 ) = 65601;
 
+RStoreData64(
+  IN  AFSFid *Fid,
+  AFSStoreStatus *InStatus,
+  afs_uint64 Pos,
+  afs_uint64 Length,
+  afs_uint64 FileLength,
+  afs_int32 clientViceId
+) split = 65602;
+
 RRemoveDir(
   IN  AFSFid *DirFid,
   string Name<AFSNAMEMAX>,
