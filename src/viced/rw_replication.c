@@ -253,6 +253,7 @@ rw_StoreData64(struct rx_connection *rcon, struct AFSFid *Fid,
     ViceLog(0, ("Calling StartRXAFS_RStoreData64\n"));
     call = rx_NewCall(rcon);
     ViceLog(0, ("Got new call: %p\n", call));
+    ViceLog(0, ("Calling RStoreData64, Pos: %ld, Len: %ld, FileLen: %ld\n", (long)Pos, (long)Length, (long)FileLength));
     code = StartRXAFS_RStoreData64(call, Fid, InStatus, Pos, Length, FileLength, clientViceId);
     /* Loop, sending data with rx_Write */
     ViceLog(0, ("Looping over rx_Write to send data.  Start StoreData64 returned %d\n", code));
