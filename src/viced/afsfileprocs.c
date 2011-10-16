@@ -6160,11 +6160,11 @@ SAFSS_SetVolumeStatus(struct rx_call * acall, afs_int32 avolid,
 	(afs_int32) ROOTVNODE, dummyFid.Unique = 1;
 
     if (remote_flag == LOCAL_RPC)
-	GetVolumePackage(tcon, &dummyFid, &volptr, &targetptr, MustBeDIR,
+	errorCode = GetVolumePackage(tcon, &dummyFid, &volptr, &targetptr, MustBeDIR,
 		&parentwhentargetnotdir, &client, READ_LOCK,
 		&rights, &anyrights);
     else
-	GetReplicaVolumePackage(&dummyFid, &volptr, &targetptr, MustBeDIR, READ_LOCK);
+	errorCode = GetReplicaVolumePackage(&dummyFid, &volptr, &targetptr, MustBeDIR, READ_LOCK);
     if (errorCode)
 	goto Bad_SetVolumeStatus;
 
