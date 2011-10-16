@@ -292,8 +292,8 @@ FS_PostProc(afs_int32 code)
 		switch(item->RPCCall) {
 		    case RPC_CreateFile:
 			ViceLog(0, ("Calling remote CreateFile\n"));
-			RXAFS_RCreateFile(rcon, &item->InFid1, item->Name1, &item->InStatus, &item->InFid2,
-				item->ClientViceId);
+			RXAFS_RCreateFile(rcon, &item->InFid1, item->Name1, &item->InStatus,
+				&item->InFid2, item->ClientViceId);
 			break;
 		    case RPC_RemoveFile:
 			ViceLog(0, ("Calling remote RemoveFile\n"));
@@ -311,7 +311,8 @@ FS_PostProc(afs_int32 code)
 			break;
 		    case RPC_MakeDir:
 			ViceLog(0, ("Calling remote MakeDir\n"));
-			RXAFS_RMakeDir(rcon, &item->InFid1, item->Name1, &item->InStatus, &item->InFid2, item->ClientViceId);
+			RXAFS_RMakeDir(rcon, &item->InFid1, item->Name1, &item->InStatus,
+				&item->InFid2, item->ClientViceId);
 			break;
 		    case RPC_StoreACL:
 			ViceLog(0, ("Calling remote StoreACL\n"));
@@ -323,8 +324,8 @@ FS_PostProc(afs_int32 code)
 			break;
 		    default:
 			ViceLog(0, ("Warning: unhandled stashed RPC, op: %d\n", item->RPCCall));
+		}
 	    }
-	}
 	}
 	if (item->RPCCall == RPC_StoreData64 && item->StoreBuffer)
 	    free(item->StoreBuffer);
@@ -339,8 +340,8 @@ FS_PostProc(afs_int32 code)
 struct AFSUpdateListItem *
 StashUpdate(afs_int32 pRPCCall, struct AFSFid *pInFid1,
 	struct AFSFid *pInFid2, char *pName1, char *pName2, struct AFSStoreStatus *pInStatus,
-	struct AFSOpaque *pAccessList,
-	afs_uint64 pPos, afs_uint64 pLength, afs_uint64 pFileLength, afs_int32 pClientViceId, char *buf)
+	struct AFSOpaque *pAccessList, afs_uint64 pPos, afs_uint64 pLength,
+	afs_uint64 pFileLength, afs_int32 pClientViceId, char *buf)
 {
     struct AFSUpdateListItem *item;
 
