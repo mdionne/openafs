@@ -48,6 +48,7 @@ afs_uint32 queryDbserver;
 
 #if defined(AFS_PTHREAD_ENV)
 pthread_key_t fs_update;
+pthread_mutex_t remote_update_mutex;
 #endif
 
 /* Get all the RWSL servers for the Volume */
@@ -284,6 +285,7 @@ FS_PostProc(afs_int32 code)
     item = pthread_getspecific(fs_update);
     if (item) {
 	GetSlaveServersForVolume(&item->InFid1, &entry);
+	REMOTE_UPDATE_LOCK;
 	for (i = 0; i < entry.nServers; i++) {
 	    if (entry.serverFlags[i] & 0x10) {
 		/* make connections for each Slave */
@@ -327,6 +329,7 @@ FS_PostProc(afs_int32 code)
 		}
 	    }
 	}
+	REMOTE_UPDATE_UNLOCK;
 	if (item->RPCCall == RPC_StoreData64 && item->StoreBuffer)
 	    free(item->StoreBuffer);
     } else {

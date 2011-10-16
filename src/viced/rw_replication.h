@@ -43,6 +43,11 @@ struct AFSUpdateListItem {
 
 #if defined(AFS_PTHREAD_ENV)
 extern pthread_key_t fs_update;
+extern pthread_mutex_t remote_update_mutex;
+#define REMOTE_UPDATE_LOCK \
+        osi_Assert(pthread_mutex_lock(&remote_update_mutex) == 0)
+#define REMOTE_UPDATE_UNLOCK \
+        osi_Assert(pthread_mutex_unlock(&remote_update_mutex) == 0)
 #endif
 
 #define RPC_StoreData 133

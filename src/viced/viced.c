@@ -2094,6 +2094,7 @@ main(int argc, char *argv[])
     }
     rx_SetPostProc(tservice, FS_PostProc);
 #if defined(AFS_PTHREAD_ENV)
+    MUTEX_INIT(&remote_update_mutex, "remote update lock", MUTEX_DEFAULT, 0);
     pthread_key_create(&fs_update, NULL);
 #endif
     rx_SetMinProcs(tservice, 3);
