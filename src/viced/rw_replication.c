@@ -249,27 +249,18 @@ rw_StoreData64(struct rx_connection *rcon, struct AFSFid *Fid,
      * This is more complex than the other remote calls, since we
      * need to replay the rx_Write calls to the remote server.
      */
-    ViceLog(0, ("Processing rw_StoreData64, Fid: %u.%u.%u\n", Fid->Volume, Fid->Vnode, Fid->Unique));
-    ViceLog(0, ("rw_StoreData64: first chars of data: %4s\n", StoreBuffer));
-    ViceLog(0, ("Calling StartRXAFS_RStoreData64\n"));
     call = rx_NewCall(rcon);
-    ViceLog(0, ("Got new call: %p\n", call));
     ViceLog(0, ("Calling RStoreData64, Pos: %ld, Len: %ld, FileLen: %ld\n", (long)Pos, (long)Length, (long)FileLength));
     code = StartRXAFS_RStoreData64(call, Fid, InStatus, Pos, Length, FileLength, clientViceId);
     /* Loop, sending data with rx_Write */
-    ViceLog(0, ("Looping over rx_Write to send data.  Start StoreData64 returned %d\n", code));
     pos = StoreBuffer;
     while (Length > 0) {
 	bytes = rx_Write(call, pos, Length);
-	ViceLog(0, ("Loop, rx_Write wrote %ld bytes\n", bytes));
 	Length -= bytes;
 	pos += bytes;
     }
-    ViceLog(0, ("Calling EndRXAFS_RStoreData64\n"));
     code = EndRXAFS_RStoreData64(call);
-    ViceLog(0, ("End of rw_RStoreData64 returned %d\n", code));
     code = rx_EndCall(call, code);
-    ViceLog(0, ("End of rx_EndCall returned %d\n", code));
     return code;
 }
 #endif
