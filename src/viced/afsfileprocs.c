@@ -2911,11 +2911,13 @@ SAFSS_StoreData64(struct rx_call *acall, struct AFSFid *Fid,
     }
 
 #if defined(AFS_PTHREAD_ENV)
-    /* Stash information about the update, for RW replicas */
-    update = StashUpdate(RPC_StoreData64, Fid, NULL,
-	    NULL, NULL, InStatus, NULL,
-	Pos, Length, FileLength, t_client ? t_client->ViceId : 0, rbuf);
-    pthread_setspecific(fs_update, update);
+    if (remote_flag == LOCAL_RPC) {
+	/* Stash information about the update, for RW replicas */
+	update = StashUpdate(RPC_StoreData64, Fid, NULL,
+		NULL, NULL, InStatus, NULL,
+	    Pos, Length, FileLength, t_client ? t_client->ViceId : 0, rbuf);
+	pthread_setspecific(fs_update, update);
+    }
 #endif
 
   Bad_StoreData:

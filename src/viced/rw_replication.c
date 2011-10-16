@@ -266,7 +266,6 @@ rw_StoreData64(struct rx_connection *rcon, struct AFSFid *Fid,
     ViceLog(0, ("End of rw_RStoreData64 returned %d\n", code));
     code = rx_EndCall(call, code);
     ViceLog(0, ("End of rx_EndCall returned %d\n", code));
-
     return code;
 }
 #endif
@@ -327,6 +326,8 @@ FS_PostProc(afs_int32 code)
 	    }
 	}
 	}
+	if (item->RPCCall == RPC_StoreData64 && item->StoreBuffer)
+	    free(item->StoreBuffer);
     } else {
 	ViceLog(0, ("FS_PostProc: no items to process\n"));
     }
