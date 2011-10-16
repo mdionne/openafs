@@ -296,6 +296,12 @@ FS_PostProc(afs_int32 code)
 #if defined(AFS_PTHREAD_ENV)
     item = pthread_getspecific(fs_update);
     if (item) {
+	/* If no FID provided, use root vnode - for SetVolumeStatus */
+	if (!item->InFid1.Volume) {
+	    item->InFid1.Volume = item->Volid;
+	    item->InFid1.Volume = ROOTVNODE;
+	    item->InFid1.Unique = 1;
+	}
 	GetSlaveServersForVolume(&item->InFid1, &entry);
 	REMOTE_UPDATE_LOCK;
 	for (i = 0; i < entry.nServers; i++) {
@@ -376,6 +382,10 @@ StashUpdate(afs_int32 pRPCCall, struct AFSFid *pInFid1,
 	item->InFid1.Volume = pInFid1->Volume;
 	item->InFid1.Vnode = pInFid1->Vnode;
 	item->InFid1.Unique = pInFid1->Unique;
+    } else {
+	item->InFid1.Volume = 0;
+	item->InFid1.Vnode = 0;
+	item->InFid1.Unique = 0;
     }
     if (pInFid2) {
 	item->InFid2.Volume = pInFid2->Volume;
