@@ -264,6 +264,8 @@ rw_StoreData64(struct rx_connection *rcon, struct AFSFid *Fid,
     ViceLog(0, ("Calling EndRXAFS_RStoreData64\n"));
     code = EndRXAFS_RStoreData64(call);
     ViceLog(0, ("End of rw_RStoreData64 returned %d\n", code));
+    code = rx_EndCall(call, code);
+    ViceLog(0, ("End of rx_EndCall returned %d\n", code));
 
     return code;
 }
