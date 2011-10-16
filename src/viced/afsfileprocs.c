@@ -6258,7 +6258,7 @@ SRXAFS_SetVolumeStatus(struct rx_call * acall, afs_int32 avolid,
 #if defined(AFS_PTHREAD_ENV)
     if (code == 0) {
 	/* Stash information about the update, for RW replicas */
-	update = StashUpdate(RPC_MakeDir, NULL, NULL, Name, OfflineMsg,
+	update = StashUpdate(RPC_SetVolumeStatus, NULL, NULL, Name, OfflineMsg,
 		NULL, NULL, 0, 0, 0, t_client ? t_client->ViceId : 0, NULL,
 		avolid, StoreVolStatus);
 	pthread_setspecific(fs_update, update);
