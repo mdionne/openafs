@@ -299,7 +299,7 @@ FS_PostProc(afs_int32 code)
 	/* If no FID provided, use root vnode - for SetVolumeStatus */
 	if (!item->InFid1.Volume) {
 	    item->InFid1.Volume = item->Volid;
-	    item->InFid1.Volume = ROOTVNODE;
+	    item->InFid1.Vnode = ROOTVNODE;
 	    item->InFid1.Unique = 1;
 	}
 	GetSlaveServersForVolume(&item->InFid1, &entry);
@@ -393,28 +393,24 @@ StashUpdate(afs_int32 pRPCCall, struct AFSFid *pInFid1,
 	item->InFid2.Unique = pInFid2->Unique;
     }
     if (pName1) {
-	if (strlen(pName1) > 0) {
-	    item->Name1 = (char *)malloc(sizeof(char)*AFSNAMEMAX);
-	    if (!item->Name1) {
-		ViceLog(0,("Name1 allocate memory failed\n"));
-		return NULL;
-	    }
-	    strcpy(item->Name1,pName1);
+	item->Name1 = (char *)malloc(sizeof(char)*AFSNAMEMAX);
+	if (!item->Name1) {
+	    ViceLog(0,("Name1 allocate memory failed\n"));
+	    return NULL;
 	}
+	strcpy(item->Name1,pName1);
     } else {
 	item->Name1 = NULL;
     }
     if (pName2) {
-	if (strlen(pName2) > 0) {
-	    if (pRPCCall == RPC_SetVolumeStatus) {
-		item->Name2 = malloc(sizeof(char)*AFSOPAQUEMAX);
-	    }
-	    if (!item->Name2) {
-		ViceLog(0,("Name2 allocate memory failed\n"));
-                return NULL;
-	    }
-	    strcpy(item->Name2,pName2);
+	if (pRPCCall == RPC_SetVolumeStatus) {
+	    item->Name2 = malloc(sizeof(char)*AFSOPAQUEMAX);
 	}
+	if (!item->Name2) {
+	    ViceLog(0,("Name2 allocate memory failed\n"));
+	    return NULL;
+	}
+	strcpy(item->Name2,pName2);
     } else {
 	item->Name2 = NULL;
     }
