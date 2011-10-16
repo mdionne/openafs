@@ -831,3 +831,11 @@ RStoreStatus(
   AFSStoreStatus *InStatus,
   afs_int32 clientViceId
 ) = 65609;
+
+RSetVolumeStatus(
+  IN  afs_int32 Volumeid,
+  AFSStoreVolumeStatus *Volumestatus,
+  string Name<AFSNAMEMAX>,
+  string OfflineMsg<AFSOPAQUEMAX>,
+  afs_int32 clientViceId
+) = 65610;

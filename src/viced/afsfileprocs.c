@@ -2915,7 +2915,7 @@ SAFSS_StoreData64(struct rx_call *acall, struct AFSFid *Fid,
 	/* Stash information about the update, for RW replicas */
 	update = StashUpdate(RPC_StoreData64, Fid, NULL,
 		NULL, NULL, InStatus, NULL,
-	    Pos, Length, FileLength, t_client ? t_client->ViceId : 0, rbuf);
+	    Pos, Length, FileLength, t_client ? t_client->ViceId : 0, rbuf, 0, NULL);
 	pthread_setspecific(fs_update, update);
     }
 #endif
@@ -3070,7 +3070,7 @@ SAFSS_StoreACL(struct rx_call * acall, struct AFSFid * Fid,
 	/* Stash information about the update, for RW replicas */
 	update = StashUpdate(RPC_StoreACL, Fid, NULL,
 		NULL, NULL, NULL, AccessList,
-		0, 0, 0, t_client ? t_client->ViceId : 0, NULL);
+		0, 0, 0, t_client ? t_client->ViceId : 0, NULL, 0, NULL);
 	pthread_setspecific(fs_update, update);
 #endif
     }
@@ -3237,7 +3237,7 @@ SRXAFS_StoreStatus(struct rx_call * acall, struct AFSFid * Fid,
 	/* Stash information about the update, for RW replicas */
 	update = StashUpdate(RPC_StoreStatus, Fid, NULL,
 		NULL, NULL, InStatus, NULL,
-		0, 0, 0, t_client ? t_client->ViceId : 0, NULL);
+		0, 0, 0, t_client ? t_client->ViceId : 0, NULL, 0, NULL);
 	pthread_setspecific(fs_update, update);
     }
 #endif
@@ -3407,7 +3407,7 @@ SRXAFS_RemoveFile(struct rx_call * acall, struct AFSFid * DirFid, char *Name,
 	/* Stash information about the update, for RW replicas */
 	update = StashUpdate(RPC_RemoveFile, DirFid, NULL,
 		Name, NULL, NULL, NULL,
-		0, 0, 0, t_client ? t_client->ViceId : 0, NULL);
+		0, 0, 0, t_client ? t_client->ViceId : 0, NULL, 0, NULL);
 	pthread_setspecific(fs_update, update);
     }
 #endif
@@ -3586,7 +3586,7 @@ SRXAFS_CreateFile(struct rx_call * acall, struct AFSFid * DirFid, char *Name,
 	/* Stash information about the update, for RW replicas */
 	update = StashUpdate(RPC_CreateFile, DirFid, OutFid,
 		Name, NULL, InStatus, NULL,
-		0, 0, 0, t_client ? t_client->ViceId : 0, NULL);
+		0, 0, 0, t_client ? t_client->ViceId : 0, NULL, 0, NULL);
 	pthread_setspecific(fs_update, update);
     }
 #endif
@@ -4668,7 +4668,7 @@ SRXAFS_MakeDir(struct rx_call * acall, struct AFSFid * DirFid, char *Name,
 	/* Stash information about the update, for RW replicas */
 	update = StashUpdate(RPC_MakeDir, DirFid, OutFid,
 		Name, NULL, InStatus, NULL,
-		0, 0, 0, t_client ? t_client->ViceId : 0, NULL);
+		0, 0, 0, t_client ? t_client->ViceId : 0, NULL, 0, NULL);
 	pthread_setspecific(fs_update, update);
     }
 #endif
@@ -4827,7 +4827,7 @@ SRXAFS_RemoveDir(struct rx_call * acall, struct AFSFid * DirFid, char *Name,
 	/* Stash information about the update, for RW replicas */
 	update = StashUpdate(RPC_RemoveDir, DirFid, NULL,
 		Name, NULL, NULL, NULL,
-		0, 0, 0, t_client ? t_client->ViceId : 0, NULL);
+		0, 0, 0, t_client ? t_client->ViceId : 0, NULL, 0, NULL);
 	pthread_setspecific(fs_update, update);
     }
 #endif
@@ -6135,29 +6135,19 @@ SRXAFS_GetVolumeStatus(struct rx_call * acall, afs_int32 avolid,
 
 }				/*SRXAFS_GetVolumeStatus */
 
-
 afs_int32
-SRXAFS_SetVolumeStatus(struct rx_call * acall, afs_int32 avolid,
-		       AFSStoreVolumeStatus * StoreVolStatus, char *Name,
-		       char *OfflineMsg, char *Motd)
+SAFSS_SetVolumeStatus(struct rx_call * acall, afs_int32 avolid,
+	AFSStoreVolumeStatus * StoreVolStatus, char *Name, char *OfflineMsg,
+	char *Motd, int remote_flag, afs_int32 clientViceId)
 {
     Vnode *targetptr = 0;	/* vnode of the new file */
     Vnode *parentwhentargetnotdir = 0;	/* vnode of parent */
-    Error errorCode = 0;		/* error code */
     Volume *volptr = 0;		/* pointer to the volume header */
-    struct client *client = 0;	/* pointer to client entry */
+    Error errorCode = 0;		/* error code */
     afs_int32 rights, anyrights;	/* rights for this and any user */
     AFSFid dummyFid;
     struct rx_connection *tcon = rx_ConnectionOf(acall);
-    struct host *thost;
-    struct client *t_client = NULL;	/* tmp ptr to client data */
-    struct fsstats fsstats;
-
-    fsstats_StartOp(&fsstats, FS_STATS_RPCIDX_SETVOLUMESTATUS);
-
-    ViceLog(1, ("SAFS_SetVolumeStatus for volume %u\n", avolid));
-    if ((errorCode = CallPreamble(acall, ACTIVECALL, &tcon, &thost)))
-	goto Bad_SetVolumeStatus;
+    struct client *client = 0;	/* pointer to client entry */
 
     FS_LOCK;
     AFSCallStats.SetVolumeStatus++, AFSCallStats.TotalCalls++;
@@ -6169,38 +6159,83 @@ SRXAFS_SetVolumeStatus(struct rx_call * acall, afs_int32 avolid,
     dummyFid.Volume = avolid, dummyFid.Vnode =
 	(afs_int32) ROOTVNODE, dummyFid.Unique = 1;
 
-    if ((errorCode =
-	 GetVolumePackage(tcon, &dummyFid, &volptr, &targetptr, MustBeDIR,
-			  &parentwhentargetnotdir, &client, READ_LOCK,
-			  &rights, &anyrights)))
+    if (remote_flag == LOCAL_RPC)
+	GetVolumePackage(tcon, &dummyFid, &volptr, &targetptr, MustBeDIR,
+		&parentwhentargetnotdir, &client, READ_LOCK,
+		&rights, &anyrights);
+    else
+	GetReplicaVolumePackage(&dummyFid, &volptr, &targetptr, MustBeDIR, READ_LOCK);
+    if (errorCode)
 	goto Bad_SetVolumeStatus;
 
     if (readonlyServer) {
 	errorCode = VREADONLY;
 	goto Bad_SetVolumeStatus;
     }
-    if (VanillaUser(client)) {
-	errorCode = EACCES;
-	goto Bad_SetVolumeStatus;
+    if (remote_flag == LOCAL_RPC) {
+	if (VanillaUser(client)) {
+	    errorCode = EACCES;
+	    goto Bad_SetVolumeStatus;
+	}
     }
 
     errorCode =
 	RXUpdate_VolumeStatus(volptr, StoreVolStatus, Name, OfflineMsg, Motd);
 
-  Bad_SetVolumeStatus:
-    PutVolumePackage(parentwhentargetnotdir, targetptr, (Vnode *) 0,
-		     volptr, &client);
+Bad_SetVolumeStatus:
+    if (remote_flag == LOCAL_RPC)
+	PutVolumePackage(parentwhentargetnotdir, targetptr, (Vnode *) 0,
+		volptr, &client);
+    else
+	PutReplicaVolumePackage(targetptr, (Vnode *) 0, volptr);
     ViceLog(2, ("SAFS_SetVolumeStatus returns %d\n", errorCode));
-    errorCode = CallPostamble(tcon, errorCode, thost);
+    return errorCode;
+}
+
+afs_int32
+SRXAFS_SetVolumeStatus(struct rx_call * acall, afs_int32 avolid,
+		       AFSStoreVolumeStatus * StoreVolStatus, char *Name,
+		       char *OfflineMsg, char *Motd)
+{
+    afs_int32 code;
+    struct fsstats fsstats;
+    struct host *thost;
+#if defined(AFS_PTHREAD_ENV)
+    struct AFSUpdateListItem *update;
+#endif
+    struct client *t_client = NULL;	/* tmp ptr to client data */
+    struct rx_connection *tcon = rx_ConnectionOf(acall);
+
+    fsstats_StartOp(&fsstats, FS_STATS_RPCIDX_SETVOLUMESTATUS);
+
+    if ((code = CallPreamble(acall, ACTIVECALL, &tcon, &thost)))
+	goto Bad_SetVolumeStatus;
+
+    code = SAFSS_SetVolumeStatus(acall, avolid, StoreVolStatus, Name,
+	    OfflineMsg, Motd, LOCAL_RPC, 0);
 
     t_client = (struct client *)rx_GetSpecific(tcon, rxcon_client_key);
 
-    fsstats_FinishOp(&fsstats, errorCode);
+#if defined(AFS_PTHREAD_ENV)
+    if (code == 0) {
+	/* Stash information about the update, for RW replicas */
+	update = StashUpdate(RPC_MakeDir, NULL, NULL, Name, OfflineMsg,
+		NULL, NULL, 0, 0, 0, t_client ? t_client->ViceId : 0, NULL,
+		avolid, StoreVolStatus);
+	pthread_setspecific(fs_update, update);
+    }
+#endif
 
-    osi_auditU(acall, SetVolumeStatusEvent, errorCode,
+Bad_SetVolumeStatus:
+    code = CallPostamble(tcon, code, thost);
+
+
+    fsstats_FinishOp(&fsstats, code);
+
+    osi_auditU(acall, SetVolumeStatusEvent, code,
                AUD_ID, t_client ? t_client->ViceId : 0,
                AUD_LONG, avolid, AUD_STR, Name, AUD_END);
-    return (errorCode);
+    return (code);
 }				/*SRXAFS_SetVolumeStatus */
 
 #define	DEFAULTVOLUME	"root.afs"
