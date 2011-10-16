@@ -234,6 +234,18 @@ SRXAFS_RStoreStatus(struct rx_call *acall, struct AFSFid *Fid, struct AFSStoreSt
     return SAFSS_StoreStatus(acall, Fid, InStatus, &OutStatus, &Sync, REMOTE_RPC, clientViceId);
 }
 
+afs_int32
+SRXAFS_RSetVolumeStatus(struct rx_call *acall, afs_int32 avolid,
+	AFSStoreVolumeStatus *StoreVolStatus, char *Name, char *OfflineMsg,
+	afs_int32 clientViceId)
+{
+    ViceLog(0, ("Processing RSetVolumeStatus call, calling SAFSS_SetVolumeStatus\n"));
+
+    return SAFSS_SetVolumeStatus(acall, avolid, StoreVolStatus, Name,
+            OfflineMsg, NULL, REMOTE_RPC, clientViceId);
+
+}
+
 #if defined (AFS_PTHREAD_ENV)
 static afs_int32
 rw_StoreData64(struct rx_connection *rcon, struct AFSFid *Fid,
@@ -318,6 +330,11 @@ FS_PostProc(afs_int32 code)
 			ViceLog(0, ("Calling remote StoreStatus\n"));
 			RXAFS_RStoreStatus(rcon, &item->InFid1, &item->InStatus, item->ClientViceId);
 			break;
+		    case RPC_SetVolumeStatus:
+			ViceLog(0, ("Calling remote SetVolumeStatus\n"));
+			RXAFS_RSetVolumeStatus(rcon, item->Volid, &item->StoreVolStatus,
+				item->Name1, item->Name2, item->ClientViceId);
+			break;
 		    default:
 			ViceLog(0, ("Warning: unhandled stashed RPC, op: %d\n", item->RPCCall));
 		}
@@ -338,7 +355,8 @@ struct AFSUpdateListItem *
 StashUpdate(afs_int32 pRPCCall, struct AFSFid *pInFid1,
 	struct AFSFid *pInFid2, char *pName1, char *pName2, struct AFSStoreStatus *pInStatus,
 	struct AFSOpaque *pAccessList, afs_uint64 pPos, afs_uint64 pLength,
-	afs_uint64 pFileLength, afs_int32 pClientViceId, char *buf)
+	afs_uint64 pFileLength, afs_int32 pClientViceId, char *buf,
+	afs_int32 volid, AFSStoreVolumeStatus *pStoreVolStatus)
 {
     struct AFSUpdateListItem *item;
 
@@ -372,10 +390,8 @@ StashUpdate(afs_int32 pRPCCall, struct AFSFid *pInFid1,
     }
     if (pName2) {
 	if (strlen(pName2) > 0) {
-	    if (pRPCCall == 6) { /* Dont use constants !! */
-		item->Name2 = (char *)malloc(sizeof(char)*AFSPATHMAX);
-	    } else {
-		item->Name2 = (char *)malloc(sizeof(char)*AFSNAMEMAX);
+	    if (pRPCCall == RPC_SetVolumeStatus) {
+		item->Name2 = malloc(sizeof(char)*AFSOPAQUEMAX);
 	    }
 	    if (!item->Name2) {
 		ViceLog(0,("Name2 allocate memory failed\n"));
@@ -408,11 +424,21 @@ StashUpdate(afs_int32 pRPCCall, struct AFSFid *pInFid1,
     } else {
 	item->AccessList.AFSOpaque_val = NULL;
     }
+    if (pStoreVolStatus) {
+	item->StoreVolStatus.Mask = pStoreVolStatus->Mask;
+	item->StoreVolStatus.MinQuota = pStoreVolStatus->MinQuota;
+	item->StoreVolStatus.MaxQuota = pStoreVolStatus->MaxQuota;
+    } else {
+	item->StoreVolStatus.Mask = 0;
+	item->StoreVolStatus.MinQuota = 0;
+	item->StoreVolStatus.MaxQuota = 0;
+    }
 
     item->Pos = pPos;
     item->Length = pLength;
     item->FileLength = pFileLength;
     item->StoreBuffer = buf;
+    item->Volid = volid;
 
     return item;
 }

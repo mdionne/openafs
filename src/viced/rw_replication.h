@@ -39,6 +39,8 @@ struct AFSUpdateListItem {
     afs_int32 ClientViceId;
     struct AFSUpdateListItem *NextItem;
     char *StoreBuffer;
+    afs_int32 Volid;
+    AFSStoreVolumeStatus StoreVolStatus;
 };
 
 #if defined(AFS_PTHREAD_ENV)
@@ -60,6 +62,7 @@ extern pthread_mutex_t remote_update_mutex;
 #define RPC_Link 140
 #define RPC_MakeDir 141
 #define RPC_RemoveDir 142
+#define RPC_SetVolumeStatus 150
 #define RPC_StoreData64 65538
 
 #define LOCAL_RPC 0
