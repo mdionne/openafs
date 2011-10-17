@@ -669,8 +669,13 @@ VAllocVnode_r(Error * ec, Volume * vp, VnodeType type, VnodeId in_vnode, Unique 
 	}
 	/* Should not happen */
 	if (*(index->bitmap + offset) & (1 << (bitNumber & 0x7))) {
+	    ViceLog(0,("VAllocVnode (specific): warning: vnode in use in bitmap\n"));
+	/*
+	    VFreeBitMapEntry_r(&tmp, vp, &vp->vnodeIndex[class], bitNumber,
+		               VOL_FREE_BITMAP_WAIT);
 	    *ec = VNOVNODE;
 	    return NULL;
+	*/
 	}
 
 	*(index->bitmap + offset) |= (1 << (bitNumber & 0x7));
@@ -730,6 +735,8 @@ VAllocVnode_r(Error * ec, Volume * vp, VnodeType type, VnodeId in_vnode, Unique 
 	 * not blank, it is still in use somewhere; but the bitmap told us
 	 * this vnode number was free, so something is wrong. */
 	if (vnp->disk.type != vNull) {
+	    Log("VAllocVnode: addled bitmap, but continuing\n");
+/*
 	    Error tmp;
 	    Log("VAllocVnode:  addled bitmap or vnode object! (vol %ld, "
 		"vnode %p, number %ld, type %ld)\n", (long)vp->hashid, vnp,
@@ -746,6 +753,7 @@ VAllocVnode_r(Error * ec, Volume * vp, VnodeType type, VnodeId in_vnode, Unique 
 	    VForceOffline_r(vp, 0);
 #endif
 	    return NULL;
+*/
 	}
 
     } else {
@@ -815,9 +823,12 @@ VAllocVnode_r(Error * ec, Volume * vp, VnodeType type, VnodeId in_vnode, Unique 
 		    goto error_encountered;
 		}
 		if (vnp->disk.type != vNull) {
+	    Log("VAllocVnode: addled bitmap, but continuing\n");
 		    Log("VAllocVnode:  addled bitmap or index!\n");
+/*
 		    *ec = EIO;
 		    goto error_encountered;
+*/
 		}
 	    } else {
 		/* growing file - grow in a reasonable increment */
