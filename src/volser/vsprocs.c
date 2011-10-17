@@ -3341,7 +3341,8 @@ GetTrans(struct nvldbentry *vldbEntryPtr, afs_int32 index,
 	    PrintError("Failed to create the ro volume: ", code);
 	    goto fail;
 	}
-	vldbEntryPtr->volumeId[ROVOL] = volid;
+	if (!rwslave)
+	    vldbEntryPtr->volumeId[ROVOL] = volid;
 
 	VDONE;
 
