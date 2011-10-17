@@ -268,6 +268,10 @@ rw_StoreData64(struct rx_connection *rcon, struct AFSFid *Fid,
     pos = StoreBuffer;
     while (Length > 0) {
 	bytes = rx_Write(call, pos, Length);
+	if (bytes != Length) {
+	    code = rx_Error(call);
+	    break;
+	}
 	Length -= bytes;
 	pos += bytes;
     }
