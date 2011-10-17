@@ -2363,7 +2363,7 @@ afs_FetchStatus(struct vcache * avc, struct VenusFid * afid,
     struct rx_connection *rxconn;
     XSTATS_DECLS;
     do {
-	tc = afs_Conn(afid, areq, SHARED_LOCK, &rxconn, rw_flag ? RWONLY : RWANY);
+	tc = afs_Conn(afid, areq, SHARED_LOCK, &rxconn, RWONLY);
 	avc->dchint = NULL;	/* invalidate hints */
 	if (tc) {
 	    avc->callback = tc->parent->srvr->server;

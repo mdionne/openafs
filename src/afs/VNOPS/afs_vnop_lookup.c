@@ -940,7 +940,7 @@ afs_DoBulkStat(struct vcache *adp, long dirCookie, struct vrequest *areqp)
 	/* start the timer; callback expirations are relative to this */
 	startTime = osi_Time();
 
-	tcp = afs_Conn(&adp->f.fid, areqp, SHARED_LOCK, &rxconn, RWANY);
+	tcp = afs_Conn(&adp->f.fid, areqp, SHARED_LOCK, &rxconn, RWONLY);
 	if (tcp) {
 	    hostp = tcp->parent->srvr->server;
 
