@@ -395,13 +395,17 @@ restart:
 	    free(item->StoreBuffer);
 	/* Remove item from list */
 	UPDATE_LIST_LOCK;
-	prev = update_list_head;
-	for (it = update_list_head; it != NULL && it != item; it = it->NextItem)
-	    prev = it;
-	if (prev == update_list_head) {
+	if (item == update_list_head) {
 	    update_list_head = item->NextItem;
+	    if (update_list_head == NULL)
+		update_list_tail = NULL;
 	} else {
+	    prev = update_list_head;
+	    for (it = update_list_head; it != NULL && it != item; it = it->NextItem)
+		prev = it;
 	    prev->NextItem = item->NextItem;
+	    if (item == update_list_tail)
+		update_list_tail = prev;
 	}
 	CV_BROADCAST(&item->update_item_cv);
 	UPDATE_LIST_UNLOCK;
