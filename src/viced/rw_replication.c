@@ -398,7 +398,11 @@ restart:
 	prev = update_list_head;
 	for (it = update_list_head; it != NULL && it != item; it = it->NextItem)
 	    prev = it;
-	prev->NextItem = item->NextItem;
+	if (prev == update_list_head) {
+	    update_list_head = item->NextItem;
+	} else {
+	    prev->NextItem = item->NextItem;
+	}
 	CV_BROADCAST(&item->update_item_cv);
 	UPDATE_LIST_UNLOCK;
     } else {
@@ -501,8 +505,12 @@ StashUpdate(afs_int32 pRPCCall, struct AFSFid *pInFid1,
     CV_INIT(&item->update_item_cv, "update item cv", CV_DEFAULT, 0);
     /* Insert item at end of pending update list */
     UPDATE_LIST_LOCK;
-    update_list_tail->NextItem = item;
-    update_list_tail = item;
+    if (update_list_head == NULL && update_list_tail == NULL) {
+	update_list_tail = update_list_head = item;
+    } else {
+	update_list_tail->NextItem = item;
+	update_list_tail = item;
+    }
     UPDATE_LIST_UNLOCK;
 #endif
 
