@@ -306,8 +306,8 @@ FS_PostProc(afs_int32 code)
     item = pthread_getspecific(fs_update);
     if (item) {
 	/* Need to wait for any earlier related update */
-restart:
 	UPDATE_LIST_LOCK;
+restart:
 	dowait = 0;
 	for (it = update_list_head; it != NULL && it != item; it = it->NextItem) {
 	    if (it->InFid1.Volume) {
