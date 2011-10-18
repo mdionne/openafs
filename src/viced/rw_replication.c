@@ -326,6 +326,7 @@ restart:
 		    dowait = 1;
 	    }
 	    if (dowait) {
+    ViceLog(0, ("In PostProc, update %d needs to wait for %d, fids: %u, %u\n", item->RPCCall, it->RPCCall, it->InFid1.Vnode, it->InFid2.Vnode));
 		CV_WAIT(&it->update_item_cv, &update_list_mutex);
 		goto restart;
 	    }
@@ -384,6 +385,7 @@ restart:
 		    default:
 			ViceLog(0, ("Warning: unhandled stashed RPC, op: %d\n", item->RPCCall));
 		}
+		ViceLog(0, ("Done remote call\n"));
 	    }
 	}
 	if (item->RPCCall == RPC_StoreData64 && item->StoreBuffer)
@@ -402,6 +404,7 @@ restart:
 	    if (item == update_list_tail)
 		update_list_tail = prev;
 	}
+    ViceLog(0, ("In PostProc, done update for %d.  waking up any sleepers\n", item->RPCCall));
 	CV_BROADCAST(&item->update_item_cv);
 	UPDATE_LIST_UNLOCK;
     } else {
