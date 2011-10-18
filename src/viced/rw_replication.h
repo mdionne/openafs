@@ -41,15 +41,26 @@ struct AFSUpdateListItem {
     char *StoreBuffer;
     afs_int32 Volid;
     AFSStoreVolumeStatus StoreVolStatus;
+#if defined(AFS_PTHREAD_ENV)
+    pthread_cond_t update_item_cv;
+#endif
 };
+
+extern struct AFSUpdateListItem *update_list_head;
+extern struct AFSUpdateListItem *update_list_tail;
 
 #if defined(AFS_PTHREAD_ENV)
 extern pthread_key_t fs_update;
 extern pthread_mutex_t remote_update_mutex;
+extern pthread_mutex_t update_list_mutex;
 #define REMOTE_UPDATE_LOCK \
         osi_Assert(pthread_mutex_lock(&remote_update_mutex) == 0)
 #define REMOTE_UPDATE_UNLOCK \
         osi_Assert(pthread_mutex_unlock(&remote_update_mutex) == 0)
+#define UPDATE_LIST_LOCK \
+        osi_Assert(pthread_mutex_lock(&update_list_mutex) == 0)
+#define UPDATE_LIST_UNLOCK \
+        osi_Assert(pthread_mutex_unlock(&update_list_mutex) == 0)
 #endif
 
 #define RPC_StoreData 133

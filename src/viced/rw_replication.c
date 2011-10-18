@@ -49,7 +49,11 @@ afs_uint32 queryDbserver;
 #if defined(AFS_PTHREAD_ENV)
 pthread_key_t fs_update;
 pthread_mutex_t remote_update_mutex;
+pthread_mutex_t update_list_mutex;
 #endif
+
+struct AFSUpdateListItem *update_list_head = NULL;
+struct AFSUpdateListItem *update_list_tail = NULL;
 
 /* Get all the RWSL servers for the Volume */
 /* TODO: we want to cache this info somewhere */
@@ -289,11 +293,44 @@ FS_PostProc(afs_int32 code)
     int i;
     struct rx_connection *rcon;
     struct AFSUpdateListItem *item;
+    struct AFSUpdateListItem *it, *prev;
+    int dowait = 0;
 #endif
 
 #if defined(AFS_PTHREAD_ENV)
     item = pthread_getspecific(fs_update);
     if (item) {
+	/* Need to wait for any earlier related update */
+restart:
+	UPDATE_LIST_LOCK;
+	dowait = 0;
+	for (it = update_list_head; it != NULL && it != item; it = it->NextItem) {
+	    if (it->InFid1.Volume) {
+		if (item->InFid1.Volume &&
+			item->InFid1.Volume == it->InFid1.Volume &&
+			item->InFid1.Vnode == it->InFid1.Vnode)
+		    dowait = 1;
+		if (item->InFid2.Volume &&
+			item->InFid2.Volume == it->InFid1.Volume &&
+			item->InFid2.Vnode == it->InFid1.Vnode)
+		    dowait = 1;
+	    }
+	    if (it->InFid2.Volume) {
+		if (item->InFid1.Volume &&
+			item->InFid1.Volume == it->InFid2.Volume &&
+			item->InFid1.Vnode == it->InFid2.Vnode)
+		    dowait = 1;
+		if (item->InFid2.Volume &&
+			item->InFid2.Volume == it->InFid2.Volume &&
+			item->InFid2.Vnode == it->InFid2.Vnode)
+		    dowait = 1;
+	    }
+	    if (dowait) {
+		CV_WAIT(&it->update_item_cv, &update_list_mutex);
+		goto restart;
+	    }
+	}
+	UPDATE_LIST_UNLOCK;
 	/* If no FID provided, use root vnode - for SetVolumeStatus */
 	if (!item->InFid1.Volume) {
 	    item->InFid1.Volume = item->Volid;
@@ -301,7 +338,6 @@ FS_PostProc(afs_int32 code)
 	    item->InFid1.Unique = 1;
 	}
 	GetSlaveServersForVolume(&item->InFid1, &entry);
-	REMOTE_UPDATE_LOCK;
 	for (i = 0; i < entry.nServers; i++) {
 	    if (entry.serverFlags[i] & 0x10) {
 		/* make connections for each Slave */
@@ -350,9 +386,16 @@ FS_PostProc(afs_int32 code)
 		}
 	    }
 	}
-	REMOTE_UPDATE_UNLOCK;
 	if (item->RPCCall == RPC_StoreData64 && item->StoreBuffer)
 	    free(item->StoreBuffer);
+	/* Remove item from list */
+	UPDATE_LIST_LOCK;
+	prev = update_list_head;
+	for (it = update_list_head; it != NULL && it != item; it = it->NextItem)
+	    prev = it;
+	prev->NextItem = item->NextItem;
+	CV_BROADCAST(&item->update_item_cv);
+	UPDATE_LIST_UNLOCK;
     } else {
 	ViceLog(0, ("FS_PostProc: no items to process\n"));
     }
@@ -449,6 +492,14 @@ StashUpdate(afs_int32 pRPCCall, struct AFSFid *pInFid1,
     item->FileLength = pFileLength;
     item->StoreBuffer = buf;
     item->Volid = volid;
+#if defined(AFS_PTHREAD_ENV)
+    CV_INIT(&item->update_item_cv, "update item cv", CV_DEFAULT, 0);
+    /* Insert item at end of pending update list */
+    UPDATE_LIST_LOCK;
+    update_list_tail->NextItem = item;
+    update_list_tail = item;
+    UPDATE_LIST_UNLOCK;
+#endif
 
     return item;
 }
