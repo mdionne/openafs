@@ -39,7 +39,7 @@ extern afs_int32 SAFSS_CreateFile(struct rx_call *acall, struct AFSFid *DirFid,
 	int remote_flag, afs_int32 clientViceId);
 extern afs_int32 SAFSS_RemoveFile(struct rx_call *acall, struct AFSFid *DirFid,
 	char *Name, struct AFSFetchStatus *OutDirStatus, struct AFSVolSync *Sync,
-	int remote_flag, afs_int32 clientViceId);
+	int remote_flag, afs_int32 clientViceId, struct AFSFid *FileFid);
 extern afs_int32 SAFSS_StoreStatus(struct rx_call *acall, struct AFSFid *Fid,
 	struct AFSStoreStatus *InStatus, struct AFSFetchStatus *OutStatus,
 	struct AFSVolSync *Sync, int remote_flag, afs_int32 clientViceId);

@@ -179,10 +179,11 @@ SRXAFS_RRemoveFile(struct rx_call *acall, IN  AFSFid *DirFid, char *Name,
 {
     struct AFSFetchStatus OutDirStatus;
     struct AFSVolSync Sync;
+    struct AFSFid FileFid;
 
     ViceLog(0, ("Processing RRemoveFile call\n"));
     return SAFSS_RemoveFile(acall, DirFid, Name, &OutDirStatus, &Sync,
-	    REMOTE_RPC, clientViceId);
+	    REMOTE_RPC, clientViceId, &FileFid);
 }
 
 afs_int32

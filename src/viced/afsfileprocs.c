@@ -3307,7 +3307,7 @@ SRXAFS_StoreStatus(struct rx_call * acall, struct AFSFid * Fid,
 afs_int32
 SAFSS_RemoveFile(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
 		 struct AFSFetchStatus *OutDirStatus, struct AFSVolSync *Sync,
-		int remote_flag, afs_int32 clientViceId)
+		int remote_flag, afs_int32 clientViceId, struct AFSFid *FileFid)
 {
     Vnode *parentptr = 0;	/* vnode of input Directory */
     Vnode *parentwhentargetnotdir = 0;	/* parent for use in SetAccessList */
@@ -3409,6 +3409,10 @@ SAFSS_RemoveFile(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
     /* break call back on the directory */
     BreakCallBack(remote_flag ? NULL : client->host, DirFid, 0);
 
+    FileFid->Volume = fileFid.Volume;
+    FileFid->Vnode = fileFid.Vnode;
+    FileFid->Unique = fileFid.Unique;
+
   Bad_RemoveFile:
     if (remote_flag == LOCAL_RPC)
 	/* Update and store volume/vnode and parent vnodes back */
@@ -3436,18 +3440,19 @@ SRXAFS_RemoveFile(struct rx_call * acall, struct AFSFid * DirFid, char *Name,
 #if defined(AFS_PTHREAD_ENV)
     struct AFSUpdateListItem *update;
 #endif
+    struct AFSFid FileFid;
 
     fsstats_StartOp(&fsstats, FS_STATS_RPCIDX_REMOVEFILE);
 
     if ((code = CallPreamble(acall, ACTIVECALL, &tcon, &thost)))
 	goto Bad_RemoveFile;
 
-    code = SAFSS_RemoveFile(acall, DirFid, Name, OutDirStatus, Sync, LOCAL_RPC, 0);
+    code = SAFSS_RemoveFile(acall, DirFid, Name, OutDirStatus, Sync, LOCAL_RPC, 0, &FileFid);
 
 #if defined(AFS_PTHREAD_ENV)
     if (code == 0) {
 	/* Stash information about the update, for RW replicas */
-	update = StashUpdate(RPC_RemoveFile, DirFid, NULL,
+	update = StashUpdate(RPC_RemoveFile, DirFid, &FileFid,
 		Name, NULL, NULL, NULL,
 		0, 0, 0, t_client ? t_client->ViceId : 0, NULL, 0, NULL);
 	pthread_setspecific(fs_update, update);
