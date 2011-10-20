@@ -95,6 +95,15 @@ GetSlaveServersForVolume(struct AFSFid *Fid,
     return 0;
 }
 
+void
+get_item(struct AFSUpdateListItem *item) {
+#if defined(AFS_PTHREAD_ENV)
+    pthread_mutex_lock(&item->item_lock);
+    item->ref_count++;
+    pthread_mutex_unlock(&item->item_lock);
+#endif
+}
+
 /* Make dummy COnnection to make fileserver->fileserver RPC call*/
 struct rx_connection *
 MakeDummyConnection(afs_int32 serverIp)
@@ -306,8 +315,8 @@ FS_PostProc(afs_int32 code)
     item = pthread_getspecific(fs_update);
     if (item) {
 	/* Need to wait for any earlier related update */
-	UPDATE_LIST_LOCK;
 restart:
+	UPDATE_LIST_LOCK;
 	dowait = 0;
 	for (it = update_list_head; it != NULL && it != item; it = it->NextItem) {
 	    if (it->InFid1.Volume) {
@@ -331,7 +340,18 @@ restart:
 		    dowait = 1;
 	    }
 	    if (dowait) {
-		CV_WAIT(&it->update_item_cv, &update_list_mutex);
+		/* Get a ref so it doesn't go away after we unlock */
+		get_item(it);
+		UPDATE_LIST_UNLOCK;
+		pthread_mutex_lock(&it->item_lock);
+		/* If we're the only remaining ref, the item has been removed.  move on */
+		if (it->ref_count == 1) {
+		    pthread_mutex_unlock(&it->item_lock);
+		    free(it);
+		    goto restart;
+		}
+		pthread_cond_wait(&it->item_cv, &it->item_lock);
+		pthread_mutex_unlock(&it->item_lock);
 		goto restart;
 	    }
 	}
@@ -403,17 +423,22 @@ restart:
 	    prev = update_list_head;
 	    for (it = update_list_head; it != NULL && it != item; it = it->NextItem)
 		prev = it;
+		ViceLog(0, ("Removing from list, prev: %p, item: %p\n", prev, item));
 	    prev->NextItem = item->NextItem;
 	    if (item == update_list_tail)
 		update_list_tail = prev;
 	}
-	CV_BROADCAST(&item->update_item_cv);
+	pthread_mutex_lock(&item->item_lock);
+	pthread_cond_broadcast(&item->item_cv);
+	item->ref_count--;
+	pthread_mutex_unlock(&item->item_lock);
 	UPDATE_LIST_UNLOCK;
+	if (item->ref_count == 0)
+	    free(item);
     } else {
 	ViceLog(0, ("FS_PostProc: no items to process\n"));
     }
     pthread_setspecific(fs_update, NULL);
-    free(item);
 #endif
 }
 
@@ -506,8 +531,11 @@ StashUpdate(afs_int32 pRPCCall, struct AFSFid *pInFid1,
     item->StoreBuffer = buf;
     item->Volid = volid;
 #if defined(AFS_PTHREAD_ENV)
-    CV_INIT(&item->update_item_cv, "update item cv", CV_DEFAULT, 0);
     /* Insert item at end of pending update list */
+ViceLog(0,("Inserting %p in list\n", item));
+    CV_INIT(&item->item_cv, "update item cv", CV_DEFAULT, 0);
+    pthread_mutex_init(&item->item_lock, NULL);
+    item->ref_count = 1;
     UPDATE_LIST_LOCK;
     if (update_list_head == NULL && update_list_tail == NULL) {
 	update_list_tail = update_list_head = item;
