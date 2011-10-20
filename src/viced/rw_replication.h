@@ -42,7 +42,9 @@ struct AFSUpdateListItem {
     afs_int32 Volid;
     AFSStoreVolumeStatus StoreVolStatus;
 #if defined(AFS_PTHREAD_ENV)
-    pthread_cond_t update_item_cv;
+    pthread_mutex_t item_lock;
+    pthread_cond_t item_cv;
+    int ref_count;
 #endif
 };
 
