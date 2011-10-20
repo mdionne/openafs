@@ -31,7 +31,7 @@ extern afs_int32 SAFSS_MakeDir(struct rx_call *acall, struct AFSFid *DirFid,
 	int remote_flag, afs_int32 clientViceId);
 extern afs_int32 SAFSS_RemoveDir(struct rx_call *acall, struct AFSFid *DirFid,
 	char *Name, struct AFSFetchStatus *OutDirStatus, struct AFSVolSync *Sync,
-	int remote_flag, afs_int32 clientViceId);
+	int remote_flag, afs_int32 clientViceId, struct AFSFid *RDirFid);
 extern afs_int32 SAFSS_CreateFile(struct rx_call *acall, struct AFSFid *DirFid,
 	char *Name, struct AFSStoreStatus *InStatus, struct AFSFid *Fid,
 	struct AFSFetchStatus *OutFidStatus, struct AFSFetchStatus *OutDirStatus,
