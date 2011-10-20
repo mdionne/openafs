@@ -4699,7 +4699,8 @@ Bad_MakeDir:
  */
 afs_int32
 SAFSS_RemoveDir(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
-		struct AFSFetchStatus *OutDirStatus, struct AFSVolSync *Sync, int remote_flag, afs_int32 clientViceId)
+	struct AFSFetchStatus *OutDirStatus, struct AFSVolSync *Sync, int remote_flag,
+	afs_int32 clientViceId, struct AFSFid *RDirFid)
 {
     Vnode *parentptr = 0;	/* vnode of input Directory */
     Vnode *parentwhentargetnotdir = 0;	/* parent for use in SetAccessList */
@@ -4791,6 +4792,10 @@ SAFSS_RemoveDir(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
     /* break call back on DirFid and fileFid */
     BreakCallBack(remote_flag ? NULL : client->host, DirFid, 0);
 
+    RDirFid->Volume = fileFid.Volume;
+    RDirFid->Vnode = fileFid.Vnode;
+    RDirFid->Unique = fileFid.Unique;
+
   Bad_RemoveDir:
     /* Write the all modified vnodes (parent, new files) and volume back */
     if (remote_flag == LOCAL_RPC)
@@ -4818,6 +4823,7 @@ SRXAFS_RemoveDir(struct rx_call * acall, struct AFSFid * DirFid, char *Name,
 #if defined(AFS_PTHREAD_ENV)
     struct AFSUpdateListItem *update;
 #endif
+    struct AFSFid RDirFid;
 
 
     fsstats_StartOp(&fsstats, FS_STATS_RPCIDX_REMOVEDIR);
@@ -4825,12 +4831,12 @@ SRXAFS_RemoveDir(struct rx_call * acall, struct AFSFid * DirFid, char *Name,
     if ((code = CallPreamble(acall, ACTIVECALL, &tcon, &thost)))
 	goto Bad_RemoveDir;
 
-    code = SAFSS_RemoveDir(acall, DirFid, Name, OutDirStatus, Sync, LOCAL_RPC, 0);
+    code = SAFSS_RemoveDir(acall, DirFid, Name, OutDirStatus, Sync, LOCAL_RPC, 0, &RDirFid);
 
 #if defined(AFS_PTHREAD_ENV)
     if (code == 0) {
 	/* Stash information about the update, for RW replicas */
-	update = StashUpdate(RPC_RemoveDir, DirFid, NULL,
+	update = StashUpdate(RPC_RemoveDir, DirFid, &RDirFid,
 		Name, NULL, NULL, NULL,
 		0, 0, 0, t_client ? t_client->ViceId : 0, NULL, 0, NULL);
 	pthread_setspecific(fs_update, update);
