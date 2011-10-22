@@ -2198,7 +2198,7 @@ DECL_PIOCTL(PNewStatMount)
     if (vType(avc) != VDIR) {
 	return ENOTDIR;
     }
-    tdc = afs_GetDCache(avc, (afs_size_t) 0, areq, &offset, &len, 1);
+    tdc = afs_GetDCache(avc, (afs_size_t) 0, areq, &offset, &len, 1, RWONLY);
     if (!tdc)
 	return ENOENT;
     Check_AtSys(avc, name, &sysState, areq);
@@ -3261,7 +3261,7 @@ DECL_PIOCTL(PRemoveMount)
     if (vType(avc) != VDIR)
 	return ENOTDIR;
 
-    tdc = afs_GetDCache(avc, (afs_size_t) 0, areq, &offset, &len, 1);	/* test for error below */
+    tdc = afs_GetDCache(avc, (afs_size_t) 0, areq, &offset, &len, 1, RWONLY);	/* test for error below */
     if (!tdc)
 	return ENOENT;
     Check_AtSys(avc, name, &sysState, areq);
@@ -4778,7 +4778,7 @@ DECL_PIOCTL(PFlushMount)
     if (vType(avc) != VDIR) {
 	return ENOTDIR;
     }
-    tdc = afs_GetDCache(avc, (afs_size_t) 0, areq, &offset, &len, 1);
+    tdc = afs_GetDCache(avc, (afs_size_t) 0, areq, &offset, &len, 1, RWONLY);
     if (!tdc)
 	return ENOENT;
     Check_AtSys(avc, mount, &sysState, areq);

@@ -88,7 +88,7 @@ afsrename(struct vcache *aodp, char *aname1, struct vcache *andp,
 	}
 	
 	ObtainWriteLock(&andp->lock, 147);
-	tdc1 = afs_GetDCache(aodp, (afs_size_t) 0, areq, &offset, &len, 0);
+	tdc1 = afs_GetDCache(aodp, (afs_size_t) 0, areq, &offset, &len, 0, RWONLY);
 	if (!tdc1) {
 	    code = ENOENT;
 	} else {
@@ -105,7 +105,7 @@ afsrename(struct vcache *aodp, char *aname1, struct vcache *andp,
 	tdc2 = afs_FindDCache(andp, (afs_size_t) 0);
 	if (tdc2)
 	    ObtainWriteLock(&tdc2->lock, 644);
-	tdc1 = afs_GetDCache(aodp, (afs_size_t) 0, areq, &offset, &len, 0);
+	tdc1 = afs_GetDCache(aodp, (afs_size_t) 0, areq, &offset, &len, 0, RWONLY);
 	if (tdc1)
 	    ObtainWriteLock(&tdc1->lock, 645);
 	else
@@ -113,7 +113,7 @@ afsrename(struct vcache *aodp, char *aname1, struct vcache *andp,
     } else {
 	ObtainWriteLock(&aodp->lock, 150);	/* lock smaller one first */
 	ObtainWriteLock(&andp->lock, 557);
-	tdc1 = afs_GetDCache(aodp, (afs_size_t) 0, areq, &offset, &len, 0);
+	tdc1 = afs_GetDCache(aodp, (afs_size_t) 0, areq, &offset, &len, 0, RWONLY);
 	if (tdc1)
 	    ObtainWriteLock(&tdc1->lock, 646);
 	else

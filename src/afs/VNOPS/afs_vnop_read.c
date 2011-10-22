@@ -167,7 +167,7 @@ afs_read(struct vcache *avc, struct uio *auio, afs_ucred_t *acred,
 		ReleaseReadLock(&tdc->lock);
 		afs_PutDCache(tdc);	/* before reusing tdc */
 	    }
-	    tdc = afs_GetDCache(avc, filePos, &treq, &offset, &len, 2);
+	    tdc = afs_GetDCache(avc, filePos, &treq, &offset, &len, 2, RWANY);
 	    if (!tdc) {
 		error = ENETDOWN;
 		break;
@@ -280,7 +280,7 @@ afs_read(struct vcache *avc, struct uio *auio, afs_ucred_t *acred,
 		 * does the FetchData rpc synchronously.
 		 */
 		ReleaseReadLock(&avc->lock);
-		tdc = afs_GetDCache(avc, filePos, &treq, &offset, &len, 1);
+		tdc = afs_GetDCache(avc, filePos, &treq, &offset, &len, 1, RWANY);
 		ObtainReadLock(&avc->lock);
 		if (tdc)
 		    ObtainReadLock(&tdc->lock);
@@ -416,7 +416,7 @@ afs_PrefetchChunk(struct vcache *avc, struct dcache *adc,
 	ReleaseWriteLock(&adc->mflock);
 	ReleaseReadLock(&adc->lock);
 
-	tdc = afs_GetDCache(avc, offset, areq, &j1, &j2, 2);	/* type 2 never returns 0 */
+	tdc = afs_GetDCache(avc, offset, areq, &j1, &j2, 2, RWANY);	/* type 2 never returns 0 */
         /*
          * In disconnected mode, type 2 can return 0 because it doesn't
          * make any sense to allocate a dcache we can never fill

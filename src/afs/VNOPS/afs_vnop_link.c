@@ -95,7 +95,7 @@ afs_link(struct vcache *avc, OSI_VC_DECL(adp), char *aname,
         goto done;
     }
 
-    tdc = afs_GetDCache(adp, (afs_size_t) 0, &treq, &offset, &len, 1);	/* test for error below */
+    tdc = afs_GetDCache(adp, (afs_size_t) 0, &treq, &offset, &len, 1, RWONLY);	/* test for error below */
     ObtainWriteLock(&adp->lock, 145);
     do {
 	tc = afs_Conn(&adp->f.fid, &treq, SHARED_LOCK, &rxconn, RWONLY);

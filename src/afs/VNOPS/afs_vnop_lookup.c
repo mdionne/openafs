@@ -729,7 +729,7 @@ afs_DoBulkStat(struct vcache *adp, long dirCookie, struct vrequest *areqp)
     if (code)
 	goto done2;
 
-    dcp = afs_GetDCache(adp, (afs_size_t) 0, areqp, &temp, &temp, 1);
+    dcp = afs_GetDCache(adp, (afs_size_t) 0, areqp, &temp, &temp, 1, RWONLY);
     if (!dcp) {
 	code = ENOENT;
 	goto done2;
@@ -1594,7 +1594,7 @@ afs_lookup(OSI_VC_DECL(adp), char *aname, struct vcache **avcp, afs_ucred_t *acr
 	    tdc = adp->dcreaddir;
 	else
 	    tdc = afs_GetDCache(adp, (afs_size_t) 0, &treq,
-				&dirOffset, &dirLen, 1);
+				&dirOffset, &dirLen, 1, RWONLY);
 	if (!tdc) {
 	    *avcp = NULL;	/* redundant, but harmless */
 	    code = EIO;
