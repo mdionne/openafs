@@ -257,7 +257,7 @@ extern struct dcache *afs_GetDCache(struct vcache *avc,
 				    afs_size_t abyte,
 				    struct vrequest *areq,
 				    afs_size_t * aoffset, afs_size_t * alen,
-				    int aflags);
+				    int aflags, int rwflag);
 extern struct dcache *afs_FindDCache(struct vcache *avc,
 				     afs_size_t abyte);
 extern void afs_StoreWarn(afs_int32 acode, afs_int32 avolume,

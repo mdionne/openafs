@@ -683,7 +683,7 @@ afs_ProcessOpCreate(struct vcache *avc, struct vrequest *areq,
 	struct dcache *tdc;
 	struct osi_file *tfile;
 
-	tdc = afs_GetDCache(avc, 0, areq, &offset, &tlen, 0);
+	tdc = afs_GetDCache(avc, 0, areq, &offset, &tlen, 0, RWONLY);
 	if (!tdc) {
 	    code = ENOENT;
 	    goto end;

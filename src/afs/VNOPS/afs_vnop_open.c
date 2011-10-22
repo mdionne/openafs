@@ -169,7 +169,7 @@ afs_open(struct vcache **avcp, afs_int32 aflags, afs_ucred_t *acred)
 	struct dcache *tdc;
 	afs_size_t offset, len;
 
-	tdc = afs_GetDCache(tvc, 0, &treq, &offset, &len, 1);
+	tdc = afs_GetDCache(tvc, 0, &treq, &offset, &len, 1, RWANY);
 
 	ObtainSharedLock(&tdc->mflock, 865);
 	if (!(tdc->mflags & DFFetchReq)) {

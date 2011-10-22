@@ -99,7 +99,7 @@ afs_mkdir(OSI_VC_DECL(adp), char *aname, struct vattr *attrs,
     InStatus.ClientModTime = osi_Time();
     InStatus.UnixModeBits = attrs->va_mode & 0xffff;	/* only care about protection bits */
     InStatus.Group = (afs_int32) afs_cr_gid(acred);
-    tdc = afs_GetDCache(adp, (afs_size_t) 0, &treq, &offset, &len, 1);
+    tdc = afs_GetDCache(adp, (afs_size_t) 0, &treq, &offset, &len, 1, RWONLY);
     ObtainWriteLock(&adp->lock, 153);
 
     if (!AFS_IS_DISCON_RW) {
@@ -204,7 +204,7 @@ afs_mkdir(OSI_VC_DECL(adp), char *aname, struct vattr *attrs,
 
 	/* And now make an empty dir, containing . and .. : */
 	/* Get a new dcache for it first. */
-	new_dc = afs_GetDCache(tvc, (afs_size_t) 0, &treq, &offset, &len, 1);
+	new_dc = afs_GetDCache(tvc, (afs_size_t) 0, &treq, &offset, &len, 1, RWONLY);
 	if (!new_dc) {
 	    /* printf("afs_mkdir: can't get new dcache for dir.\n"); */
 	    code = ENOENT;
@@ -306,7 +306,7 @@ afs_rmdir(OSI_VC_DECL(adp), char *aname, afs_ucred_t *acred)
         goto done;
     }
 
-    tdc = afs_GetDCache(adp, (afs_size_t) 0, &treq, &offset, &len, 1);	/* test for error below */
+    tdc = afs_GetDCache(adp, (afs_size_t) 0, &treq, &offset, &len, 1, RWONLY);	/* test for error below */
     ObtainWriteLock(&adp->lock, 154);
     if (tdc)
 	ObtainSharedLock(&tdc->lock, 633);

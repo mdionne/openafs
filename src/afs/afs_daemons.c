@@ -485,7 +485,7 @@ BPath(struct brequest *ab)
     }
     tvc = VTOAFS(tvn);
     /* here we know its an afs vnode, so we can get the data for the chunk */
-    tdc = afs_GetDCache(tvc, ab->size_parm[0], &treq, &offset, &len, 1);
+    tdc = afs_GetDCache(tvc, ab->size_parm[0], &treq, &offset, &len, 1, RWANY);
     if (tdc) {
 	afs_PutDCache(tdc);
     }
@@ -514,7 +514,7 @@ BPrefetch(struct brequest *ab)
     abyte = ab->size_parm[0];
     tvc = ab->vc;
     do {
-	tdc = afs_GetDCache(tvc, abyte, &treq, &offset, &len, 1);
+	tdc = afs_GetDCache(tvc, abyte, &treq, &offset, &len, 1, RWANY);
 	if (tdc) {
 	    afs_PutDCache(tdc);
 	}

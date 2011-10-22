@@ -126,7 +126,7 @@ afs_create(OSI_VC_DECL(adp), char *aname, struct vattr *attrs,
         goto done;
     }
 
-    tdc = afs_GetDCache(adp, (afs_size_t) 0, &treq, &offset, &len, 1);
+    tdc = afs_GetDCache(adp, (afs_size_t) 0, &treq, &offset, &len, 1, RWONLY);
     ObtainWriteLock(&adp->lock, 135);
     if (tdc)
 	ObtainSharedLock(&tdc->lock, 630);

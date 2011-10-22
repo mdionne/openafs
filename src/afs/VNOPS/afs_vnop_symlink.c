@@ -44,7 +44,7 @@ afs_DisconCreateSymlink(struct vcache *avc, char *aname,
     struct osi_file *tfile;
     afs_size_t offset, len;
 
-    tdc = afs_GetDCache(avc, 0, areq, &offset, &len, 0);
+    tdc = afs_GetDCache(avc, 0, areq, &offset, &len, 0, RWONLY);
     if (!tdc) {
 	/* printf("afs_DisconCreateSymlink: can't get new dcache for symlink.\n"); */
 	return ENOENT;
@@ -147,7 +147,7 @@ afs_symlink(OSI_VC_DECL(adp), char *aname, struct vattr *attrs,
 	InStatus.UnixModeBits = 0755;
 	alen++;			/* add in the null */
     }
-    tdc = afs_GetDCache(adp, (afs_size_t) 0, &treq, &offset, &len, 1);
+    tdc = afs_GetDCache(adp, (afs_size_t) 0, &treq, &offset, &len, 1, RWONLY);
     volp = afs_FindVolume(&adp->f.fid, READ_LOCK);	/*parent is also in same vol */
     ObtainWriteLock(&adp->lock, 156);
     if (tdc)
@@ -311,7 +311,7 @@ afs_MemHandleLink(struct vcache *avc, struct vrequest *areq)
      * protected 755, we add a null to the end of */
     if (!avc->linkData) {
 	void *addr;
-	tdc = afs_GetDCache(avc, (afs_size_t) 0, areq, &offset, &len, 0);
+	tdc = afs_GetDCache(avc, (afs_size_t) 0, areq, &offset, &len, 0, RWONLY);
 	if (!tdc) {
 	    return EIO;
 	}
@@ -362,7 +362,7 @@ afs_UFSHandleLink(struct vcache *avc, struct vrequest *areq)
      * 755, we add a null to the end of */
     AFS_STATCNT(afs_UFSHandleLink);
     if (!avc->linkData) {
-	tdc = afs_GetDCache(avc, (afs_size_t) 0, areq, &offset, &len, 0);
+	tdc = afs_GetDCache(avc, (afs_size_t) 0, areq, &offset, &len, 0, RWONLY);
 	afs_Trace3(afs_iclSetp, CM_TRACE_UFSLINK, ICL_TYPE_POINTER, avc,
 		   ICL_TYPE_POINTER, tdc, ICL_TYPE_OFFSET,
 		   ICL_HANDLE_OFFSET(avc->f.m.Length));
