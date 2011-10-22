@@ -45,6 +45,7 @@ struct AFSUpdateListItem {
     pthread_mutex_t item_lock;
     pthread_cond_t item_cv;
     int ref_count;
+    int deleted;
 #endif
 };
 

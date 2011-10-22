@@ -204,9 +204,10 @@ SRXAFS_RRemoveDir(struct rx_call *acall, struct AFSFid *DirFid, char *Name, afs_
 {
     struct AFSFetchStatus OutDirStatus;
     struct AFSVolSync Sync;
+    struct AFSFid RDirFid;
 
     ViceLog(0, ("Processing RRemoveDir call\n"));
-    return SAFSS_RemoveDir(acall, DirFid, Name, &OutDirStatus, &Sync, REMOTE_RPC, clientViceId);
+    return SAFSS_RemoveDir(acall, DirFid, Name, &OutDirStatus, &Sync, REMOTE_RPC, clientViceId, &RDirFid);
 
 }
 
@@ -346,13 +347,20 @@ restart:
 		UPDATE_LIST_UNLOCK;
 		pthread_mutex_lock(&it->item_lock);
 		/* If we're the only remaining ref, the item has been removed.  move on */
-		if (it->ref_count == 1) {
-		    pthread_mutex_unlock(&it->item_lock);
-		    free(it);
+		if (it->deleted) {
+		    it->ref_count--;
+		    if (it->ref_count == 0)
+			free(it);
+		    else
+			pthread_mutex_unlock(&it->item_lock);
 		    goto restart;
 		}
 		pthread_cond_wait(&it->item_cv, &it->item_lock);
-		pthread_mutex_unlock(&it->item_lock);
+		it->ref_count--;
+		if (it->ref_count == 0)
+		    free(it);
+		else
+		    pthread_mutex_unlock(&it->item_lock);
 		goto restart;
 	    }
 	}
@@ -367,7 +375,7 @@ restart:
 	for (i = 0; i < entry.nServers; i++) {
 	    if (entry.serverFlags[i] & 0x10) {
 		/* make connections for each Slave */
-		ViceLog(0, ("Calling remote on server %d\n", i));
+		ViceLog(0, ("%p Calling remote\n", item));
 		rcon = MakeDummyConnection(entry.serverNumber[i]);
 		switch(item->RPCCall) {
 		    case RPC_CreateFile:
@@ -424,20 +432,22 @@ restart:
 	    prev = update_list_head;
 	    for (it = update_list_head; it != NULL && it != item; it = it->NextItem)
 		prev = it;
-		ViceLog(0, ("Removing from list, prev: %p, item: %p\n", prev, item));
+		ViceLog(0, ("Removing %p from list, prev: %p\n", item, prev));
 	    prev->NextItem = item->NextItem;
 	    if (item == update_list_tail)
 		update_list_tail = prev;
 	}
 	pthread_mutex_lock(&item->item_lock);
-	pthread_cond_broadcast(&item->item_cv);
 	item->ref_count--;
-	pthread_mutex_unlock(&item->item_lock);
-	UPDATE_LIST_UNLOCK;
+	item->deleted = 1;
+	pthread_cond_broadcast(&item->item_cv);
+    ViceLog(0, ("*** %p DONE ***, UNLOCKING\n", item));
 	if (item->ref_count == 0)
 	    free(item);
+	else
+	    pthread_mutex_unlock(&item->item_lock);
+	UPDATE_LIST_UNLOCK;
     } else {
-	ViceLog(0, ("FS_PostProc: no items to process\n"));
     }
     pthread_setspecific(fs_update, NULL);
 #endif
@@ -471,6 +481,10 @@ StashUpdate(afs_int32 pRPCCall, struct AFSFid *pInFid1,
 	item->InFid2.Volume = pInFid2->Volume;
 	item->InFid2.Vnode = pInFid2->Vnode;
 	item->InFid2.Unique = pInFid2->Unique;
+    } else {
+	item->InFid2.Volume = 0;
+	item->InFid2.Vnode = 0;
+	item->InFid2.Unique = 0;
     }
     if (pName1) {
 	item->Name1 = (char *)malloc(sizeof(char)*AFSNAMEMAX);
@@ -533,10 +547,11 @@ StashUpdate(afs_int32 pRPCCall, struct AFSFid *pInFid1,
     item->Volid = volid;
 #if defined(AFS_PTHREAD_ENV)
     /* Insert item at end of pending update list */
-ViceLog(0,("Inserting %p in list\n", item));
+ViceLog(0,("%p : inserting in list\n", item));
     CV_INIT(&item->item_cv, "update item cv", CV_DEFAULT, 0);
     pthread_mutex_init(&item->item_lock, NULL);
     item->ref_count = 1;
+    item->deleted = 0;
     UPDATE_LIST_LOCK;
     if (update_list_head == NULL && update_list_tail == NULL) {
 	update_list_tail = update_list_head = item;
