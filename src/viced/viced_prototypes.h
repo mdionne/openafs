@@ -50,6 +50,10 @@ extern afs_int32 SAFSS_StoreData64(struct rx_call *acall, struct AFSFid *Fid,
 extern afs_int32 SAFSS_SetVolumeStatus(struct rx_call * acall, afs_int32 avolid,
         AFSStoreVolumeStatus * StoreVolStatus, char *Name, char *OfflineMsg,
         char *Motd, int remote_flag, afs_int32 clientViceId);
+extern afs_int32 SAFSS_Rename(struct rx_call *acall, struct AFSFid *OldDirFid,
+	char *OldName, struct AFSFid *NewDirFid, char *NewName,
+	struct AFSFetchStatus *OutOldDirStatus, struct AFSFetchStatus *OutNewDirStatus,
+	struct AFSVolSync *Sync, int remote_flag, afs_int32 clientViceId);
 #endif
 
 
