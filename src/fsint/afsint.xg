@@ -807,6 +807,14 @@ RStoreData64(
   afs_int32 clientViceId
 ) split = 65602;
 
+RRename(
+  IN  AFSFid *OldDirFid,
+  string OldName<AFSNAMEMAX>,
+  AFSFid *NewDirFid,
+  string NewName<AFSNAMEMAX>,
+  afs_int32 clientViceId
+) = 65603;
+
 RRemoveDir(
   IN  AFSFid *DirFid,
   string Name<AFSNAMEMAX>,

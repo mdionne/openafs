@@ -187,6 +187,19 @@ SRXAFS_RRemoveFile(struct rx_call *acall, IN  AFSFid *DirFid, char *Name,
 }
 
 afs_int32
+SRXAFS_RRename(struct rx_call *acall, AFSFid *OldDirFid, char *OldName,
+	AFSFid *NewDirFid, char *NewName, afs_int32 clientViceId)
+{
+    struct AFSFetchStatus OutNewDirStatus;
+    struct AFSFetchStatus OutOldDirStatus;
+    struct AFSVolSync Sync;
+
+    ViceLog(0, ("Processing RRename call\n"));
+    return SAFSS_Rename(acall, OldDirFid, OldName, NewDirFid, NewName,
+	    &OutOldDirStatus, &OutNewDirStatus, &Sync, REMOTE_RPC, clientViceId);
+}
+
+afs_int32
 SRXAFS_RStoreData64(struct rx_call *acall, struct AFSFid *Fid,
 	struct AFSStoreStatus *InStatus, afs_uint64 Pos, afs_uint64 Length,
 	afs_uint64 FileLength, afs_int32 clientViceId)
@@ -385,6 +398,11 @@ ViceLog(0, ("%p Woke up, return is %d\n", item, ret));
 		    case RPC_RemoveFile:
 			ViceLog(0, ("Calling remote RemoveFile\n"));
 			RXAFS_RRemoveFile(rcon, &item->InFid1, item->Name1, item->ClientViceId);
+			break;
+		    case RPC_Rename:
+			ViceLog(0, ("Calling remote Rename\n"));
+			RXAFS_RRename(rcon, &item->InFid1, item->Name1, &item->InFid2, item->Name2,
+				item->ClientViceId);
 			break;
 		    case RPC_StoreData64:
 			ViceLog(0, ("Calling remote StoreData64\n"));
