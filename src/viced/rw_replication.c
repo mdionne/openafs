@@ -517,6 +517,8 @@ StashUpdate(afs_int32 pRPCCall, struct AFSFid *pInFid1,
     if (pName2) {
 	if (pRPCCall == RPC_SetVolumeStatus) {
 	    item->Name2 = malloc(sizeof(char)*AFSOPAQUEMAX);
+	} else {
+	    item->Name2 = malloc(sizeof(char)*AFSNAMEMAX);
 	}
 	if (!item->Name2) {
 	    ViceLog(0,("Name2 allocate memory failed\n"));
