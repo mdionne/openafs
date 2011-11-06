@@ -4211,11 +4211,12 @@ SRXAFS_Rename(struct rx_call *acall, struct AFSFid *OldDirFid,
  * This routine is called exclusively by SRXAFS_Symlink(), and should be
  * merged into it when possible.
  */
-static afs_int32
+afs_int32
 SAFSS_Symlink(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
 	      char *LinkContents, struct AFSStoreStatus *InStatus,
 	      struct AFSFid *OutFid, struct AFSFetchStatus *OutFidStatus,
-	      struct AFSFetchStatus *OutDirStatus, struct AFSVolSync *Sync)
+	      struct AFSFetchStatus *OutDirStatus, struct AFSVolSync *Sync,
+	int remote_flag, afs_int32 clientViceId)
 {
     Vnode *parentptr = 0;	/* vnode of input Directory */
     Vnode *targetptr = 0;	/* vnode of the new link */
@@ -4234,13 +4235,20 @@ SAFSS_Symlink(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
 
     FidZero(&dir);
 
-    /* Get ptr to client data for user Id for logging */
-    t_client = (struct client *)rx_GetSpecific(tcon, rxcon_client_key);
-    logHostAddr.s_addr = rxr_HostOf(tcon);
-    ViceLog(1,
-	    ("SAFS_Symlink %s to %s,  Did = %u.%u.%u, Host %s:%d, Id %d\n", Name,
-	     LinkContents, DirFid->Volume, DirFid->Vnode, DirFid->Unique,
-	     inet_ntoa(logHostAddr), ntohs(rxr_PortOf(tcon)), t_client->ViceId));
+    if (remote_flag == LOCAL_RPC) {
+	/* Get ptr to client data for user Id for logging */
+	t_client = (struct client *)rx_GetSpecific(tcon, rxcon_client_key);
+	logHostAddr.s_addr = rxr_HostOf(tcon);
+	ViceLog(1,
+		("SAFS_Symlink %s to %s,  Did = %u.%u.%u, Host %s:%d, Id %d\n", Name,
+		LinkContents, DirFid->Volume, DirFid->Vnode, DirFid->Unique,
+		inet_ntoa(logHostAddr), ntohs(rxr_PortOf(tcon)), t_client->ViceId));
+    } else {
+	ViceLog(1,
+		("SAFS_Symlink (remote) %s to %s,  Did = %u.%u.%u, Id %d\n", Name,
+		LinkContents, DirFid->Volume, DirFid->Vnode, DirFid->Unique,
+		clientViceId));
+    }
     FS_LOCK;
     AFSCallStats.Symlink++, AFSCallStats.TotalCalls++;
     FS_UNLOCK;
@@ -4253,96 +4261,108 @@ SAFSS_Symlink(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
      * Get the vnode and volume for the parent dir along with the caller's
      * rights to it
      */
-    if ((errorCode =
-	 GetVolumePackage(tcon, DirFid, &volptr, &parentptr, MustBeDIR,
-			  &parentwhentargetnotdir, &client, WRITE_LOCK,
-			  &rights, &anyrights))) {
+    if (remote_flag == LOCAL_RPC)
+	errorCode = GetVolumePackage(tcon, DirFid, &volptr, &parentptr, MustBeDIR,
+		&parentwhentargetnotdir, &client, WRITE_LOCK,
+		&rights, &anyrights);
+    else
+	errorCode = GetReplicaVolumePackage(DirFid, &volptr, &parentptr, MustBeDIR,
+		WRITE_LOCK);
+    if (errorCode)
 	goto Bad_SymLink;
-    }
 
     /* set volume synchronization information */
     SetVolumeSync(Sync, volptr);
 
-    /* Does the caller has insert (and write) access to the parent directory? */
-    if ((errorCode = CheckWriteMode(parentptr, rights, PRSFS_INSERT))) {
-	goto Bad_SymLink;
-    }
-
-    /*
-     * If we're creating a mount point (any x bits clear), we must have
-     * administer access to the directory, too.  Always allow sysadmins
-     * to do this.
-     */
-    if ((InStatus->Mask & AFS_SETMODE) && !(InStatus->UnixModeBits & 0111)) {
-	if (readonlyServer) {
-	    errorCode = VREADONLY;
+    if (remote_flag == LOCAL_RPC) {
+	/* Does the caller has insert (and write) access to the parent directory? */
+	if ((errorCode = CheckWriteMode(parentptr, rights, PRSFS_INSERT))) {
 	    goto Bad_SymLink;
 	}
+
 	/*
-	 * We have a mountpoint, 'cause we're trying to set the Unix mode
-	 * bits to something with some x bits missing (default mode bits
-	 * if AFS_SETMODE is false is 0777)
+	 * If we're creating a mount point (any x bits clear), we must have
+	 * administer access to the directory, too.  Always allow sysadmins
+	 * to do this.
 	 */
-	if (VanillaUser(client) && !(rights & PRSFS_ADMINISTER)) {
-	    errorCode = EACCES;
-	    goto Bad_SymLink;
+	if ((InStatus->Mask & AFS_SETMODE) && !(InStatus->UnixModeBits & 0111)) {
+	    if (readonlyServer) {
+		errorCode = VREADONLY;
+		goto Bad_SymLink;
+	    }
+	    /*
+	     * We have a mountpoint, 'cause we're trying to set the Unix mode
+	     * bits to something with some x bits missing (default mode bits
+	     * if AFS_SETMODE is false is 0777)
+	     */
+	    if (VanillaUser(client) && !(rights & PRSFS_ADMINISTER)) {
+		errorCode = EACCES;
+		goto Bad_SymLink;
+	    }
 	}
     }
 
     /* get a new vnode for the symlink and set it up */
     if ((errorCode =
 	 Alloc_NewVnode(parentptr, &dir, volptr, &targetptr, Name, OutFid,
-			vSymlink, nBlocks(strlen((char *)LinkContents)), LOCAL_RPC))) {
+			vSymlink, nBlocks(strlen((char *)LinkContents)), remote_flag))) {
 	goto Bad_SymLink;
     }
 
     /* update the status of the parent vnode */
-#if FS_STATS_DETAILED
+    if (remote_flag == REMOTE_RPC) {
+	client = malloc(sizeof(struct client));
+	client->ViceId = clientViceId;
+	client->InSameNetwork = 1;
+    }
+
+    /* update the status of the parent vnode */
     Update_ParentVnodeStatus(parentptr, volptr, &dir, client->ViceId,
-			     parentptr->disk.linkCount,
-			     client->InSameNetwork);
-#else
-    Update_ParentVnodeStatus(parentptr, volptr, &dir, client->ViceId,
-			     parentptr->disk.linkCount);
-#endif /* FS_STATS_DETAILED */
+	    parentptr->disk.linkCount, client->InSameNetwork);
 
     /* update the status of the new symbolic link file vnode */
     Update_TargetVnodeStatus(targetptr, TVS_SLINK, client, InStatus,
-			     parentptr, volptr, strlen((char *)LinkContents), LOCAL_RPC);
+	    parentptr, volptr, strlen((char *)LinkContents), remote_flag);
 
     /* Write the contents of the symbolic link name into the target inode */
     fdP = IH_OPEN(targetptr->handle);
     if (fdP == NULL) {
-	(void)PutVolumePackage(parentwhentargetnotdir, targetptr, parentptr,
-			       volptr, &client);
-	VTakeOffline(volptr);
-	ViceLog(0, ("Volume %u now offline, must be salvaged.\n",
-		    volptr->hashid));
-	return EIO;
+	if (remote_flag == LOCAL_RPC) {
+	    PutVolumePackage(parentwhentargetnotdir, targetptr, parentptr,
+		    volptr, &client);
+	    VTakeOffline(volptr);
+	    ViceLog(0, ("Volume %u now offline, must be salvaged.\n", volptr->hashid));
+	    return EIO;
+	}
     }
     len = strlen((char *) LinkContents);
     code = (len == FDH_PWRITE(fdP, (char *) LinkContents, len, 0)) ? 0 : VDISKFULL;
     if (code)
 	ViceLog(0, ("SAFSS_Symlink FDH_PWRITE failed for len=%d, Fid=%u.%d.%d\n", (int)len, OutFid->Volume, OutFid->Vnode, OutFid->Unique));
     FDH_CLOSE(fdP);
-    /*
-     * Set up and return modified status for the parent dir and new symlink
-     * to caller.
-     */
-    GetStatus(targetptr, OutFidStatus, rights, anyrights, parentptr);
-    GetStatus(parentptr, OutDirStatus, rights, anyrights, 0);
+
+    if (remote_flag == LOCAL_RPC) {
+	/*
+	 * Set up and return modified status for the parent dir and new symlink
+	 * to caller.
+	 */
+	GetStatus(targetptr, OutFidStatus, rights, anyrights, parentptr);
+	GetStatus(parentptr, OutDirStatus, rights, anyrights, 0);
+    }
 
     /* convert the write lock to a read lock before breaking callbacks */
     VVnodeWriteToRead(&errorCode, parentptr);
     osi_Assert(!errorCode || errorCode == VSALVAGE);
 
     /* break call back on the parent dir */
-    BreakCallBack(client->host, DirFid, 0);
+    BreakCallBack(remote_flag ? NULL : client->host, DirFid, 0);
 
   Bad_SymLink:
     /* Write the all modified vnodes (parent, new files) and volume back */
-    (void)PutVolumePackage(parentwhentargetnotdir, targetptr, parentptr,
-			   volptr, &client);
+    if (remote_flag == LOCAL_RPC)
+	PutVolumePackage(parentwhentargetnotdir, targetptr, parentptr, volptr, &client);
+    else
+	PutReplicaVolumePackage(targetptr, parentptr, volptr);
     FidZap(&dir);
     ViceLog(2, ("SAFS_Symlink returns %d\n", errorCode));
     return ( errorCode ? errorCode : code );
@@ -4366,6 +4386,9 @@ SRXAFS_Symlink(struct rx_call *acall,	/* Rx call */
     struct host *thost;
     struct client *t_client = NULL;	/* tmp ptr to client data */
     struct fsstats fsstats;
+#if defined(AFS_PTHREAD_ENV)
+    struct AFSUpdateListItem *update;
+#endif
 
     fsstats_StartOp(&fsstats, FS_STATS_RPCIDX_SYMLINK);
 
@@ -4374,7 +4397,16 @@ SRXAFS_Symlink(struct rx_call *acall,	/* Rx call */
 
     code =
 	SAFSS_Symlink(acall, DirFid, Name, LinkContents, InStatus, OutFid,
-		      OutFidStatus, OutDirStatus, Sync);
+		      OutFidStatus, OutDirStatus, Sync, LOCAL_RPC, 0);
+#if defined(AFS_PTHREAD_ENV)
+    if (code == 0) {
+	/* Stash information about the update, for RW replicas */
+	update = StashUpdate(RPC_Symlink, DirFid, OutFid,
+		Name, LinkContents, InStatus, NULL,
+		0, 0, 0, t_client ? t_client->ViceId : 0, NULL, 0, NULL);
+	pthread_setspecific(fs_update, update);
+    }
+#endif
 
   Bad_Symlink:
     code = CallPostamble(tcon, code, thost);

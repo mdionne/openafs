@@ -829,6 +829,15 @@ RMakeDir(
   afs_int32 clientViceId
 ) = 65605;
 
+RSymlink(
+  IN  AFSFid *DirFid,
+  string Name<AFSNAMEMAX>,
+  string LinkContents<AFSPATHMAX>,
+  AFSStoreStatus *InStatus,
+  AFSFid *InFid,
+  afs_int32 clientViceId
+) = 65606;
+
 RStoreACL(
   IN  AFSFid *Fid,
   AFSOpaque *AccessList

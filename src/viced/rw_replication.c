@@ -274,6 +274,22 @@ SRXAFS_RSetVolumeStatus(struct rx_call *acall, afs_int32 avolid,
 
 }
 
+afs_int32
+SRXAFS_RSymlink(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
+	char *Link, struct AFSStoreStatus *InStatus, struct AFSFid *InFid,
+	afs_int32 clientViceId)
+{
+    struct AFSFetchStatus OutFidStatus;
+    struct AFSFetchStatus OutDirStatus;
+    struct AFSVolSync Sync;
+
+    ViceLog(0, ("Processing RSymlink call, calling SAFSS_Symlink\n"));
+
+    return SAFSS_Symlink(acall, DirFid, Name, Link, InStatus, InFid,
+	    &OutFidStatus, &OutDirStatus, &Sync, REMOTE_RPC, clientViceId);
+
+}
+
 #if defined (AFS_PTHREAD_ENV)
 static afs_int32
 rw_StoreData64(struct rx_connection *rcon, struct AFSFid *Fid,
@@ -431,6 +447,11 @@ ViceLog(0, ("%p Woke up, return is %d\n", item, ret));
 			ViceLog(0, ("Calling remote SetVolumeStatus\n"));
 			RXAFS_RSetVolumeStatus(rcon, item->Volid, &item->StoreVolStatus,
 				item->Name1, item->Name2, item->ClientViceId);
+			break;
+		    case RPC_Symlink:
+			ViceLog(0, ("Calling remote Symlink\n"));
+			RXAFS_RSymlink(rcon, &item->InFid1, item->Name1, item->Name2,
+				&item->InStatus, &item->InFid2, item->ClientViceId);
 			break;
 		    default:
 			ViceLog(0, ("Warning: unhandled stashed RPC, op: %d\n", item->RPCCall));
