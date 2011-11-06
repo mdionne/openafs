@@ -286,6 +286,8 @@ afs_Conn(struct VenusFid *afid, struct vrequest *areq,
 		 !(tv->rwserver->addr->sa_flags & SRVR_ISDOWN) &&
 		 !(((areq->idleError > 0) || (areq->tokenError > 0)) && (areq->skipserver[0] == 1)))
 	    lowp = tv->rwserver->addr;
+	else
+	    printf("RW only is set, but rwstatus: %d, sa_flags: %u\n", tv->rwstatus, tv->rwserver->addr->sa_flags);
     } else {
 	/* First is always lowest rank, if it's up */
 	if ((tv->status[0] == not_busy) && tv->serverHost[0]

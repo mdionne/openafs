@@ -2893,7 +2893,7 @@ SAFSS_StoreData64(struct rx_call *acall, struct AFSFid *Fid,
     errorCode =
 	StoreData_RXStyle(volptr, targetptr, Fid, client, acall, Pos, Length,
 			  FileLength, (InStatus->Mask & AFS_FSYNC),
-			  &bytesToXfer, &bytesXferred, LOCAL_RPC, &rbuf);
+			  &bytesToXfer, &bytesXferred, remote_flag, &rbuf);
 
     fsstats_FinishXfer(&fsstats, errorCode, bytesToXfer, bytesXferred,
 		       &remainder);
@@ -2911,7 +2911,7 @@ SAFSS_StoreData64(struct rx_call *acall, struct AFSFid *Fid,
     }
 
 #if defined(AFS_PTHREAD_ENV)
-    if (remote_flag == LOCAL_RPC) {
+    if (!errorCode && remote_flag == LOCAL_RPC) {
 	/* Stash information about the update, for RW replicas */
 	update = StashUpdate(RPC_StoreData64, Fid, NULL,
 		NULL, NULL, InStatus, NULL,
@@ -3702,9 +3702,12 @@ SAFSS_Rename(struct rx_call *acall, struct AFSFid *OldDirFid, char *OldName,
 	    DFlush();
 	    goto Bad_Rename;
 	}
-	if (remote_flag == LOCAL_RPC && OldDirFid->Vnode == NewDirFid->Vnode) {
+	if (OldDirFid->Vnode == NewDirFid->Vnode) {
 	    newvptr = oldvptr;
-	    newrights = rights, newanyrights = anyrights;
+	    if (remote_flag == LOCAL_RPC) {
+		newrights = rights;
+		newanyrights = anyrights;
+	    }
 	} else {
 	    if (remote_flag == LOCAL_RPC)
 		errorCode = GetVolumePackage(tcon, NewDirFid, &volptr, &newvptr,
@@ -6678,7 +6681,7 @@ StoreData_RXStyle(Volume * volptr, Vnode * targetptr, struct AFSFid * Fid,
     FdHandle_t *fdP;
     struct in_addr logHostAddr;	/* host ip holder for inet_ntoa */
     afs_ino_str_t stmp;
-    char *rpos;
+    char *rpos = NULL;
 
     /*
      * Initialize the byte count arguments.
@@ -6690,7 +6693,7 @@ StoreData_RXStyle(Volume * volptr, Vnode * targetptr, struct AFSFid * Fid,
      * We break the callbacks here so that the following signal will not
      * leave a window.
      */
-    BreakCallBack(client->host, Fid, 0);
+    BreakCallBack(remote_flag ? NULL : client->host, Fid, 0);
 
     if (Pos == -1 || VN_GET_INO(targetptr) == 0) {
 	/* the inode should have been created in Alloc_NewVnode */
