@@ -52,6 +52,8 @@ pthread_mutex_t remote_update_mutex;
 pthread_mutex_t update_list_mutex;
 #endif
 
+struct rx_connection *global_con = NULL;
+
 struct AFSUpdateListItem *update_list_head = NULL;
 struct AFSUpdateListItem *update_list_tail = NULL;
 
@@ -73,13 +75,15 @@ GetSlaveServersForVolume(struct AFSFid *Fid,
 	vlSec = rxnull_NewClientSecurityObject();
 	vlConn =
 	    rx_NewConnection(queryDbserver, htons(7003), 52, vlSec, 0);
-	rx_SetConnDeadTime(vlConn, 15); /* don't wait long */
+	rx_SetConnDeadTime(vlConn, 10); /* don't wait long */
     }
     if (down && (FT_ApproxTime() < lastDownTime + 180)) {
 	ViceLog(0,("Some kind of Failure\n")); /**/
     }
 
     code = VL_GetEntryByID(vlConn, Fid->Volume, RWVOL, entry);
+    rx_DestroyConnection(vlConn);
+
     if (code >= 0){
 	down = 0;               /* call worked */
     }
@@ -108,20 +112,15 @@ get_item(struct AFSUpdateListItem *item) {
 struct rx_connection *
 MakeDummyConnection(afs_int32 serverIp)
 {
-    struct rx_connection *tcon;
     struct rx_securityClass *sc;
     afs_uint32 ip = htonl(serverIp);
 
-    /* Make a new connection */
-
-    ViceLog(0,("Initial [%d], Later [%d]\n",serverIp,ip));
-
     sc = rxnull_NewClientSecurityObject();
-    /*server2_ip = inet_addr(f_ip);*/
 
-    tcon = rx_NewConnection(ip,htons(7000),1,sc,0);
+    if (!global_con)
+	global_con = rx_NewConnection(ip,htons(7000),1,sc,0);
 
-    return tcon;
+    return global_con;
 }
 
 afs_int32
