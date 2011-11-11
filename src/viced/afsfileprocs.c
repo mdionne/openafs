@@ -1391,6 +1391,8 @@ DeleteTarget(Vnode * parentptr, Volume * volptr, Vnode ** targetptr,
       * take the volume offline and return VSALVAGE
       */
     if ((*targetptr)->disk.uniquifier != fileFid->Unique) {
+	ViceLog(0, ("Uniquifier mismatch for vnode %u.  Dir had %u, vnode has %u\n",
+		fileFid->Vnode, fileFid->Unique, (*targetptr)->disk.uniquifier));
 	VTakeOffline(volptr);
 	ViceLog(0,
 		("Volume %u now offline, must be salvaged.\n",
