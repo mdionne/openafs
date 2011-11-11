@@ -57,6 +57,9 @@ struct rx_connection *global_con = NULL;
 struct AFSUpdateListItem *update_list_head = NULL;
 struct AFSUpdateListItem *update_list_tail = NULL;
 
+/* Track error state of remote */
+int remote_error = 0;
+
 /* Get all the RWSL servers for the Volume */
 /* TODO: we want to cache this info somewhere */
 int
@@ -397,7 +400,7 @@ FS_PostProc(afs_int32 code)
 
 #if defined(AFS_PTHREAD_ENV)
     item = pthread_getspecific(fs_update);
-    if (item) {
+    if (!remote_error && item) {
 	/* Need to wait for any earlier related update */
 restart:
 	UPDATE_LIST_LOCK;
@@ -444,55 +447,61 @@ ViceLog(0, ("%p Woke up, return is %d\n", item, ret));
 		switch(item->RPCCall) {
 		    case RPC_CreateFile:
 			ViceLog(0, ("Calling remote CreateFile\n"));
-			RXAFS_RCreateFile(rcon, &item->InFid1, item->Name1, &item->InStatus,
+			ret = RXAFS_RCreateFile(rcon, &item->InFid1, item->Name1, &item->InStatus,
 				&item->InFid2, item->ClientViceId);
 			break;
 		    case RPC_RemoveFile:
 			ViceLog(0, ("Calling remote RemoveFile\n"));
-			RXAFS_RRemoveFile(rcon, &item->InFid1, item->Name1, item->ClientViceId);
+			ret = RXAFS_RRemoveFile(rcon, &item->InFid1, item->Name1, item->ClientViceId);
 			break;
 		    case RPC_Rename:
 			ViceLog(0, ("Calling remote Rename\n"));
-			RXAFS_RRename(rcon, &item->InFid1, item->Name1, &item->InFid2, item->Name2,
+			ret = RXAFS_RRename(rcon, &item->InFid1, item->Name1, &item->InFid2, item->Name2,
 				item->ClientViceId);
 			break;
 		    case RPC_StoreData64:
 			ViceLog(0, ("Calling remote StoreData64\n"));
-			rw_StoreData64(rcon, &item->InFid1, &item->InStatus, item->Pos,
+			ret = rw_StoreData64(rcon, &item->InFid1, &item->InStatus, item->Pos,
 				item->Length, item->FileLength, item->ClientViceId,
 				item->StoreBuffer);
 			break;
 		    case RPC_RemoveDir:
 			ViceLog(0, ("Calling remote RemoveDir\n"));
-			RXAFS_RRemoveDir(rcon, &item->InFid1, item->Name1, item->ClientViceId);
+			ret = RXAFS_RRemoveDir(rcon, &item->InFid1, item->Name1, item->ClientViceId);
 			break;
 		    case RPC_MakeDir:
 			ViceLog(0, ("Calling remote MakeDir\n"));
-			RXAFS_RMakeDir(rcon, &item->InFid1, item->Name1, &item->InStatus,
+			ret = RXAFS_RMakeDir(rcon, &item->InFid1, item->Name1, &item->InStatus,
 				&item->InFid2, item->ClientViceId);
 			break;
 		    case RPC_StoreACL:
 			ViceLog(0, ("Calling remote StoreACL\n"));
-			RXAFS_RStoreACL(rcon, &item->InFid1, &item->AccessList);
+			ret = RXAFS_RStoreACL(rcon, &item->InFid1, &item->AccessList);
 			break;
 		    case RPC_StoreStatus:
 			ViceLog(0, ("Calling remote StoreStatus\n"));
-			RXAFS_RStoreStatus(rcon, &item->InFid1, &item->InStatus, item->ClientViceId);
+			ret = RXAFS_RStoreStatus(rcon, &item->InFid1, &item->InStatus, item->ClientViceId);
 			break;
 		    case RPC_SetVolumeStatus:
 			ViceLog(0, ("Calling remote SetVolumeStatus\n"));
-			RXAFS_RSetVolumeStatus(rcon, item->Volid, &item->StoreVolStatus,
+			ret = RXAFS_RSetVolumeStatus(rcon, item->Volid, &item->StoreVolStatus,
 				item->Name1, item->Name2, item->ClientViceId);
 			break;
 		    case RPC_Symlink:
 			ViceLog(0, ("Calling remote Symlink\n"));
-			RXAFS_RSymlink(rcon, &item->InFid1, item->Name1, item->Name2,
+			ret = RXAFS_RSymlink(rcon, &item->InFid1, item->Name1, item->Name2,
 				&item->InStatus, &item->InFid2, item->ClientViceId);
 			break;
 		    default:
 			ViceLog(0, ("Warning: unhandled stashed RPC, op: %d\n", item->RPCCall));
+			ret = -1;
 		}
 		ViceLog(0, ("%p Done remote call\n", item));
+		if (ret != 0) {
+		    ViceLog(0, ("Error return from remote RPC: %d\n", ret));
+		    ViceLog(0, ("Disabling remote updates\n"));
+		    remote_error = 1;
+		}
 	    }
 	}
 	if (item->RPCCall == RPC_StoreData64 && item->StoreBuffer)
@@ -523,6 +532,8 @@ ViceLog(0, ("%p Woke up, return is %d\n", item, ret));
 	    pthread_mutex_unlock(&item->item_lock);
 	UPDATE_LIST_UNLOCK;
     } else {
+	if (remote_error && item)
+	    ViceLog(0, ("Remote is in error, not updating\n"));
     }
     pthread_setspecific(fs_update, NULL);
 #endif
