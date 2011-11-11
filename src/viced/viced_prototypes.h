@@ -53,7 +53,8 @@ extern afs_int32 SAFSS_SetVolumeStatus(struct rx_call * acall, afs_int32 avolid,
 extern afs_int32 SAFSS_Rename(struct rx_call *acall, struct AFSFid *OldDirFid,
 	char *OldName, struct AFSFid *NewDirFid, char *NewName,
 	struct AFSFetchStatus *OutOldDirStatus, struct AFSFetchStatus *OutNewDirStatus,
-	struct AFSVolSync *Sync, int remote_flag, afs_int32 clientViceId);
+	struct AFSVolSync *Sync, int remote_flag, afs_int32 clientViceId,
+	struct AFSFid *RenameFid);
 extern afs_int32 SAFSS_Symlink(struct rx_call *acall, struct AFSFid *DirFid,
 	char *Name, char *LinkContents, struct AFSStoreStatus *InStatus,
 	struct AFSFid *OutFid, struct AFSFetchStatus *OutFidStatus,
@@ -84,7 +85,7 @@ extern struct AFSUpdateListItem *StashUpdate(afs_int32 pRPCCall, struct AFSFid *
 	struct AFSStoreStatus *pInStatus, struct AFSOpaque *pAccessList,
 	afs_uint64 pPos, afs_uint64 pLength, afs_uint64 pFileLength,
 	afs_int32 pClientViceId, char *StoreBuffer,
-	afs_int32 Volid, AFSStoreVolumeStatus *pVolStatus);
+	afs_int32 Volid, AFSStoreVolumeStatus *pVolStatus, struct AFSFid *RenameFid);
 extern afs_int32 GetReplicaVolumePackage(struct AFSFid *Fid, Volume **volptr,
 	Vnode **targetptr, int chkforDir, int locktype);
 extern void PutReplicaVolumePackage(struct Vnode *targetptr, struct Vnode *parentptr,

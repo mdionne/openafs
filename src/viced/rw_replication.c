@@ -196,7 +196,7 @@ SRXAFS_RRename(struct rx_call *acall, AFSFid *OldDirFid, char *OldName,
 
     ViceLog(0, ("Processing RRename call\n"));
     return SAFSS_Rename(acall, OldDirFid, OldName, NewDirFid, NewName,
-	    &OutOldDirStatus, &OutNewDirStatus, &Sync, REMOTE_RPC, clientViceId);
+	    &OutOldDirStatus, &OutNewDirStatus, &Sync, REMOTE_RPC, clientViceId, NULL);
 }
 
 afs_int32
@@ -325,6 +325,65 @@ rw_StoreData64(struct rx_connection *rcon, struct AFSFid *Fid,
 }
 #endif
 
+/*
+ * Determine if the 2 given updates have a dependency.
+ * If they do, we'll need to be careful about ordering.
+ */
+int
+related_items(struct AFSUpdateListItem *item1, struct AFSUpdateListItem *item2) {
+    /* Look for any common Fid between the 2 operations */
+    if (item1->InFid1.Volume) {
+	if (item2->InFid1.Volume &&
+		item2->InFid1.Volume == item1->InFid1.Volume &&
+		item2->InFid1.Vnode == item1->InFid1.Vnode)
+	    return 1;
+	if (item2->InFid2.Volume &&
+		item2->InFid2.Volume == item1->InFid1.Volume &&
+		item2->InFid2.Vnode == item1->InFid1.Vnode)
+	    return 1;
+    }
+    if (item2->InFid2.Volume) {
+	if (item1->InFid1.Volume &&
+		item1->InFid1.Volume == item2->InFid2.Volume &&
+		item1->InFid1.Vnode == item2->InFid2.Vnode)
+	    return 1;
+	if (item1->InFid2.Volume &&
+		item1->InFid2.Volume == item2->InFid2.Volume &&
+		item1->InFid2.Vnode == item2->InFid2.Vnode)
+	    return 1;
+    }
+    /* Special case for renames, watch out for a deleted file */
+    if (item1->RPCCall == RPC_Rename && item1->RenameFid.Volume) {
+	if (item2->InFid1.Volume &&
+		item2->InFid1.Volume == item1->RenameFid.Volume &&
+		item2->InFid1.Vnode == item1->RenameFid.Vnode) {
+	    ViceLog(0, ("Detected Rename deleted file conflict\n"));
+	    return 1;
+	}
+	if (item2->InFid2.Volume &&
+		item2->InFid2.Volume == item1->RenameFid.Volume &&
+		item2->InFid2.Vnode == item1->RenameFid.Vnode) {
+	    ViceLog(0, ("Detected Rename deleted file conflict\n"));
+	    return 1;
+	}
+    }
+    if (item2->RPCCall == RPC_Rename && item2->RenameFid.Volume) {
+	if (item1->InFid1.Volume &&
+		item1->InFid1.Volume == item2->RenameFid.Volume &&
+		item1->InFid1.Vnode == item2->RenameFid.Vnode) {
+	    ViceLog(0, ("Detected Rename deleted file conflict\n"));
+	    return 1;
+	}
+	if (item1->InFid2.Volume &&
+		item1->InFid2.Volume == item2->RenameFid.Volume &&
+		item1->InFid2.Vnode == item2->RenameFid.Vnode) {
+	    ViceLog(0, ("Detected Rename deleted file conflict\n"));
+	    return 1;
+	}
+    }
+    return 0;
+}
+
 void
 FS_PostProc(afs_int32 code)
 {
@@ -334,7 +393,6 @@ FS_PostProc(afs_int32 code)
     struct rx_connection *rcon;
     struct AFSUpdateListItem *item;
     struct AFSUpdateListItem *it, *prev;
-    int dowait = 0;
     int ret;
 #endif
 
@@ -344,29 +402,8 @@ FS_PostProc(afs_int32 code)
 	/* Need to wait for any earlier related update */
 restart:
 	UPDATE_LIST_LOCK;
-	dowait = 0;
 	for (it = update_list_head; it != NULL && it != item; it = it->NextItem) {
-	    if (it->InFid1.Volume) {
-		if (item->InFid1.Volume &&
-			item->InFid1.Volume == it->InFid1.Volume &&
-			item->InFid1.Vnode == it->InFid1.Vnode)
-		    dowait = 1;
-		if (item->InFid2.Volume &&
-			item->InFid2.Volume == it->InFid1.Volume &&
-			item->InFid2.Vnode == it->InFid1.Vnode)
-		    dowait = 1;
-	    }
-	    if (it->InFid2.Volume) {
-		if (item->InFid1.Volume &&
-			item->InFid1.Volume == it->InFid2.Volume &&
-			item->InFid1.Vnode == it->InFid2.Vnode)
-		    dowait = 1;
-		if (item->InFid2.Volume &&
-			item->InFid2.Volume == it->InFid2.Volume &&
-			item->InFid2.Vnode == it->InFid2.Vnode)
-		    dowait = 1;
-	    }
-	    if (dowait) {
+	    if (related_items(item, it)) {
 		/* Get a ref so it doesn't go away after we unlock */
 		get_item(it);
 		UPDATE_LIST_UNLOCK;
@@ -497,7 +534,7 @@ StashUpdate(afs_int32 pRPCCall, struct AFSFid *pInFid1,
 	struct AFSFid *pInFid2, char *pName1, char *pName2, struct AFSStoreStatus *pInStatus,
 	struct AFSOpaque *pAccessList, afs_uint64 pPos, afs_uint64 pLength,
 	afs_uint64 pFileLength, afs_int32 pClientViceId, char *buf,
-	afs_int32 volid, AFSStoreVolumeStatus *pStoreVolStatus)
+	afs_int32 volid, AFSStoreVolumeStatus *pStoreVolStatus, struct AFSFid *RenameFid)
 {
     struct AFSUpdateListItem *item;
 
@@ -524,6 +561,15 @@ StashUpdate(afs_int32 pRPCCall, struct AFSFid *pInFid1,
 	item->InFid2.Volume = 0;
 	item->InFid2.Vnode = 0;
 	item->InFid2.Unique = 0;
+    }
+    if (RenameFid) {
+	item->RenameFid.Volume = RenameFid->Volume;
+	item->RenameFid.Vnode = RenameFid->Vnode;
+	item->RenameFid.Unique = RenameFid->Unique;
+    } else {
+	item->RenameFid.Volume = 0;
+	item->RenameFid.Vnode = 0;
+	item->RenameFid.Unique = 0;
     }
     if (pName1) {
 	item->Name1 = (char *)malloc(sizeof(char)*AFSNAMEMAX);

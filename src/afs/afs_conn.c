@@ -276,7 +276,7 @@ afs_Conn(struct VenusFid *afid, struct vrequest *areq,
     }
 
     /* If rw_only is set, we have to connect to the rw server */
-    if (rw_only) {
+    if (rw_only && tv->rwserver) {
 	if ((tv->rwstatus == not_busy) &&
 		 tv->rwserver &&
 		 !(tv->rwserver->addr->sa_flags & SRVR_ISDOWN))

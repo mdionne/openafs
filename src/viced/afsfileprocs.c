@@ -631,6 +631,7 @@ CheckVnodeWithCall(AFSFid * fid, Volume ** volptr, struct VCallByVol *cbv,
     if (errorCode)
 	return (errorCode);
     if ((*vptr)->disk.uniquifier != fid->Unique) {
+	ViceLog(0, ("Error: uniquifier mismatch in CheckVnodeWithCall, will return 102\n"));
 	VPutVnode(&fileCode, *vptr);
 	osi_Assert(fileCode == 0);
 	*vptr = 0;
@@ -2957,7 +2958,7 @@ SAFSS_StoreData64(struct rx_call *acall, struct AFSFid *Fid,
 	/* Stash information about the update, for RW replicas */
 	update = StashUpdate(RPC_StoreData64, Fid, NULL,
 		NULL, NULL, InStatus, NULL,
-	    Pos, Length, FileLength, t_client ? t_client->ViceId : 0, rbuf, 0, NULL);
+	    Pos, Length, FileLength, t_client ? t_client->ViceId : 0, rbuf, 0, NULL, NULL);
 	pthread_setspecific(fs_update, update);
     }
 #endif
@@ -3112,7 +3113,7 @@ SAFSS_StoreACL(struct rx_call * acall, struct AFSFid * Fid,
 	/* Stash information about the update, for RW replicas */
 	update = StashUpdate(RPC_StoreACL, Fid, NULL,
 		NULL, NULL, NULL, AccessList,
-		0, 0, 0, t_client ? t_client->ViceId : 0, NULL, 0, NULL);
+		0, 0, 0, t_client ? t_client->ViceId : 0, NULL, 0, NULL, NULL);
 	pthread_setspecific(fs_update, update);
 #endif
     }
@@ -3279,7 +3280,7 @@ SRXAFS_StoreStatus(struct rx_call * acall, struct AFSFid * Fid,
 	/* Stash information about the update, for RW replicas */
 	update = StashUpdate(RPC_StoreStatus, Fid, NULL,
 		NULL, NULL, InStatus, NULL,
-		0, 0, 0, t_client ? t_client->ViceId : 0, NULL, 0, NULL);
+		0, 0, 0, t_client ? t_client->ViceId : 0, NULL, 0, NULL, NULL);
 	pthread_setspecific(fs_update, update);
     }
 #endif
@@ -3371,6 +3372,8 @@ SAFSS_RemoveFile(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
 		      MustNOTBeDIR))) {
 	goto Bad_RemoveFile;
     }
+    ViceLog(1, ("RemoveFile (remote) removed fid: %u.%u.%u\n",
+	    fileFid.Volume, fileFid.Vnode, fileFid.Unique));
 
     /* update the status of the parent vnode */
     if (remote_flag) {
@@ -3454,7 +3457,7 @@ SRXAFS_RemoveFile(struct rx_call * acall, struct AFSFid * DirFid, char *Name,
 	/* Stash information about the update, for RW replicas */
 	update = StashUpdate(RPC_RemoveFile, DirFid, &FileFid,
 		Name, NULL, NULL, NULL,
-		0, 0, 0, t_client ? t_client->ViceId : 0, NULL, 0, NULL);
+		0, 0, 0, t_client ? t_client->ViceId : 0, NULL, 0, NULL, NULL);
 	pthread_setspecific(fs_update, update);
     }
 #endif
@@ -3510,8 +3513,9 @@ SAFSS_CreateFile(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
 	     inet_ntoa(logHostAddr), ntohs(rxr_PortOf(tcon)), t_client->ViceId));
     } else {
 	ViceLog(1,
-	    ("SAFS_CreateFile (remote) %s,  Did = %u.%u.%u, Id %d\n", Name,
-	     DirFid->Volume, DirFid->Vnode, DirFid->Unique, clientViceId));
+	    ("SAFS_CreateFile (remote) %s,  Did = %u.%u.%u, File = %u.%u.%u, Id %d\n", Name,
+	     DirFid->Volume, DirFid->Vnode, DirFid->Unique,
+		OutFid->Volume, OutFid->Vnode, OutFid->Unique, clientViceId));
     }
     FS_LOCK;
     AFSCallStats.CreateFile++, AFSCallStats.TotalCalls++;
@@ -3633,7 +3637,7 @@ SRXAFS_CreateFile(struct rx_call * acall, struct AFSFid * DirFid, char *Name,
 	/* Stash information about the update, for RW replicas */
 	update = StashUpdate(RPC_CreateFile, DirFid, OutFid,
 		Name, NULL, InStatus, NULL,
-		0, 0, 0, t_client ? t_client->ViceId : 0, NULL, 0, NULL);
+		0, 0, 0, t_client ? t_client->ViceId : 0, NULL, 0, NULL, NULL);
 	pthread_setspecific(fs_update, update);
     }
 #endif
@@ -3661,7 +3665,7 @@ afs_int32
 SAFSS_Rename(struct rx_call *acall, struct AFSFid *OldDirFid, char *OldName,
 	struct AFSFid *NewDirFid, char *NewName, struct AFSFetchStatus *OutOldDirStatus,
 	struct AFSFetchStatus *OutNewDirStatus, struct AFSVolSync *Sync,
-	int remote_flag, afs_int32 clientViceId)
+	int remote_flag, afs_int32 clientViceId, struct AFSFid *RenameFid)
 {
     Vnode *oldvptr = 0;		/* vnode of the old Directory */
     Vnode *newvptr = 0;		/* vnode of the new Directory */
@@ -4092,6 +4096,11 @@ SAFSS_Rename(struct rx_call *acall, struct AFSFid *OldDirFid, char *OldName,
     }
     if (newfileptr && doDelete) {
 	DeleteFileCallBacks(&newFileFid);	/* no other references */
+	if (remote_flag == LOCAL_RPC) {
+	    RenameFid->Volume = newFileFid.Volume;
+	    RenameFid->Vnode = newFileFid.Vnode;
+	    RenameFid->Unique = newFileFid.Unique;
+	}
     }
 
     DFlush();
@@ -4171,22 +4180,22 @@ SRXAFS_Rename(struct rx_call *acall, struct AFSFid *OldDirFid,
 #if defined(AFS_PTHREAD_ENV)
     struct AFSUpdateListItem *update;
 #endif
+    struct AFSFid RenameFid = {0, 0, 0};
 
     fsstats_StartOp(&fsstats, FS_STATS_RPCIDX_RENAME);
 
     if ((code = CallPreamble(acall, ACTIVECALL, &tcon, &thost)))
 	goto Bad_Rename;
 
-    code =
-	SAFSS_Rename(acall, OldDirFid, OldName, NewDirFid, NewName,
-		     OutOldDirStatus, OutNewDirStatus, Sync, LOCAL_RPC, 0);
+    code = SAFSS_Rename(acall, OldDirFid, OldName, NewDirFid, NewName,
+	    OutOldDirStatus, OutNewDirStatus, Sync, LOCAL_RPC, 0, &RenameFid);
 
 #if defined(AFS_PTHREAD_ENV)
     if (code == 0) {
 	/* Stash information about the update, for RW replicas */
 	update = StashUpdate(RPC_Rename, OldDirFid, NewDirFid,
 		OldName, NewName, NULL, NULL,
-		0, 0, 0, t_client ? t_client->ViceId : 0, NULL, 0, NULL);
+		0, 0, 0, t_client ? t_client->ViceId : 0, NULL, 0, NULL, &RenameFid);
 	pthread_setspecific(fs_update, update);
     }
 #endif
@@ -4403,7 +4412,7 @@ SRXAFS_Symlink(struct rx_call *acall,	/* Rx call */
 	/* Stash information about the update, for RW replicas */
 	update = StashUpdate(RPC_Symlink, DirFid, OutFid,
 		Name, LinkContents, InStatus, NULL,
-		0, 0, 0, t_client ? t_client->ViceId : 0, NULL, 0, NULL);
+		0, 0, 0, t_client ? t_client->ViceId : 0, NULL, 0, NULL, NULL);
 	pthread_setspecific(fs_update, update);
     }
 #endif
@@ -4792,7 +4801,7 @@ SRXAFS_MakeDir(struct rx_call * acall, struct AFSFid * DirFid, char *Name,
 	/* Stash information about the update, for RW replicas */
 	update = StashUpdate(RPC_MakeDir, DirFid, OutFid,
 		Name, NULL, InStatus, NULL,
-		0, 0, 0, t_client ? t_client->ViceId : 0, NULL, 0, NULL);
+		0, 0, 0, t_client ? t_client->ViceId : 0, NULL, 0, NULL, NULL);
 	pthread_setspecific(fs_update, update);
     }
 #endif
@@ -4957,7 +4966,7 @@ SRXAFS_RemoveDir(struct rx_call * acall, struct AFSFid * DirFid, char *Name,
 	/* Stash information about the update, for RW replicas */
 	update = StashUpdate(RPC_RemoveDir, DirFid, &RDirFid,
 		Name, NULL, NULL, NULL,
-		0, 0, 0, t_client ? t_client->ViceId : 0, NULL, 0, NULL);
+		0, 0, 0, t_client ? t_client->ViceId : 0, NULL, 0, NULL, NULL);
 	pthread_setspecific(fs_update, update);
     }
 #endif
@@ -6351,7 +6360,7 @@ SRXAFS_SetVolumeStatus(struct rx_call * acall, afs_int32 avolid,
 	/* Stash information about the update, for RW replicas */
 	update = StashUpdate(RPC_SetVolumeStatus, NULL, NULL, Name, OfflineMsg,
 		NULL, NULL, 0, 0, 0, t_client ? t_client->ViceId : 0, NULL,
-		avolid, StoreVolStatus);
+		avolid, StoreVolStatus, NULL);
 	pthread_setspecific(fs_update, update);
     }
 #endif
