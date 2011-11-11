@@ -29,6 +29,7 @@ struct AFSUpdateListItem {
     afs_int32 RPCCall;
     struct AFSFid InFid1;
     struct AFSFid InFid2;
+    struct AFSFid RenameFid;
     char *Name1;
     char *Name2;
     AFSStoreStatus InStatus;
