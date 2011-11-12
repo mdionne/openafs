@@ -349,14 +349,14 @@ related_items(struct AFSUpdateListItem *item1, struct AFSUpdateListItem *item2) 
 		item2->InFid2.Vnode == item1->InFid1.Vnode)
 	    return 1;
     }
-    if (item2->InFid2.Volume) {
-	if (item1->InFid1.Volume &&
-		item1->InFid1.Volume == item2->InFid2.Volume &&
-		item1->InFid1.Vnode == item2->InFid2.Vnode)
+    if (item1->InFid2.Volume) {
+	if (item2->InFid1.Volume &&
+		item2->InFid1.Volume == item1->InFid2.Volume &&
+		item2->InFid1.Vnode == item1->InFid2.Vnode)
 	    return 1;
-	if (item1->InFid2.Volume &&
-		item1->InFid2.Volume == item2->InFid2.Volume &&
-		item1->InFid2.Vnode == item2->InFid2.Vnode)
+	if (item2->InFid2.Volume &&
+		item2->InFid2.Volume == item1->InFid2.Volume &&
+		item2->InFid2.Vnode == item1->InFid2.Vnode)
 	    return 1;
     }
     /* Special case for renames, watch out for a deleted file */
