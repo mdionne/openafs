@@ -235,7 +235,7 @@ SRXAFS_RMakeDir(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
     struct AFSCallBack CallBack;
     struct AFSVolSync Sync;
 
-    ViceLog(0, ("Processing RMakeDir call, calling SAFS_StoreACL\n"));
+    ViceLog(0, ("Processing RMakeDir call, calling SAFSS_MakeDir\n"));
 
     return SAFSS_MakeDir(acall, DirFid, Name, InStatus, InFid, &OutFidStatus,
 	    &OutDirStatus, &CallBack, &Sync, REMOTE_RPC, clientViceId);
