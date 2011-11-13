@@ -2013,6 +2013,10 @@ rx_GetCall(int tno, struct rx_service *cur_service, osi_socket * socketp)
 	    MUTEX_ENTER(&call->lock);
 
 	    if (call->flags & RX_CALL_WAIT_PROC) {
+#ifdef RXDEBUG
+		if (rx_Log)
+		fprintf(rx_Log, "call in WAIT_PROC is starting\n");
+#endif
 		call->flags &= ~RX_CALL_WAIT_PROC;
 		rx_atomic_dec(&rx_nWaiting);
 	    }
@@ -2189,6 +2193,10 @@ rx_GetCall(int tno, struct rx_service *cur_service, osi_socket * socketp)
 	    || call->rprev != queue_Last(&call->rq, rx_packet)->header.seq)
 	    rxi_SendAck(call, 0, 0, RX_ACK_DELAY, 0);
 
+#ifdef RXDEBUG
+		if (rx_Log)
+	fprintf(rx_Log, "call in WAIT_PROC is starting (2) in getCall\n");
+#endif
 	call->flags &= (~RX_CALL_WAIT_PROC);
 	service->nRequestsRunning++;
 	/* just started call in minProcs pool, need fewer to maintain
@@ -4830,11 +4838,25 @@ rxi_AttachServerProc(struct rx_call *call,
 	 * already on the queue).
 	 */
 #ifdef RX_ENABLE_LOCKS
-	if (haveQuota)
+	if (haveQuota) {
+#ifdef RXDEBUG
+		if (rx_Log)
+	    fprintf(rx_Log, "AttachServerProc: Had quota, so idle queue must be empty\n");
+#endif
 	    ReturnToServerPool(service);
+	} else {
+#ifdef RXDEBUG
+		if (rx_Log)
+	    fprintf(rx_Log, "AttachServerProc: Out of quota, oh my\n");
+#endif
+	}
 #endif /* RX_ENABLE_LOCKS */
 
 	if (!(call->flags & RX_CALL_WAIT_PROC)) {
+#ifdef RXDEBUG
+		if (rx_Log)
+	    fprintf(rx_Log, "AttachServerProc: putting call in WAIT_PROC state\n");
+#endif
 	    call->flags |= RX_CALL_WAIT_PROC;
 	    rx_atomic_inc(&rx_nWaiting);
 	    rx_atomic_inc(&rx_nWaited);
@@ -4863,6 +4885,10 @@ rxi_AttachServerProc(struct rx_call *call,
 	}
 	if (call->flags & RX_CALL_WAIT_PROC) {
 	    /* Conservative:  I don't think this should happen */
+#ifdef RXDEBUG
+		if (rx_Log)
+	    fprintf(rx_Log, "AttachServerProc: removing WAIT_PROC state\n");
+#endif
 	    call->flags &= ~RX_CALL_WAIT_PROC;
 	    if (queue_IsOnQueue(call)) {
 		queue_Remove(call);
@@ -5370,6 +5396,10 @@ rxi_ResetCall(struct rx_call *call, int newcall)
 	MUTEX_ENTER(call->call_queue_lock);
 	if (queue_IsOnQueue(call)) {
 	    queue_Remove(call);
+#ifdef RXDEBUG
+		if (rx_Log)
+	    fprintf(rx_Log, "ResetCall: removing call in WAIT_PROC state\n");
+#endif
 	    if (flags & RX_CALL_WAIT_PROC) {
 		rx_atomic_dec(&rx_nWaiting);
 	    }
@@ -5380,6 +5410,10 @@ rxi_ResetCall(struct rx_call *call, int newcall)
 #else /* RX_ENABLE_LOCKS */
     if (queue_IsOnQueue(call)) {
 	queue_Remove(call);
+#ifdef RXDEBUG
+		if (rx_Log)
+	fprintf(rx_Log, "ResetCall: removing call in WAIT_PROC state (2)\n");
+#endif
 	if (flags & RX_CALL_WAIT_PROC)
 	    rx_atomic_dec(&rx_nWaiting);
     }

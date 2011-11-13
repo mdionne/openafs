@@ -326,61 +326,136 @@ rw_StoreData64(struct rx_connection *rcon, struct AFSFid *Fid,
 }
 #endif
 
+int
+fidmatch(struct AFSFid fid1, struct AFSFid fid2) {
+    if (fid1.Vnode == 0 || fid2.Vnode == 0)
+	return 0;
+    if (fid1.Vnode == fid2.Vnode && fid1.Volume == fid2.Volume)
+	return 1;
+    else
+	return 0;
+}
+
 /*
- * Determine if the 2 given updates have a dependency.
- * If they do, we'll need to be careful about ordering.
+ * Determine if the current update should wait for a queued update
  */
 int
-related_items(struct AFSUpdateListItem *item1, struct AFSUpdateListItem *item2) {
-    /* Look for any common Fid between the 2 operations */
-    if (item1->InFid1.Volume) {
-	if (item2->InFid1.Volume &&
-		item2->InFid1.Volume == item1->InFid1.Volume &&
-		item2->InFid1.Vnode == item1->InFid1.Vnode)
-	    return 1;
-	if (item2->InFid2.Volume &&
-		item2->InFid2.Volume == item1->InFid1.Volume &&
-		item2->InFid2.Vnode == item1->InFid1.Vnode)
-	    return 1;
-    }
-    if (item1->InFid2.Volume) {
-	if (item2->InFid1.Volume &&
-		item2->InFid1.Volume == item1->InFid2.Volume &&
-		item2->InFid1.Vnode == item1->InFid2.Vnode)
-	    return 1;
-	if (item2->InFid2.Volume &&
-		item2->InFid2.Volume == item1->InFid2.Volume &&
-		item2->InFid2.Vnode == item1->InFid2.Vnode)
-	    return 1;
-    }
-    /* Special case for renames, watch out for a deleted file */
-    if (item1->RPCCall == RPC_Rename && item1->RenameFid.Volume) {
-	if (item2->InFid1.Volume &&
-		item2->InFid1.Volume == item1->RenameFid.Volume &&
-		item2->InFid1.Vnode == item1->RenameFid.Vnode) {
-	    ViceLog(0, ("Detected Rename deleted file conflict\n"));
-	    return 1;
-	}
-	if (item2->InFid2.Volume &&
-		item2->InFid2.Volume == item1->RenameFid.Volume &&
-		item2->InFid2.Vnode == item1->RenameFid.Vnode) {
-	    ViceLog(0, ("Detected Rename deleted file conflict\n"));
-	    return 1;
-	}
-    }
-    if (item2->RPCCall == RPC_Rename && item2->RenameFid.Volume) {
-	if (item1->InFid1.Volume &&
-		item1->InFid1.Volume == item2->RenameFid.Volume &&
-		item1->InFid1.Vnode == item2->RenameFid.Vnode) {
-	    ViceLog(0, ("Detected Rename deleted file conflict\n"));
-	    return 1;
-	}
-	if (item1->InFid2.Volume &&
-		item1->InFid2.Volume == item2->RenameFid.Volume &&
-		item1->InFid2.Vnode == item2->RenameFid.Vnode) {
-	    ViceLog(0, ("Detected Rename deleted file conflict\n"));
-	    return 1;
-	}
+must_wait_for(struct AFSUpdateListItem *cur_item, struct AFSUpdateListItem *queued_item) {
+    switch (cur_item->RPCCall) {
+	case RPC_SetVolumeStatus:
+		/* No conflict with anything */
+		return 0;
+	case RPC_StoreACL:
+	case RPC_StoreData64:
+	case RPC_StoreStatus:
+		/* Wait for operations specific to this vnode */
+		if (fidmatch(cur_item->InFid1, queued_item->InFid1) &&
+			(queued_item->RPCCall == RPC_StoreACL ||
+			queued_item->RPCCall == RPC_StoreData64 ||
+			queued_item->RPCCall == RPC_StoreStatus))
+		    return 1;
+		if (fidmatch(cur_item->InFid1, queued_item->InFid2) &&
+			(queued_item->RPCCall == RPC_Symlink ||
+			queued_item->RPCCall == RPC_CreateFile ||
+			queued_item->RPCCall == RPC_RemoveFile ||
+			queued_item->RPCCall == RPC_RemoveDir ||
+			queued_item->RPCCall == RPC_MakeDir))
+		    return 1;
+		if (fidmatch(cur_item->InFid1, queued_item->RenameFid) &&
+			queued_item->RPCCall == RPC_Rename)
+		    return 1;
+		break;
+	case RPC_Symlink:
+	case RPC_CreateFile:
+	case RPC_RemoveFile:
+	case RPC_MakeDir:
+		/* Wait for operations specific to this vnode */
+		if (fidmatch(cur_item->InFid2, queued_item->InFid1) &&
+			(queued_item->RPCCall == RPC_StoreACL ||
+			queued_item->RPCCall == RPC_StoreData64 ||
+			queued_item->RPCCall == RPC_StoreStatus))
+		    return 1;
+		if (fidmatch(cur_item->InFid2, queued_item->InFid2) &&
+			(queued_item->RPCCall == RPC_Symlink ||
+			queued_item->RPCCall == RPC_CreateFile ||
+			queued_item->RPCCall == RPC_RemoveFile ||
+			queued_item->RPCCall == RPC_RemoveDir ||
+			queued_item->RPCCall == RPC_MakeDir))
+		    return 1;
+		if (fidmatch(cur_item->InFid2, queued_item->RenameFid) &&
+			queued_item->RPCCall == RPC_Rename)
+		    return 1;
+		/* Wait for operations in same directory, but
+		 * only if the names match */
+		if (fidmatch(cur_item->InFid1, queued_item->InFid1) &&
+			!strcmp(cur_item->Name1, queued_item->Name1) &&
+			(queued_item->RPCCall == RPC_Symlink ||
+			queued_item->RPCCall == RPC_CreateFile ||
+			queued_item->RPCCall == RPC_RemoveFile ||
+			queued_item->RPCCall == RPC_RemoveDir ||
+			queued_item->RPCCall == RPC_MakeDir))
+		    return 1;
+		/* Wait for major operations on parent directory */
+		if (fidmatch(cur_item->InFid1, queued_item->InFid2) &&
+			(queued_item->RPCCall == RPC_RemoveDir ||
+			queued_item->RPCCall == RPC_MakeDir))
+		    return 1;
+		break;
+	case RPC_RemoveDir:
+		/* Wait for operations specific to this vnode */
+		if (fidmatch(cur_item->InFid2, queued_item->InFid1) &&
+			(queued_item->RPCCall == RPC_StoreACL ||
+			queued_item->RPCCall == RPC_StoreData64 ||
+			queued_item->RPCCall == RPC_StoreStatus))
+		    return 1;
+		if (fidmatch(cur_item->InFid2, queued_item->InFid2) &&
+			(queued_item->RPCCall == RPC_Symlink ||
+			queued_item->RPCCall == RPC_CreateFile ||
+			queued_item->RPCCall == RPC_RemoveFile ||
+			queued_item->RPCCall == RPC_RemoveDir ||
+			queued_item->RPCCall == RPC_MakeDir))
+		    return 1;
+		/* Wait for operations specific to the directory */
+		if (fidmatch(cur_item->InFid2, queued_item->InFid1) &&
+			(queued_item->RPCCall == RPC_Symlink ||
+			queued_item->RPCCall == RPC_CreateFile ||
+			queued_item->RPCCall == RPC_RemoveFile ||
+			queued_item->RPCCall == RPC_RemoveDir ||
+			queued_item->RPCCall == RPC_MakeDir))
+		    return 1;
+		break;
+	case RPC_Rename:
+		/* Wait for operations specific to the deleted file (if any) */
+		if (fidmatch(cur_item->RenameFid, queued_item->InFid2) &&
+			(queued_item->RPCCall == RPC_Symlink ||
+			queued_item->RPCCall == RPC_CreateFile ||
+			queued_item->RPCCall == RPC_RemoveFile ||
+			queued_item->RPCCall == RPC_RemoveDir ||
+			queued_item->RPCCall == RPC_MakeDir))
+		    return 1;
+		if (fidmatch(cur_item->RenameFid, queued_item->InFid1) &&
+			(queued_item->RPCCall == RPC_StoreACL ||
+			queued_item->RPCCall == RPC_StoreData64 ||
+			queued_item->RPCCall == RPC_StoreStatus))
+		    return 1;
+		/* Wait for operations specific to the directories */
+		if ((fidmatch(cur_item->InFid1, queued_item->InFid1) ||
+			fidmatch(cur_item->InFid2, queued_item->InFid1)) &&
+			(queued_item->RPCCall == RPC_Symlink ||
+			queued_item->RPCCall == RPC_CreateFile ||
+			queued_item->RPCCall == RPC_RemoveFile ||
+			queued_item->RPCCall == RPC_RemoveDir ||
+			queued_item->RPCCall == RPC_MakeDir))
+		    return 1;
+		/* Wait for other renames, same fid or same directories */
+		if (queued_item->RPCCall == RPC_Rename &&
+			(fidmatch(cur_item->InFid1, queued_item->InFid1) ||
+			fidmatch(cur_item->InFid1, queued_item->InFid2) ||
+			fidmatch(cur_item->InFid2, queued_item->InFid1) ||
+			fidmatch(cur_item->InFid2, queued_item->InFid2) ||
+			fidmatch(cur_item->RenameFid, queued_item->RenameFid)))
+		    return 1;
+		break;
     }
     return 0;
 }
@@ -404,7 +479,7 @@ FS_PostProc(afs_int32 code)
 restart:
 	UPDATE_LIST_LOCK;
 	for (it = update_list_head; it != NULL && it != item; it = it->NextItem) {
-	    if (related_items(item, it)) {
+	    if (must_wait_for(item, it)) {
 		/* Get a ref so it doesn't go away after we unlock */
 		get_item(it);
 		UPDATE_LIST_UNLOCK;
