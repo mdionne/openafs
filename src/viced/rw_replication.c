@@ -60,6 +60,9 @@ struct AFSUpdateListItem *update_list_tail = NULL;
 /* Track error state of remote */
 int remote_error = 0;
 
+struct vldbentry global_remote;
+int remote_set = 0;
+
 /* Get all the RWSL servers for the Volume */
 /* TODO: we want to cache this info somewhere */
 int
@@ -72,31 +75,36 @@ GetSlaveServersForVolume(struct AFSFid *Fid,
     struct rx_securityClass *vlSec;
     register afs_int32 code;
 
-    ViceLog(0,("The VLDB is [%d]\n", queryDbserver));
-
-    if (!vlConn) {
-	vlSec = rxnull_NewClientSecurityObject();
-	vlConn =
-	    rx_NewConnection(queryDbserver, htons(7003), 52, vlSec, 0);
-	rx_SetConnDeadTime(vlConn, 10); /* don't wait long */
-    }
-    if (down && (FT_ApproxTime() < lastDownTime + 180)) {
-	ViceLog(0,("Some kind of Failure\n")); /**/
-    }
-
-    code = VL_GetEntryByID(vlConn, Fid->Volume, RWVOL, entry);
-    rx_DestroyConnection(vlConn);
-
-    if (code >= 0){
-	down = 0;               /* call worked */
-    }
-    if (code) {
-	if (code < 0) {
-	    lastDownTime = FT_ApproxTime();     /* last time we tried an RPC */
-	    down = 1;
+    if (remote_set) {
+	memcpy(entry, &global_remote, sizeof(struct vldbentry));
+	return 0;
+    } else {
+	if (!vlConn) {
+	    vlSec = rxnull_NewClientSecurityObject();
+	    vlConn = rx_NewConnection(queryDbserver, htons(7003), 52, vlSec, 0);
+	    rx_SetConnDeadTime(vlConn, 10); /* don't wait long */
 	}
-	ViceLog(0,("Another kind of Failure\n")); /**/
-	return 1;
+	if (down && (FT_ApproxTime() < lastDownTime + 180)) {
+	    ViceLog(0,("Some kind of Failure\n")); /**/
+	}
+
+	code = VL_GetEntryByID(vlConn, Fid->Volume, RWVOL, entry);
+	rx_DestroyConnection(vlConn);
+
+	if (code >= 0){
+	    down = 0;               /* call worked */
+	}
+	if (code) {
+	    if (code < 0) {
+		lastDownTime = FT_ApproxTime();     /* last time we tried an RPC */
+		down = 1;
+	    }
+	    ViceLog(0,("Another kind of Failure\n")); /**/
+	    return 1;
+	} else {
+	    memcpy(&global_remote, entry, sizeof(struct vldbentry));
+	    remote_set = 1;
+	}
     }
 
     return 0;
@@ -399,6 +407,15 @@ must_wait_for(struct AFSUpdateListItem *cur_item, struct AFSUpdateListItem *queu
 		if (fidmatch(cur_item->InFid1, queued_item->InFid2) &&
 			(queued_item->RPCCall == RPC_RemoveDir ||
 			queued_item->RPCCall == RPC_MakeDir))
+		    return 1;
+		/* Wait for rename that targets this file */
+		if (fidmatch(cur_item->InFid1, queued_item->InFid1) &&
+			queued_item->RPCCall == RPC_Rename &&
+			!strcmp(cur_item->Name1, queued_item->Name1))
+		    return 1;
+		if (fidmatch(cur_item->InFid1, queued_item->InFid2) &&
+			queued_item->RPCCall == RPC_Rename &&
+			!strcmp(cur_item->Name1, queued_item->Name2))
 		    return 1;
 		break;
 	case RPC_RemoveDir:
