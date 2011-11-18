@@ -53,8 +53,7 @@ extern afs_int32 SAFSS_SetVolumeStatus(struct rx_call * acall, afs_int32 avolid,
 extern afs_int32 SAFSS_Rename(struct rx_call *acall, struct AFSFid *OldDirFid,
 	char *OldName, struct AFSFid *NewDirFid, char *NewName,
 	struct AFSFetchStatus *OutOldDirStatus, struct AFSFetchStatus *OutNewDirStatus,
-	struct AFSVolSync *Sync, int remote_flag, afs_int32 clientViceId,
-	struct AFSFid *RenameFid);
+	struct AFSVolSync *Sync, int remote_flag, afs_int32 clientViceId);
 extern afs_int32 SAFSS_Symlink(struct rx_call *acall, struct AFSFid *DirFid,
 	char *Name, char *LinkContents, struct AFSStoreStatus *InStatus,
 	struct AFSFid *OutFid, struct AFSFetchStatus *OutFidStatus,

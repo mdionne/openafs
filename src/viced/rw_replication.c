@@ -205,7 +205,7 @@ SRXAFS_RRename(struct rx_call *acall, AFSFid *OldDirFid, char *OldName,
 
     ViceLog(0, ("Processing RRename call\n"));
     return SAFSS_Rename(acall, OldDirFid, OldName, NewDirFid, NewName,
-	    &OutOldDirStatus, &OutNewDirStatus, &Sync, REMOTE_RPC, clientViceId, NULL);
+	    &OutOldDirStatus, &OutNewDirStatus, &Sync, REMOTE_RPC, clientViceId);
 }
 
 afs_int32
