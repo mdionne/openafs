@@ -3620,7 +3620,7 @@ afs_int32
 SAFSS_Rename(struct rx_call *acall, struct AFSFid *OldDirFid, char *OldName,
 	struct AFSFid *NewDirFid, char *NewName, struct AFSFetchStatus *OutOldDirStatus,
 	struct AFSFetchStatus *OutNewDirStatus, struct AFSVolSync *Sync,
-	int remote_flag, afs_int32 clientViceId, struct AFSFid *RenameFid)
+	int remote_flag, afs_int32 clientViceId)
 {
     Vnode *oldvptr = 0;		/* vnode of the old Directory */
     Vnode *newvptr = 0;		/* vnode of the new Directory */
@@ -3650,6 +3650,10 @@ SAFSS_Rename(struct rx_call *acall, struct AFSFid *OldDirFid, char *OldName,
     struct in_addr logHostAddr;	/* host ip holder for inet_ntoa */
     struct rx_connection *tcon = rx_ConnectionOf(acall);
     afs_ino_str_t stmp;
+#if defined(AFS_PTHREAD_ENV)
+    struct AFSUpdateListItem *update;
+    struct AFSFid RenameFid = {0, 0, 0};
+#endif
 
     FidZero(&olddir);
     FidZero(&newdir);
@@ -4054,11 +4058,13 @@ SAFSS_Rename(struct rx_call *acall, struct AFSFid *OldDirFid, char *OldName,
     }
     if (newfileptr && doDelete) {
 	DeleteFileCallBacks(&newFileFid);	/* no other references */
+#if defined(AFS_PTHREAD_ENV)
 	if (remote_flag == LOCAL_RPC) {
-	    RenameFid->Volume = newFileFid.Volume;
-	    RenameFid->Vnode = newFileFid.Vnode;
-	    RenameFid->Unique = newFileFid.Unique;
+	    RenameFid.Volume = newFileFid.Volume;
+	    RenameFid.Vnode = newFileFid.Vnode;
+	    RenameFid.Unique = newFileFid.Unique;
 	}
+#endif
     }
 
     DFlush();
@@ -4100,6 +4106,16 @@ SAFSS_Rename(struct rx_call *acall, struct AFSFid *OldDirFid, char *OldName,
 	    BreakCallBack(remote_flag ? NULL : client->host, &newFileFid, 1);
     }
 
+#if defined(AFS_PTHREAD_ENV)
+    if (remote_flag == LOCAL_RPC) {
+	/* Stash information about the update, for RW replicas */
+	update = StashUpdate(RPC_Rename, OldDirFid, NewDirFid,
+		OldName, NewName, NULL, NULL,
+		0, 0, 0, clientViceId, NULL, 0, NULL, &RenameFid);
+	pthread_setspecific(fs_update, update);
+    }
+#endif
+
   Bad_Rename:
     if (newfileptr) {
 	VPutVnode(&fileCode, newfileptr);
@@ -4135,10 +4151,6 @@ SRXAFS_Rename(struct rx_call *acall, struct AFSFid *OldDirFid,
     struct host *thost;
     struct client *t_client = NULL;	/* tmp ptr to client data */
     struct fsstats fsstats;
-#if defined(AFS_PTHREAD_ENV)
-    struct AFSUpdateListItem *update;
-#endif
-    struct AFSFid RenameFid = {0, 0, 0};
 
     fsstats_StartOp(&fsstats, FS_STATS_RPCIDX_RENAME);
 
@@ -4146,17 +4158,7 @@ SRXAFS_Rename(struct rx_call *acall, struct AFSFid *OldDirFid,
 	goto Bad_Rename;
 
     code = SAFSS_Rename(acall, OldDirFid, OldName, NewDirFid, NewName,
-	    OutOldDirStatus, OutNewDirStatus, Sync, LOCAL_RPC, 0, &RenameFid);
-
-#if defined(AFS_PTHREAD_ENV)
-    if (code == 0) {
-	/* Stash information about the update, for RW replicas */
-	update = StashUpdate(RPC_Rename, OldDirFid, NewDirFid,
-		OldName, NewName, NULL, NULL,
-		0, 0, 0, t_client ? t_client->ViceId : 0, NULL, 0, NULL, &RenameFid);
-	pthread_setspecific(fs_update, update);
-    }
-#endif
+	    OutOldDirStatus, OutNewDirStatus, Sync, LOCAL_RPC, 0);
 
   Bad_Rename:
     code = CallPostamble(tcon, code, thost);
