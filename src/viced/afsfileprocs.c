@@ -3694,8 +3694,8 @@ SAFSS_Rename(struct rx_call *acall, struct AFSFid *OldDirFid, char *OldName,
     afs_ino_str_t stmp;
 #if defined(AFS_PTHREAD_ENV)
     struct AFSUpdateListItem *update;
-#endif
     struct AFSFid RenameFid = {0, 0, 0};
+#endif
 
     FidZero(&olddir);
     FidZero(&newdir);
@@ -4097,11 +4097,13 @@ SAFSS_Rename(struct rx_call *acall, struct AFSFid *OldDirFid, char *OldName,
     }
     if (newfileptr && doDelete) {
 	DeleteFileCallBacks(&newFileFid);	/* no other references */
+#if defined(AFS_PTHREAD_ENV)
 	if (remote_flag == LOCAL_RPC) {
 	    RenameFid.Volume = newFileFid.Volume;
 	    RenameFid.Vnode = newFileFid.Vnode;
 	    RenameFid.Unique = newFileFid.Unique;
 	}
+#endif
     }
 
     DFlush();

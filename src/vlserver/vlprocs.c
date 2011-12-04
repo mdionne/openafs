@@ -911,12 +911,29 @@ SVL_ReplaceEntryN(struct rx_call *rxcall, afs_uint32 volid, afs_int32 voltype,
 	hashnewname = 1;
     }
 
+{
+    int i;
+    VLog(1, ("Replace entry for vol: %u", tentry.volumeId[RWVOL]));
+    VLog(1, ("Sites for old entry: "));
+    for (i=0; i<NMAXNSERVERS && tentry.serverNumber[i] != BADSERVERID; i++) {
+        VLog(1, ("Site %d server: %d", i, tentry.serverNumber[i]));
+        VLog(1, ("Site %d part  : %d", i, tentry.serverPartition[i]));
+    }
+}
     /* after this, tentry is new entry, not old one.  vldbentry_to_vlentry
      * doesn't touch hash chains */
     if ((code = nvldbentry_to_vlentry(&ctx, newentry, &tentry))) {
 	goto abort;
     }
 
+{
+    int i;
+    VLog(1, ("Sites for new entry: "));
+    for (i=0; i<NMAXNSERVERS && tentry.serverNumber[i] != BADSERVERID; i++) {
+        VLog(1, ("Site %d server: %d", i, tentry.serverNumber[i]));
+        VLog(1, ("Site %d part  : %d", i, tentry.serverPartition[i]));
+    }
+}
     for (typeindex = ROVOL; typeindex <= BACKVOL; typeindex++) {
 	if (hashVol[typeindex] && tentry.volumeId[typeindex]) {
 	    if ((code = HashVolid(&ctx, typeindex, blockindex, &tentry))) {
