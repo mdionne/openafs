@@ -913,11 +913,12 @@ SVL_ReplaceEntryN(struct rx_call *rxcall, afs_uint32 volid, afs_int32 voltype,
 
 {
     int i;
-    VLog(1, ("Replace entry for vol: %u", tentry.volumeId[RWVOL]));
-    VLog(1, ("Sites for old entry: "));
+    VLog(1, ("Replace entry for vol: %u\n", tentry.volumeId[RWVOL]));
+    VLog(1, ("Sites for old entry: \n"));
     for (i=0; i<NMAXNSERVERS && tentry.serverNumber[i] != BADSERVERID; i++) {
-        VLog(1, ("Site %d server: %d", i, tentry.serverNumber[i]));
-        VLog(1, ("Site %d part  : %d", i, tentry.serverPartition[i]));
+        VLog(1, ("Site %d server: %d\n", i, tentry.serverNumber[i]));
+        VLog(1, ("Site %d part  : %d\n", i, tentry.serverPartition[i]));
+        VLog(1, ("Site %d flags : %d\n", i, tentry.serverFlags[i]));
     }
 }
     /* after this, tentry is new entry, not old one.  vldbentry_to_vlentry
@@ -928,10 +929,11 @@ SVL_ReplaceEntryN(struct rx_call *rxcall, afs_uint32 volid, afs_int32 voltype,
 
 {
     int i;
-    VLog(1, ("Sites for new entry: "));
+    VLog(1, ("Sites for new entry: \n"));
     for (i=0; i<NMAXNSERVERS && tentry.serverNumber[i] != BADSERVERID; i++) {
-        VLog(1, ("Site %d server: %d", i, tentry.serverNumber[i]));
-        VLog(1, ("Site %d part  : %d", i, tentry.serverPartition[i]));
+        VLog(1, ("Site %d server: %d\n", i, tentry.serverNumber[i]));
+        VLog(1, ("Site %d part  : %d\n", i, tentry.serverPartition[i]));
+        VLog(1, ("Site %d flags : %d\n", i, tentry.serverFlags[i]));
     }
 }
     for (typeindex = ROVOL; typeindex <= BACKVOL; typeindex++) {
