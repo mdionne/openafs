@@ -5088,7 +5088,11 @@ UV_AddSite(afs_uint32 server, afs_int32 part, afs_uint32 volid,
 	    entry.serverFlags[entry.nServers] = (ITSROVOL);
 	}
     } else {
-	entry.serverFlags[entry.nServers] = (ITSRWSLAVEVOL);
+	if (!valid) {
+	    entry.serverFlags[entry.nServers] = (ITSRWSLAVEVOL);
+	} else {
+	    entry.serverFlags[entry.nServers] = (ITSRWSLAVEVOL | RO_DONTUSE);
+	}
     }
     entry.nServers++;
 
