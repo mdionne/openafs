@@ -991,15 +991,10 @@ UV_DeleteVolume(afs_uint32 aserver, afs_int32 apart, afs_uint32 avolid)
 	vtype = ROVOL;
     }
 
-    else if (avolid == entry.volumeId[RWVOL]) {
-	/* It's a rw volume, delete the backup volume, modify the VLDB entry.
-	 * Check that the readwrite volumes is on the server/partition we
-	 * asked to delete.
-	 */
-	if (!(entry.flags & RW_EXISTS) || !Lp_Match(aserver, apart, &entry)) {
-	    notinvldb = 2;	/* Not found on this server and partition */
-	    ERROR_EXIT(0);
-	}
+    else if (avolid == entry.volumeId[RWVOL] &&
+		(entry.flags & RW_EXISTS) &&
+		Lp_Match(aserver, apart, &entry)) {
+	/* It's a rw volume, delete the backup volume, modify the VLDB entry.  */
 
 	/* Delete backup if it exists */
 	code =
@@ -1041,9 +1036,17 @@ UV_DeleteVolume(afs_uint32 aserver, afs_int32 apart, afs_uint32 avolid)
 
 	if (entry.flags & RO_EXISTS)
 	    fprintf(STDERR, "WARNING: ReadOnly copy(s) may still exist\n");
-    }
+    } else if (avolid == entry.volumeId[RWVOL] && Lp_RWSlaveMatch(aserver, apart, &entry)) {
+	/* This is a RW replica */
+	if (verbose)
+	    fprintf(STDOUT,
+		    "Marking the RW replica volume %lu deleted in the VLDB\n",
+		    (unsigned long)avolid);
 
-    else {
+	Lp_SetReplValue(&entry, aserver, apart, 0, 0);	/* delete the site */
+	entry.nServers--;
+	vtype = RWVOL;
+    } else {
 	notinvldb = 2;		/* Not found on this server and partition */
 	ERROR_EXIT(0);
     }
