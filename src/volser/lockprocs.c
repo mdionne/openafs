@@ -108,6 +108,16 @@ Lp_SetROValue(struct nvldbentry *entry, afs_uint32 oserver,
     SetAValue(entry, oserver, opart, nserver, npart, ITSROVOL);
 }
 
+/* Changes a replication site, RO or RW replica */
+void
+Lp_SetReplValue(struct nvldbentry *entry, afs_uint32 oserver,
+	afs_int32 opart, afs_uint32 nserver, afs_int32 npart)
+{
+    SetAValue(entry, oserver, opart, nserver, npart, ITSROVOL);
+    SetAValue(entry, oserver, opart, nserver, npart, ITSRWREPL);
+}
+
+
 /* Returns success if this server and partition matches the RW entry */
 int
 Lp_Match(afs_uint32 server, afs_int32 part,
@@ -124,6 +134,14 @@ Lp_ROMatch(afs_uint32 server, afs_int32 part, struct nvldbentry *entry)
 {
     return (FindIndex(entry, server, part, ITSROVOL) + 1);
 }
+
+/* Return the index of the RW replica entry (plus 1) if it exists, else return 0 */
+int
+Lp_RWReplMatch(afs_uint32 server, afs_int32 part, struct nvldbentry *entry)
+{
+    return (FindIndex(entry, server, part, ITSRWREPL) + 1);
+}
+
 
 /* Return the index of the RW entry if it exists, else return -1 */
 int

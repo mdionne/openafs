@@ -499,6 +499,8 @@ DisplayFormat(volintInfo *pntr, afs_uint32 server, afs_int32 part,
 		fprintf(STDOUT, "RO ");
 	    if (pntr->type == 2)
 		fprintf(STDOUT, "BK ");
+	    if (pntr->type == 3)
+		fprintf(STDOUT, "RP ");
 	    fprintf(STDOUT, "%10d K  ", pntr->size);
 	    if (pntr->inUse == 1) {
 		fprintf(STDOUT, "On-line");
@@ -570,6 +572,8 @@ DisplayFormat(volintInfo *pntr, afs_uint32 server, afs_int32 part,
 		fprintf(STDOUT, "RO ");
 	    if (pntr->type == 2)
 		fprintf(STDOUT, "BK ");
+	    if (pntr->type == 3)
+		fprintf(STDOUT, "RP ");
 	    fprintf(STDOUT, "%10d K ", pntr->size);
 	    if (pntr->inUse == 1) {
 		fprintf(STDOUT, "On-line");
@@ -653,6 +657,8 @@ XDisplayFormat(volintXInfo *a_xInfoP, afs_uint32 a_servID, afs_int32 a_partID,
 		fprintf(STDOUT, "RO ");
 	    if (a_xInfoP->type == 2)
 		fprintf(STDOUT, "BK ");
+	    if (a_xInfoP->type == 3)
+		fprintf(STDOUT, "RP ");
 	    fprintf(STDOUT, "%10d K used ", a_xInfoP->size);
 	    fprintf(STDOUT, "%d files ", a_xInfoP->filecount);
 	    if (a_xInfoP->inUse == 1) {
@@ -803,6 +809,8 @@ XDisplayFormat(volintXInfo *a_xInfoP, afs_uint32 a_servID, afs_int32 a_partID,
 		fprintf(STDOUT, "RO ");
 	    if (a_xInfoP->type == 2)
 		fprintf(STDOUT, "BK ");
+	    if (a_xInfoP->type == 3)
+		fprintf(STDOUT, "RP ");
 	    fprintf(STDOUT, "%10d K ", a_xInfoP->size);
 	    if (a_xInfoP->inUse == 1) {
 		fprintf(STDOUT, "On-line");
@@ -917,6 +925,9 @@ XDisplayFormat2(volintXInfo *a_xInfoP, afs_uint32 a_servID, afs_int32 a_partID,
 		case 2:
 			fprintf(STDOUT, "type\t\tBK\n");
 			break;
+		case 3:
+			fprintf(STDOUT, "type\t\tRP\n");
+			break;
 		default:
 			fprintf(STDOUT, "type\t\t?\n");
 			break;
@@ -1001,6 +1012,8 @@ XDisplayFormat2(volintXInfo *a_xInfoP, afs_uint32 a_servID, afs_int32 a_partID,
 		fprintf(STDOUT, "type\tRO\n");
 	    if (a_xInfoP->type == 2)
 		fprintf(STDOUT, "type\tBK\n");
+	    if (a_xInfoP->type == 3)
+		fprintf(STDOUT, "type\tRP\n");
 	    fprintf(STDOUT, "size\t%10dK\n", a_xInfoP->size);
 
 	    fprintf(STDOUT, "inUse\t%d\n",a_xInfoP->inUse);
@@ -1084,6 +1097,9 @@ DisplayFormat2(long server, long partition, volintInfo *pntr)
 	break;
     case 2:
 	fprintf(STDOUT, "type\t\tBK\n");
+	break;
+    case 3:
+	fprintf(STDOUT, "type\t\tRP\n");
 	break;
     default:
 	fprintf(STDOUT, "type\t\t?\n");
@@ -3303,7 +3319,7 @@ AddSite(struct cmd_syndesc *as, void *arock)
 {
     afs_uint32 avolid;
     afs_uint32 aserver;
-    afs_int32 apart, code, err, arovolid, valid = 0;
+    afs_int32 apart, code, err, arovolid, valid = 0, rw = 0;
     char apartName[10], avolname[VOLSER_MAXVOLNAME + 1];
 
     vsu_ExtractName(avolname, as->parms[2].items->data);;
@@ -3350,7 +3366,10 @@ AddSite(struct cmd_syndesc *as, void *arock)
     if (as->parms[4].items) {
 	valid = 1;
     }
-    code = UV_AddSite2(aserver, apart, avolid, arovolid, valid);
+    if (as->parms[5].items) {
+	rw = 1;
+    }
+    code = UV_AddSite(aserver, apart, avolid, arovolid, valid, rw);
     if (code) {
 	PrintDiagnostics("addsite", code);
 	exit(1);
@@ -6046,6 +6065,7 @@ main(int argc, char **argv)
     cmd_AddParm(ts, "-id", CMD_SINGLE, 0, "volume name or ID");
     cmd_AddParm(ts, "-roid", CMD_SINGLE, CMD_OPTIONAL, "volume name or ID for RO");
     cmd_AddParm(ts, "-valid", CMD_FLAG, CMD_OPTIONAL, "publish as an up-to-date site in VLDB");
+    cmd_AddParm(ts, "-readwrite", CMD_FLAG, CMD_OPTIONAL, "site will be a read/write replica");
     COMMONPARMS;
 
     ts = cmd_CreateSyntax("remsite", RemoveSite, NULL,

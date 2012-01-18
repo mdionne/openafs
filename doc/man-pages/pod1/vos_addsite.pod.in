@@ -1,6 +1,6 @@
 =head1 NAME
 
-vos_addsite - Adds a read-only site definition to a volume's VLDB entry
+vos_addsite - Adds a replication site definition to a volume's VLDB entry
 
 =head1 SYNOPSIS
 
@@ -11,15 +11,15 @@ B<vos addsite> S<<< B<-server> <I<machine name for new site>> >>>
     S<<< B<-partition> <I<partition name for new site>> >>>
     S<<< B<-id> <I<volume name or ID>> >>>
     S<<< [B<-roid> <I<readonly volume name or ID>>] >>>
-    [B<-valid>] S<<< [B<-cell> <I<cell name>>] >>>
+    [B<-valid>] [B<-readwrite>] S<<< [B<-cell> <I<cell name>>] >>>
     [B<-noauth>] [B<-localauth>]
     [B<-verbose>] [B<-encrypt>] [B<-noresolve>] [B<-help>]
 
 B<vos ad> S<<< B<-s> <I<machine name for new site>> >>>
     S<<< B<-p> <I<partition name for new site>> >>>
     S<<< B<-i> <I<volume name or ID>> >>>
-    S<<< [B<-r> <I<readonly volume name or ID>>] >>>
-    [B<-va>] [B<-c> <I<cell name>>] >>> [B<-noa>] [B<-l>]
+    S<<< [B<-ro> <I<readonly volume name or ID>>] >>>
+    [B<-va>] [B<-readwrite>] [B<-c> <I<cell name>>] >>> [B<-noa>] [B<-l>]
     [B<-ve>] [B<-e>] [B<-nor>] [B<-h>]
 
 =for html
@@ -27,13 +27,15 @@ B<vos ad> S<<< B<-s> <I<machine name for new site>> >>>
 
 =head1 DESCRIPTION
 
-The B<vos addsite> command defines a new read-only site (partition on a
+The B<vos addsite> command defines a new replication site (partition on a
 file server machine, specified by the B<-server> and B<-partition>
 arguments) in the Volume Location Database (VLDB) entry of the read/write
-volume named by the B<-id> argument. When the B<vos release> command is
-next issued against the read/write volume, a read-only copy of it is
-distributed to all of the read-only sites, including the newly defined
-one.
+volume named by the B<-id> argument. The new site is a read-only copy
+unless the B<-readwrite> option is specified; in that case the new site is a
+read/write replica.
+When the B<vos release> command is next issued against the read/write volume,
+a copy of it is distributed to all of the replication sites, including the
+newly defined one.
 
 =head1 CAUTIONS
 
@@ -41,7 +43,7 @@ A volume's VLDB entry accommodates a maximum number of 16 site
 definitions. The site housing the read/write and backup versions of the
 volume counts as one site, the backup snapshot counts as one site, and one
 site should be reserved for a transient clone for volume moves and similar
-operations. Each read-only site counts as an additional site (even the
+operations. Each replication site counts as an additional site (even the
 read-only site defined on the same file server machine and partition as
 the read/write site counts as a separate site). The limit in the VLDB
 entry effectively determines the maximum number of copies of the volume
@@ -56,15 +58,15 @@ error.
 
 =item B<-server> <I<machine name>>
 
-Identifies the file server machine where the read-only volume is to
-reside. Provide the machine's IP address or its host name (either fully
+Identifies the file server machine where the replica (read-only or read/write)
+volume is to reside. Provide the machine's IP address or its host name (either fully
 qualified or using an unambiguous abbreviation). For details, see
 L<vos(1)>.
 
 =item B<-partition> <I<partition name>>
 
-Identifies the partition where the read-only volume is to reside, on the
-file server machine named by the B<-server> argument. Provide the
+Identifies the partition where the replica (read-only or read/write) volume
+is to reside, on the file server machine named by the B<-server> argument. Provide the
 partition's complete name with preceding slash (for example, C</vicepa>)
 or use one of the three acceptable abbreviated forms. For details, see
 L<vos(1)>.
@@ -99,6 +101,14 @@ an existing read-only volume is dumped and restored with the B<-readonly>
 flag at the new site. This option is available in OpenAFS clients 1.4.7 or
 later and 1.5.31 or later. This option can be used with OpenAFS server
 versions later than 1.4.1 or 1.5.0.
+
+=item B<-readwrite>
+
+Specifies that the new site will be a read/write replica.  When the B<vos release>
+command is next issued, the current contents of the read/write volume is
+distributed to all read/write replicas, and continuous asynchronous replication
+is activated.  Multiple such replicas can exist for a volume, subject to
+the number of sites limitations.
 
 =include fragments/vos-common.pod
 
