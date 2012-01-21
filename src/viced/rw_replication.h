@@ -63,4 +63,16 @@ extern pthread_mutex_t update_list_mutex;
 #define RPC_SetVolumeStatus 150
 #define RPC_StoreData64 65538
 
+/*
+ * Function prototypes
+ *
+ * Defined here instead of viced_prototypes.h because they can't be parsed by
+ * some of its users.
+ */
+extern struct updateItem *stashUpdate(afs_int32 rpcId, struct AFSFid *fid1,
+	struct AFSFid *fid2, char *name1, char *name2, struct AFSStoreStatus *status,
+	struct AFSOpaque *acl, afs_uint64 pos, afs_uint64 length, afs_uint64 fileLen,
+        afs_int32 clientViceId, char *buf, afs_int32 volid,
+        AFSStoreVolumeStatus *volStatus, struct AFSFid *delFid);
+
 #endif /* _AFS_VICED_RW_REPLICATION_H */
