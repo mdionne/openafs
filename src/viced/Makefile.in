@@ -24,7 +24,7 @@ VOL=$(srcdir)/../vol
 FSINT=$(srcdir)/../fsint
 
 VICEDOBJS=viced.o afsfileprocs.o host.o physio.o callback.o serialize_state.o \
-	  fsstats.o
+	  fsstats.o rw_replication.o
 
 VLSERVEROBJS=vldbint.cs.o vldbint.xdr.o
 

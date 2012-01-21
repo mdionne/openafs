@@ -98,6 +98,8 @@
 #include "viced.h"
 #include "host.h"
 #include "callback.h"
+#include "rw_replication.h"
+
 #include <afs/unified_afs.h>
 #include <afs/audit.h>
 #include <afs/afsutil.h>
@@ -110,10 +112,6 @@ extern void FidZero(DirHandle * file);
 pthread_mutex_t fileproc_glock_mutex;
 
 /* Useful local defines used by this module */
-
-#define	DONTCHECK	0
-#define	MustNOTBeDIR	1
-#define	MustBeDIR	2
 
 #define	TVS_SDATA	1
 #define	TVS_SSTATUS	2

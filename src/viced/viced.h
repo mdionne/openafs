@@ -201,6 +201,9 @@ extern pthread_mutex_t fsync_glock_mutex;
 #define FSYNC_LOCK MUTEX_ENTER(&fsync_glock_mutex);
 #define FSYNC_UNLOCK MUTEX_EXIT(&fsync_glock_mutex);
 
+#define DONTCHECK       0
+#define MustNOTBeDIR    1
+#define MustBeDIR       2
 
 #ifdef AFS_DEMAND_ATTACH_FS
 /*
