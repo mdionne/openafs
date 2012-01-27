@@ -175,7 +175,11 @@ SREPL_StoreData64(struct rx_call *acall, struct AFSFid *Fid,
 afs_int32
 SREPL_RemoveDir(struct rx_call *acall, struct AFSFid *DirFid, char *Name, afs_int32 clientViceId)
 {
-    return 0;
+    struct AFSFetchStatus OutDirStatus;
+    struct AFSVolSync Sync;
+    struct AFSFid RDirFid;
+
+    return SAFSS_RemoveDir(acall, DirFid, Name, &OutDirStatus, &Sync, 1, clientViceId, &RDirFid);
 }
 
 afs_int32

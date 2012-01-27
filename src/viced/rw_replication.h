@@ -87,5 +87,8 @@ extern afs_int32 SAFSS_SetVolumeStatus(struct rx_call *acall, afs_int32 avolid,
 extern afs_int32 SAFSS_RemoveFile(struct rx_call *acall, struct AFSFid *DirFid,
 	char *Name, struct AFSFetchStatus *OutDirStatus, struct AFSVolSync *Sync,
 	int remote, afs_int32 clientViceId);
+extern afs_int32 SAFSS_RemoveDir(struct rx_call *acall, struct AFSFid *DirFid,
+	char *Name, struct AFSFetchStatus *OutDirStatus, struct AFSVolSync *Sync,
+	int remote, afs_int32 clientViceId, struct AFSFid *RDirFid);
 
 #endif /* _AFS_VICED_RW_REPLICATION_H */

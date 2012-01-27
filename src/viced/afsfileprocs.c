@@ -4509,9 +4509,10 @@ SRXAFS_MakeDir(struct rx_call * acall, struct AFSFid * DirFid, char *Name,
  * This routine is called exclusively by SRXAFS_RemoveDir(), and should be
  * merged into it when possible.
  */
-static afs_int32
+afs_int32
 SAFSS_RemoveDir(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
-		struct AFSFetchStatus *OutDirStatus, struct AFSVolSync *Sync)
+	struct AFSFetchStatus *OutDirStatus, struct AFSVolSync *Sync,
+	int remote, afs_int32 clientViceId, struct AFSFid *RDirFid)
 {
     Vnode *parentptr = 0;	/* vnode of input Directory */
     Vnode *parentwhentargetnotdir = 0;	/* parent for use in SetAccessList */
@@ -4528,13 +4529,18 @@ SAFSS_RemoveDir(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
 
     FidZero(&dir);
 
-    /* Get ptr to client data for user Id for logging */
-    t_client = (struct client *)rx_GetSpecific(tcon, rxcon_client_key);
-    logHostAddr.s_addr = rxr_HostOf(tcon);
-    ViceLog(1,
-	    ("SAFS_RemoveDir	%s,  Did = %u.%u.%u, Host %s:%d, Id %d\n", Name,
-	     DirFid->Volume, DirFid->Vnode, DirFid->Unique,
-	     inet_ntoa(logHostAddr), ntohs(rxr_PortOf(tcon)), t_client->ViceId));
+    if (!remote) {
+	/* Get ptr to client data for user Id for logging */
+	t_client = (struct client *)rx_GetSpecific(tcon, rxcon_client_key);
+	logHostAddr.s_addr = rxr_HostOf(tcon);
+	    ViceLog(1, ("SAFS_RemoveDir	%s,  Did = %u.%u.%u, Host %s:%d, Id %d\n",
+		    Name, DirFid->Volume, DirFid->Vnode, DirFid->Unique,
+		    inet_ntoa(logHostAddr), ntohs(rxr_PortOf(tcon)), t_client->ViceId));
+    } else {
+	ViceLog(1, ("SAFSS_RemoveDir (remote)      %s,  Did = %u.%u.%u, Id %d\n",
+		Name, DirFid->Volume, DirFid->Vnode, DirFid->Unique, clientViceId));
+    }
+
     FS_LOCK;
     AFSCallStats.RemoveDir++, AFSCallStats.TotalCalls++;
     FS_UNLOCK;
@@ -4543,9 +4549,9 @@ SAFSS_RemoveDir(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
      * rights to it
      */
     if ((errorCode =
-	 GetVolumePackage(acall, DirFid, &volptr, &parentptr, MustBeDIR,
+	 GetVolumePackageWithCall(acall, NULL, DirFid, &volptr, &parentptr, MustBeDIR,
 			  &parentwhentargetnotdir, &client, WRITE_LOCK,
-			  &rights, &anyrights))) {
+			  &rights, &anyrights, remote))) {
 	goto Bad_RemoveDir;
     }
 
@@ -4553,7 +4559,7 @@ SAFSS_RemoveDir(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
     SetVolumeSync(Sync, volptr);
 
     /* Does the caller has delete (&write) access to the parent dir? */
-    if ((errorCode = CheckWriteMode(parentptr, rights, PRSFS_DELETE))) {
+    if (!remote && (errorCode = CheckWriteMode(parentptr, rights, PRSFS_DELETE))) {
 	goto Bad_RemoveDir;
     }
 
@@ -4565,12 +4571,19 @@ SAFSS_RemoveDir(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
     }
 
     /* Update the status for the parent dir; link count is also adjusted */
+    if (remote) {
+	client = malloc(sizeof(struct client));
+	client->ViceId = clientViceId;
+	client->InSameNetwork = 1;
+    }
+
     Update_ParentVnodeStatus(parentptr, volptr, &dir, client->ViceId,
 			     parentptr->disk.linkCount - 1,
 			     client->InSameNetwork);
 
     /* Return to the caller the updated parent dir status */
-    GetStatus(parentptr, OutDirStatus, rights, anyrights, NULL);
+    if (!remote)
+	GetStatus(parentptr, OutDirStatus, rights, anyrights, NULL);
 
     /*
      * Note: it is not necessary to break the callback on fileFid, since
@@ -4586,12 +4599,12 @@ SAFSS_RemoveDir(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
     rx_KeepAliveOn(acall);
 
     /* break call back on DirFid and fileFid */
-    BreakCallBack(client->host, DirFid, 0);
+    BreakCallBack(remote ? NULL : client->host, DirFid, 0);
 
-  Bad_RemoveDir:
+Bad_RemoveDir:
     /* Write the all modified vnodes (parent, new files) and volume back */
-    (void)PutVolumePackage(acall, parentwhentargetnotdir, targetptr, parentptr,
-			   volptr, &client);
+    PutVolumePackage(acall, parentwhentargetnotdir, targetptr, parentptr,
+	    volptr, &client);
     FidZap(&dir);
     ViceLog(2, ("SAFS_RemoveDir	returns	%d\n", errorCode));
     return errorCode;
@@ -4609,13 +4622,14 @@ SRXAFS_RemoveDir(struct rx_call * acall, struct AFSFid * DirFid, char *Name,
     struct host *thost;
     struct client *t_client = NULL;	/* tmp ptr to client data */
     struct fsstats fsstats;
+    struct AFSFid RDirFid;
 
     fsstats_StartOp(&fsstats, FS_STATS_RPCIDX_REMOVEDIR);
 
     if ((code = CallPreamble(acall, ACTIVECALL, &tcon, &thost)))
 	goto Bad_RemoveDir;
 
-    code = SAFSS_RemoveDir(acall, DirFid, Name, OutDirStatus, Sync);
+    code = SAFSS_RemoveDir(acall, DirFid, Name, OutDirStatus, Sync, 0, 0, &RDirFid);
 
   Bad_RemoveDir:
     code = CallPostamble(tcon, code, thost);
