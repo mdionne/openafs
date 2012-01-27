@@ -5914,9 +5914,9 @@ SRXAFS_GetVolumeStatus(struct rx_call * acall, afs_int32 avolid,
 
 
 afs_int32
-SRXAFS_SetVolumeStatus(struct rx_call * acall, afs_int32 avolid,
-		       AFSStoreVolumeStatus * StoreVolStatus, char *Name,
-		       char *OfflineMsg, char *Motd)
+SAFSS_SetVolumeStatus(struct rx_call *acall, afs_int32 avolid,
+	AFSStoreVolumeStatus *StoreVolStatus, char *Name,
+	char *OfflineMsg, char *Motd, int remote, afs_int32 clientViceId)
 {
     Vnode *targetptr = 0;	/* vnode of the new file */
     Vnode *parentwhentargetnotdir = 0;	/* vnode of parent */
@@ -5925,16 +5925,8 @@ SRXAFS_SetVolumeStatus(struct rx_call * acall, afs_int32 avolid,
     struct client *client = 0;	/* pointer to client entry */
     afs_int32 rights, anyrights;	/* rights for this and any user */
     AFSFid dummyFid;
-    struct rx_connection *tcon = rx_ConnectionOf(acall);
-    struct host *thost;
-    struct client *t_client = NULL;	/* tmp ptr to client data */
-    struct fsstats fsstats;
-
-    fsstats_StartOp(&fsstats, FS_STATS_RPCIDX_SETVOLUMESTATUS);
 
     ViceLog(1, ("SAFS_SetVolumeStatus for volume %u\n", avolid));
-    if ((errorCode = CallPreamble(acall, ACTIVECALL, &tcon, &thost)))
-	goto Bad_SetVolumeStatus;
 
     FS_LOCK;
     AFSCallStats.SetVolumeStatus++, AFSCallStats.TotalCalls++;
@@ -5947,16 +5939,16 @@ SRXAFS_SetVolumeStatus(struct rx_call * acall, afs_int32 avolid,
 	(afs_int32) ROOTVNODE, dummyFid.Unique = 1;
 
     if ((errorCode =
-	 GetVolumePackage(acall, &dummyFid, &volptr, &targetptr, MustBeDIR,
+	 GetVolumePackageWithCall(acall, NULL, &dummyFid, &volptr, &targetptr, MustBeDIR,
 			  &parentwhentargetnotdir, &client, READ_LOCK,
-			  &rights, &anyrights)))
+			  &rights, &anyrights, remote)))
 	goto Bad_SetVolumeStatus;
 
     if (readonlyServer) {
 	errorCode = VREADONLY;
 	goto Bad_SetVolumeStatus;
     }
-    if (VanillaUser(client)) {
+    if (!remote && VanillaUser(client)) {
 	errorCode = EACCES;
 	goto Bad_SetVolumeStatus;
     }
@@ -5968,17 +5960,41 @@ SRXAFS_SetVolumeStatus(struct rx_call * acall, afs_int32 avolid,
     PutVolumePackage(acall, parentwhentargetnotdir, targetptr, (Vnode *) 0,
 		     volptr, &client);
     ViceLog(2, ("SAFS_SetVolumeStatus returns %d\n", errorCode));
-    errorCode = CallPostamble(tcon, errorCode, thost);
+
+    return (errorCode);
+}
+
+afs_int32
+SRXAFS_SetVolumeStatus(struct rx_call * acall, afs_int32 avolid,
+	AFSStoreVolumeStatus * StoreVolStatus, char *Name,
+	char *OfflineMsg, char *Motd)
+{
+    afs_int32 code;
+    struct fsstats fsstats;
+    struct host *thost;
+    struct client *t_client = NULL;     /* tmp ptr to client data */
+    struct rx_connection *tcon = rx_ConnectionOf(acall);
+
+    fsstats_StartOp(&fsstats, FS_STATS_RPCIDX_SETVOLUMESTATUS);
+
+    if ((code = CallPreamble(acall, ACTIVECALL, &tcon, &thost)))
+	goto Bad_SetVolumeStatus;
+
+    code = SAFSS_SetVolumeStatus(acall, avolid, StoreVolStatus, Name,
+	    OfflineMsg, Motd, 0, 0);
 
     t_client = (struct client *)rx_GetSpecific(tcon, rxcon_client_key);
 
-    fsstats_FinishOp(&fsstats, errorCode);
+Bad_SetVolumeStatus:
+    code = CallPostamble(tcon, code, thost);
 
-    osi_auditU(acall, SetVolumeStatusEvent, errorCode,
-               AUD_ID, t_client ? t_client->ViceId : 0,
-               AUD_LONG, avolid, AUD_STR, Name, AUD_END);
-    return (errorCode);
-}				/*SRXAFS_SetVolumeStatus */
+    fsstats_FinishOp(&fsstats, code);
+
+    osi_auditU(acall, SetVolumeStatusEvent, code,
+	    AUD_ID, t_client ? t_client->ViceId : 0,
+	    AUD_LONG, avolid, AUD_STR, Name, AUD_END);
+    return (code);
+}                               /*SRXAFS_SetVolumeStatus */
 
 #define	DEFAULTVOLUME	"root.afs"
 

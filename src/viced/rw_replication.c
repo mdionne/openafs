@@ -202,7 +202,8 @@ SREPL_SetVolumeStatus(struct rx_call *acall, afs_int32 avolid,
 	AFSStoreVolumeStatus *StoreVolStatus, char *Name, char *OfflineMsg,
 	afs_int32 clientViceId)
 {
-    return 0;
+    return SAFSS_SetVolumeStatus(acall, avolid, StoreVolStatus, Name,
+	    OfflineMsg, NULL, 1, clientViceId);
 }
 
 afs_int32
