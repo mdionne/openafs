@@ -8,6 +8,7 @@
 #include <afs/vlserver.h>
 #include <afs/ihandle.h>
 #include "viced.h"
+#include "viced_prototypes.h"
 #include <afs/vnode.h>
 #include <afs/volume.h>
 #include "rw_replication.h"
@@ -181,10 +182,12 @@ SREPL_MakeDir(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
 }
 
 afs_int32
-SREPL_StoreACL(struct rx_call *acall, struct AFSFid *Fid,
+SREPL_StoreACL(struct rx_call *call, struct AFSFid *Fid,
 	struct AFSOpaque *AccessList)
 {
-    return 0;
+    struct AFSVolSync Sync;
+
+    return SAFSS_StoreACL(call, Fid, AccessList, NULL, &Sync, 1);
 }
 
 afs_int32

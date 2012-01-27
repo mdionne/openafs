@@ -77,4 +77,9 @@ extern struct updateItem *stashUpdate(afs_int32 rpcId, struct AFSFid *fid1,
 extern afs_int32 repl_init(afs_uint32 bindhost, struct rx_securityClass **securityClasses,
 	afs_int32 numClasses);
 
+/* Functions from afsfileprocs.c */
+extern afs_int32 SAFSS_StoreACL(struct rx_call *acall, struct AFSFid *Fid,
+	struct AFSOpaque *AccessList, struct AFSFetchStatus *OutStatus,
+	struct AFSVolSync *Sync, int remote);
+
 #endif /* _AFS_VICED_RW_REPLICATION_H */
