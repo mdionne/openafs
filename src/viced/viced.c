@@ -74,6 +74,7 @@
 #include "viced.h"
 #include "host.h"
 #include <afs/softsig.h>
+#include "rw_replication.h"
 #if defined(AFS_SGI_ENV)
 # include "sys/schedctl.h"
 # include "sys/lock.h"
@@ -1994,6 +1995,13 @@ main(int argc, char *argv[])
     rx_SetMaxProcs(tservice, lwps);
     rx_SetCheckReach(tservice, 1);
     rx_SetServerIdleDeadErr(tservice, VNOSERVICE);
+
+    /* Start replication service */
+    code = repl_init(rx_bindhost, securityClasses, numClasses);
+    if (code) {
+	ViceLog(0, ("Failed to initialize replication service.\n"));
+	exit(-1);
+    }
 
     tservice =
 	rx_NewService(0, RX_STATS_SERVICE_ID, "rpcstats", securityClasses,

@@ -1,0 +1,94 @@
+/*
+ * afsrepl.xg:
+ *	Definition of the AFS File Server to File server replication
+ *	RPC interface.
+ */
+
+#include "common.xg"			/*Common structures & definitions*/
+#include "common_fs.xg"
+
+package REPL_
+prefix S
+statindex 22
+
+%#define REPL_SERVICE_ID 2
+
+CreateFile(
+  IN  AFSFid *DirFid,
+  string Name<AFSNAMEMAX>,
+  AFSStoreStatus *InStatus,
+  AFSFid *InFid,
+  afs_int32 clientViceId
+) = 1;
+
+RemoveFile(
+  IN  AFSFid *DirFid,
+  string Name<AFSNAMEMAX>,
+  afs_int32 clientViceId
+) = 2;
+
+StoreData64(
+  IN  AFSFid *Fid,
+  AFSStoreStatus *InStatus,
+  afs_uint64 Pos,
+  afs_uint64 Length,
+  afs_uint64 FileLength,
+  afs_int32 clientViceId
+) split = 3;
+
+Rename(
+  IN  AFSFid *OldDirFid,
+  string OldName<AFSNAMEMAX>,
+  AFSFid *NewDirFid,
+  string NewName<AFSNAMEMAX>,
+  afs_int32 clientViceId
+) = 4;
+
+RemoveDir(
+  IN  AFSFid *DirFid,
+  string Name<AFSNAMEMAX>,
+  afs_int32 clientViceId
+) = 5;
+
+MakeDir(
+  IN  AFSFid *DirFid,
+  string Name<AFSNAMEMAX>,
+  AFSStoreStatus *InStatus,
+  AFSFid *InFid,
+  afs_int32 clientViceId
+) = 6;
+
+Symlink(
+  IN  AFSFid *DirFid,
+  string Name<AFSNAMEMAX>,
+  string LinkContents<AFSPATHMAX>,
+  AFSStoreStatus *InStatus,
+  AFSFid *InFid,
+  afs_int32 clientViceId
+) = 7;
+
+StoreACL(
+  IN  AFSFid *Fid,
+  AFSOpaque *AccessList
+) = 8;
+
+StoreStatus(
+  IN  AFSFid *Fid,
+  AFSStoreStatus *InStatus,
+  afs_int32 clientViceId
+) = 9;
+
+SetVolumeStatus(
+  IN  afs_int32 Volumeid,
+  AFSStoreVolumeStatus *Volumestatus,
+  string Name<AFSNAMEMAX>,
+  string OfflineMsg<AFSOPAQUEMAX>,
+  afs_int32 clientViceId
+) = 10;
+
+Link(
+  IN  AFSFid *DirFid,
+  string Name<AFSNAMEMAX>,
+  AFSFid *ExistingFid,
+  afs_int32 clientViceId
+) = 11;

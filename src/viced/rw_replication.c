@@ -4,7 +4,7 @@
 
 #include <roken.h>
 
-#include <afs/afsint.h>
+#include <afs/afsrepl.h>
 #include <afs/vlserver.h>
 #include <afs/ihandle.h>
 #include "viced.h"
@@ -116,4 +116,103 @@ stashUpdate(afs_int32 rpcId, struct AFSFid *fid1, struct AFSFid *fid2, char *nam
 #endif
 
     return item;
+}
+
+afs_int32
+repl_init(afs_uint32 rx_bindhost, struct rx_securityClass **securityClasses,
+	afs_int32 numClasses)
+{
+    struct rx_service *service;
+
+    service = rx_NewServiceHost(rx_bindhost, 0, REPL_SERVICE_ID,
+                                 "REPL", securityClasses, numClasses,
+                                 REPL_ExecuteRequest);
+    if (!service) {
+        ViceLog(0,
+                ("Failed to initialize REPL, probably two servers running.\n"));
+        return -1;
+    }
+    rx_SetMinProcs(service, 2);
+    rx_SetMaxProcs(service, 10);
+    rx_SetCheckReach(service, 1);
+    return 0;
+}
+
+afs_int32
+SREPL_CreateFile(struct rx_call *acall, IN  AFSFid *DirFid, char *Name,
+		AFSStoreStatus *InStatus, AFSFid *InFid, afs_int32 clientViceId)
+{
+    return 0;
+}
+
+afs_int32
+SREPL_RemoveFile(struct rx_call *acall, IN  AFSFid *DirFid, char *Name,
+	afs_int32 clientViceId)
+{
+    return 0;
+}
+
+afs_int32
+SREPL_Rename(struct rx_call *acall, AFSFid *OldDirFid, char *OldName,
+	AFSFid *NewDirFid, char *NewName, afs_int32 clientViceId)
+{
+    return 0;
+}
+
+afs_int32
+SREPL_StoreData64(struct rx_call *acall, struct AFSFid *Fid,
+	struct AFSStoreStatus *InStatus, afs_uint64 Pos, afs_uint64 Length,
+	afs_uint64 FileLength, afs_int32 clientViceId)
+{
+    return 0;
+}
+
+afs_int32
+SREPL_RemoveDir(struct rx_call *acall, struct AFSFid *DirFid, char *Name, afs_int32 clientViceId)
+{
+    return 0;
+}
+
+afs_int32
+SREPL_MakeDir(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
+	struct AFSStoreStatus *InStatus, struct AFSFid *InFid, afs_int32 clientViceId)
+{
+    return 0;
+}
+
+afs_int32
+SREPL_StoreACL(struct rx_call *acall, struct AFSFid *Fid,
+	struct AFSOpaque *AccessList)
+{
+    return 0;
+}
+
+afs_int32
+SREPL_StoreStatus(struct rx_call *acall, struct AFSFid *Fid, struct AFSStoreStatus *InStatus,
+	afs_int32 clientViceId)
+{
+    return 0;
+}
+
+afs_int32
+SREPL_SetVolumeStatus(struct rx_call *acall, afs_int32 avolid,
+	AFSStoreVolumeStatus *StoreVolStatus, char *Name, char *OfflineMsg,
+	afs_int32 clientViceId)
+{
+    return 0;
+}
+
+afs_int32
+SREPL_Symlink(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
+	char *Link, struct AFSStoreStatus *InStatus, struct AFSFid *InFid,
+	afs_int32 clientViceId)
+{
+    return 0;
+}
+
+afs_int32
+SREPL_Link(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
+	struct AFSFid *TargetFid, afs_int32 clientViceId)
+{
+    return 0;
 }

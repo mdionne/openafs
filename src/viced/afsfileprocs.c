@@ -804,7 +804,7 @@ static afs_int32
 GetVolumePackageWithCall(struct rx_call *acall, struct VCallByVol *cbv,
 	AFSFid *Fid, Volume **volptr, Vnode **targetptr, int chkforDir,
 	Vnode **parent, struct client **client, int locktype,
-	afs_int32 *rights, afs_int32 *anyrights, remote)
+	afs_int32 *rights, afs_int32 *anyrights, int remote)
 {
     struct acl_accessList *aCL;	/* Internal access List */
     int aCLSize;		/* size of the access list */

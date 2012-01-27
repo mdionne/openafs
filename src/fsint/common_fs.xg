@@ -1,0 +1,20 @@
+/*
+ * common_fs.xg:
+ *	Common definitions for the fileserver interface (afsint.xg) and
+ *	the RW replication interface (afsrepl.xg)
+ */
+
+struct AFSStoreStatus {
+    afs_uint32 Mask;
+    afs_uint32 ClientModTime;
+    afs_uint32 Owner;
+    afs_uint32 Group;
+    afs_uint32 UnixModeBits;
+    afs_uint32 SegSize;
+};
+
+struct AFSStoreVolumeStatus {
+    afs_int32 Mask;
+    afs_int32 MinQuota;
+    afs_int32 MaxQuota;
+};

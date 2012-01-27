@@ -13,6 +13,7 @@
  */
 
 #include "common.xg"			/*Common structures & definitions*/
+#include "common_fs.xg"
 
 %#define VICECONNBAD	1234
 %#define VICETOKENDEAD	1235
@@ -102,15 +103,6 @@ struct AFSFetchStatus {
     afs_uint32 lockCount;
     afs_uint32 Length_hi;
     afs_uint32 errorCode;
-};
-
-struct AFSStoreStatus {
-    afs_uint32 Mask;
-    afs_uint32 ClientModTime;
-    afs_uint32 Owner;
-    afs_uint32 Group;
-    afs_uint32 UnixModeBits;
-    afs_uint32 SegSize;
 };
 
 %#define	AFS_SETMODTIME	1
@@ -218,12 +210,6 @@ struct AFSFetchVolumeStatus {
     afs_int32 BlocksInUse;
     afs_int32 PartBlocksAvail;
     afs_int32 PartMaxBlocks;
-};
-
-struct AFSStoreVolumeStatus {
-    afs_int32 Mask;
-    afs_int32 MinQuota;
-    afs_int32 MaxQuota;
 };
 
 const AFS_SETMINQUOTA = 1;

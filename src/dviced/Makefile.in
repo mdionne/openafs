@@ -44,10 +44,12 @@ VOLOBJS= vnode.o volume.o vutil.o partition.o fssync-server.o \
 
 FSINTOBJS= afsaux.o afscbint.cs.o afsint.ss.o afsint.xdr.o
 
+REPLOBJS = afsrepl.ss.o afsrepl.cs.o
+
 RXOBJS = rx_pthread.o 
 
 objects= ${VICEDOBJS} ${VLSERVEROBJS} ${LWPOBJS} ${LIBACLOBJS} \
-	 ${UTILOBJS} ${DIROBJS} ${VOLOBJS} ${FSINTOBJS} ${RXOBJS}
+	 ${UTILOBJS} ${DIROBJS} ${VOLOBJS} ${FSINTOBJS} ${RXOBJS} ${REPLOBJS}
 
 SDBGOBJS = state_analyzer.o uuid.o dirpath.o fileutil.o ${TOP_LIBDIR}/util.a \
 	   ${TOP_LIBDIR}/libopr.a
@@ -209,6 +211,12 @@ afsint.cs.o: ../fsint/afsint.cs.c
 
 afsint.ss.o: ../fsint/afsint.ss.c
 	$(AFS_CCRULE) ../fsint/afsint.ss.c
+
+afsrepl.cs.o: ../fsint/afsrepl.cs.c
+	$(AFS_CCRULE) ../fsint/afsrepl.cs.c
+
+afsrepl.ss.o: ../fsint/afsrepl.ss.c
+	$(AFS_CCRULE) ../fsint/afsrepl.ss.c
 
 afsint.xdr.o: ../fsint/afsint.xdr.c
 	$(AFS_CCRULE) ../fsint/afsint.xdr.c
