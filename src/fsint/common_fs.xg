@@ -18,3 +18,36 @@ struct AFSStoreVolumeStatus {
     afs_int32 MinQuota;
     afs_int32 MaxQuota;
 };
+
+struct AFSVolSync {
+    afs_uint32 spare1;
+    afs_uint32 spare2;
+    afs_uint32 spare3;
+    afs_uint32 spare4;
+    afs_uint32 spare5;
+    afs_uint32 spare6;
+};
+
+struct AFSFetchStatus {
+    afs_uint32 InterfaceVersion;
+    afs_uint32 FileType;
+    afs_uint32 LinkCount;
+    afs_uint32 Length;
+    afs_uint32 DataVersion;
+    afs_uint32 Author;
+    afs_uint32 Owner;
+    afs_uint32 CallerAccess;
+    afs_uint32 AnonymousAccess;
+    afs_uint32 UnixModeBits;
+    afs_uint32 ParentVnode;
+    afs_uint32 ParentUnique;
+    afs_uint32 ResidencyMask;
+    afs_uint32 ClientModTime;
+    afs_uint32 ServerModTime;
+    afs_uint32 Group;
+    afs_uint32 SyncCounter;
+    afs_uint32 dataVersionHigh; /* For AFS/DFS translator, hi bits of dvn */
+    afs_uint32 lockCount;
+    afs_uint32 Length_hi;
+    afs_uint32 errorCode;
+};
