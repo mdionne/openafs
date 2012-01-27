@@ -150,7 +150,11 @@ afs_int32
 SREPL_RemoveFile(struct rx_call *acall, IN  AFSFid *DirFid, char *Name,
 	afs_int32 clientViceId)
 {
-    return 0;
+    struct AFSFetchStatus OutDirStatus;
+    struct AFSVolSync Sync;
+
+    return SAFSS_RemoveFile(acall, DirFid, Name, &OutDirStatus, &Sync,
+	    1, clientViceId);
 }
 
 afs_int32

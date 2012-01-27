@@ -3194,13 +3194,10 @@ SRXAFS_StoreStatus(struct rx_call * acall, struct AFSFid * Fid,
 }				/*SRXAFS_StoreStatus */
 
 
-/*
- * This routine is called exclusively by SRXAFS_RemoveFile(), and should be
- * merged in when possible.
- */
-static afs_int32
+afs_int32
 SAFSS_RemoveFile(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
-		 struct AFSFetchStatus *OutDirStatus, struct AFSVolSync *Sync)
+	struct AFSFetchStatus *OutDirStatus, struct AFSVolSync *Sync,
+	int remote, afs_int32 clientViceId)
 {
     Vnode *parentptr = 0;	/* vnode of input Directory */
     Vnode *parentwhentargetnotdir = 0;	/* parent for use in SetAccessList */
@@ -3216,13 +3213,18 @@ SAFSS_RemoveFile(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
     struct rx_connection *tcon = rx_ConnectionOf(acall);
 
     FidZero(&dir);
-    /* Get ptr to client data for user Id for logging */
-    t_client = (struct client *)rx_GetSpecific(tcon, rxcon_client_key);
-    logHostAddr.s_addr = rxr_HostOf(tcon);
-    ViceLog(1,
-	    ("SAFS_RemoveFile %s,  Did = %u.%u.%u, Host %s:%d, Id %d\n", Name,
-	     DirFid->Volume, DirFid->Vnode, DirFid->Unique,
-	     inet_ntoa(logHostAddr), ntohs(rxr_PortOf(tcon)), t_client->ViceId));
+    if (!remote) {
+	/* Get ptr to client data for user Id for logging */
+	t_client = (struct client *)rx_GetSpecific(tcon, rxcon_client_key);
+	logHostAddr.s_addr = rxr_HostOf(tcon);
+	ViceLog(1, ("SAFS_RemoveFile %s,  Did = %u.%u.%u, Host %s:%d, Id %d\n", Name,
+		DirFid->Volume, DirFid->Vnode, DirFid->Unique,
+		inet_ntoa(logHostAddr), ntohs(rxr_PortOf(tcon)), t_client->ViceId));
+    } else {
+	ViceLog(1, ("SAFS_RemoveFile (remote) %s,  Did = %u.%u.%u, Id %d\n", Name,
+		DirFid->Volume, DirFid->Vnode, DirFid->Unique, clientViceId));
+    }
+
     FS_LOCK;
     AFSCallStats.RemoveFile++, AFSCallStats.TotalCalls++;
     FS_UNLOCK;
@@ -3231,16 +3233,16 @@ SAFSS_RemoveFile(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
      * also returned
      */
     if ((errorCode =
-	 GetVolumePackage(acall, DirFid, &volptr, &parentptr, MustBeDIR,
+	 GetVolumePackageWithCall(acall, NULL, DirFid, &volptr, &parentptr, MustBeDIR,
 			  &parentwhentargetnotdir, &client, WRITE_LOCK,
-			  &rights, &anyrights))) {
+			  &rights, &anyrights, remote))) {
 	goto Bad_RemoveFile;
     }
     /* set volume synchronization information */
     SetVolumeSync(Sync, volptr);
 
     /* Does the caller has delete (& write) access to the parent directory? */
-    if ((errorCode = CheckWriteMode(parentptr, rights, PRSFS_DELETE))) {
+    if (!remote && (errorCode = CheckWriteMode(parentptr, rights, PRSFS_DELETE))) {
 	goto Bad_RemoveFile;
     }
 
@@ -3252,14 +3254,19 @@ SAFSS_RemoveFile(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
     }
 
     /* Update the vnode status of the parent dir */
+    if (remote) {
+        client = malloc(sizeof(struct client));
+        client->ViceId = clientViceId;
+        client->InSameNetwork = 1;
+    }
     Update_ParentVnodeStatus(parentptr, volptr, &dir, client->ViceId,
-			     parentptr->disk.linkCount,
-			     client->InSameNetwork);
+	    parentptr->disk.linkCount, client->InSameNetwork);
 
     rx_KeepAliveOn(acall);
 
     /* Return the updated parent dir's status back to caller */
-    GetStatus(parentptr, OutDirStatus, rights, anyrights, 0);
+    if (!remote)
+	GetStatus(parentptr, OutDirStatus, rights, anyrights, 0);
 
     /* Handle internal callback state for the parent and the deleted file */
     if (targetptr->disk.linkCount == 0) {
@@ -3276,11 +3283,11 @@ SAFSS_RemoveFile(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
 	VVnodeWriteToRead(&errorCode, targetptr);
 	osi_Assert(!errorCode || errorCode == VSALVAGE);
 	/* tell all the file has changed */
-	BreakCallBack(client->host, &fileFid, 1);
+	BreakCallBack(remote ? NULL : client->host, &fileFid, 1);
     }
 
     /* break call back on the directory */
-    BreakCallBack(client->host, DirFid, 0);
+    BreakCallBack(remote ? NULL : client->host, DirFid, 0);
 
   Bad_RemoveFile:
     /* Update and store volume/vnode and parent vnodes back */
@@ -3309,7 +3316,7 @@ SRXAFS_RemoveFile(struct rx_call * acall, struct AFSFid * DirFid, char *Name,
     if ((code = CallPreamble(acall, ACTIVECALL, &tcon, &thost)))
 	goto Bad_RemoveFile;
 
-    code = SAFSS_RemoveFile(acall, DirFid, Name, OutDirStatus, Sync);
+    code = SAFSS_RemoveFile(acall, DirFid, Name, OutDirStatus, Sync, 0, 0);
 
   Bad_RemoveFile:
     code = CallPostamble(tcon, code, thost);
