@@ -90,5 +90,15 @@ extern afs_int32 SAFSS_RemoveFile(struct rx_call *acall, struct AFSFid *DirFid,
 extern afs_int32 SAFSS_RemoveDir(struct rx_call *acall, struct AFSFid *DirFid,
 	char *Name, struct AFSFetchStatus *OutDirStatus, struct AFSVolSync *Sync,
 	int remote, afs_int32 clientViceId, struct AFSFid *RDirFid);
+extern afs_int32 SAFSS_CreateFile(struct rx_call *acall, struct AFSFid *DirFid,
+	char *Name, struct AFSStoreStatus *InStatus, struct AFSFid *OutFid,
+	struct AFSFetchStatus *OutFidStatus, struct AFSFetchStatus *OutDirStatus,
+	struct AFSCallBack *CallBack, struct AFSVolSync *Sync,
+	int remote, afs_int32 clientViceId);
+extern afs_int32 SAFSS_Symlink(struct rx_call *acall, struct AFSFid *DirFid,
+	char *Name, char *LinkContents, struct AFSStoreStatus *InStatus,
+	struct AFSFid *OutFid, struct AFSFetchStatus *OutFidStatus,
+	struct AFSFetchStatus *OutDirStatus, struct AFSVolSync *Sync,
+	int remote, afs_int32 clientViceId);
 
 #endif /* _AFS_VICED_RW_REPLICATION_H */

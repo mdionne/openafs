@@ -3339,16 +3339,12 @@ SRXAFS_RemoveFile(struct rx_call * acall, struct AFSFid * DirFid, char *Name,
 }				/*SRXAFS_RemoveFile */
 
 
-/*
- * This routine is called exclusively from SRXAFS_CreateFile(), and should
- * be merged in when possible.
- */
-static afs_int32
+afs_int32
 SAFSS_CreateFile(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
-		 struct AFSStoreStatus *InStatus, struct AFSFid *OutFid,
-		 struct AFSFetchStatus *OutFidStatus,
-		 struct AFSFetchStatus *OutDirStatus,
-		 struct AFSCallBack *CallBack, struct AFSVolSync *Sync)
+	struct AFSStoreStatus *InStatus, struct AFSFid *OutFid,
+	struct AFSFetchStatus *OutFidStatus, struct AFSFetchStatus *OutDirStatus,
+	struct AFSCallBack *CallBack, struct AFSVolSync *Sync,
+	int remote, afs_int32 clientViceId)
 {
     Vnode *parentptr = 0;	/* vnode of input Directory */
     Vnode *targetptr = 0;	/* vnode of the new file */
@@ -3364,13 +3360,18 @@ SAFSS_CreateFile(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
 
     FidZero(&dir);
 
-    /* Get ptr to client data for user Id for logging */
-    t_client = (struct client *)rx_GetSpecific(tcon, rxcon_client_key);
-    logHostAddr.s_addr = rxr_HostOf(tcon);
-    ViceLog(1,
-	    ("SAFS_CreateFile %s,  Did = %u.%u.%u, Host %s:%d, Id %d\n", Name,
-	     DirFid->Volume, DirFid->Vnode, DirFid->Unique,
-	     inet_ntoa(logHostAddr), ntohs(rxr_PortOf(tcon)), t_client->ViceId));
+    if (!remote) {
+	/* Get ptr to client data for user Id for logging */
+	t_client = (struct client *)rx_GetSpecific(tcon, rxcon_client_key);
+	logHostAddr.s_addr = rxr_HostOf(tcon);
+	ViceLog(1, ("SAFS_CreateFile %s,  Did = %u.%u.%u, Host %s:%d, Id %d\n",
+		Name, DirFid->Volume, DirFid->Vnode, DirFid->Unique,
+		inet_ntoa(logHostAddr), ntohs(rxr_PortOf(tcon)), t_client->ViceId));
+    } else {
+	ViceLog(1, ("SAFS_CreateFile (remote) %s,  Did = %u.%u.%u, File = %u.%u.%u, Id %d\n",
+		Name, DirFid->Volume, DirFid->Vnode, DirFid->Unique,
+                OutFid->Volume, OutFid->Vnode, OutFid->Unique, clientViceId));
+    }
     FS_LOCK;
     AFSCallStats.CreateFile++, AFSCallStats.TotalCalls++;
     FS_UNLOCK;
@@ -3384,9 +3385,9 @@ SAFSS_CreateFile(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
      * also returned
      */
     if ((errorCode =
-	 GetVolumePackage(acall, DirFid, &volptr, &parentptr, MustBeDIR,
-			  &parentwhentargetnotdir, &client, WRITE_LOCK,
-			  &rights, &anyrights))) {
+	GetVolumePackageWithCall(acall, NULL, DirFid, &volptr, &parentptr,
+		MustBeDIR, &parentwhentargetnotdir, &client, WRITE_LOCK,
+		&rights, &anyrights, remote))) {
 	goto Bad_CreateFile;
     }
 
@@ -3394,17 +3395,22 @@ SAFSS_CreateFile(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
     SetVolumeSync(Sync, volptr);
 
     /* Can we write (and insert) onto the parent directory? */
-    if ((errorCode = CheckWriteMode(parentptr, rights, PRSFS_INSERT))) {
+    if (!remote && (errorCode = CheckWriteMode(parentptr, rights, PRSFS_INSERT))) {
 	goto Bad_CreateFile;
     }
 
     /* get a new vnode for the file to be created and set it up */
     if ((errorCode =
 	 Alloc_NewVnode(parentptr, &dir, volptr, &targetptr, Name, OutFid,
-			vFile, nBlocks(0), 0)))
+			vFile, nBlocks(0), remote)))
 	goto Bad_CreateFile;
 
     /* update the status of the parent vnode */
+    if (remote) {
+	client = malloc(sizeof(struct client));
+	client->ViceId = clientViceId;
+	client->InSameNetwork = 1;
+    }
     Update_ParentVnodeStatus(parentptr, volptr, &dir, client->ViceId,
 			     parentptr->disk.linkCount,
 			     client->InSameNetwork);
@@ -3415,25 +3421,34 @@ SAFSS_CreateFile(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
 
     rx_KeepAliveOn(acall);
 
-    /* set up the return status for the parent dir and the newly created file, and since the newly created file is owned by the creator, give it PRSFS_ADMINISTER to tell the client its the owner of the file */
-    GetStatus(targetptr, OutFidStatus, rights | PRSFS_ADMINISTER, anyrights, parentptr);
-    GetStatus(parentptr, OutDirStatus, rights, anyrights, 0);
+    if (!remote) {
+	/*
+	 * Set up the return status for the parent dir and the newly created file,
+	 * and since the newly created file is owned by the creator, give it
+	 * PRSFS_ADMINISTER to tell the client its the owner of the file
+	 */
+	GetStatus(targetptr, OutFidStatus, rights | PRSFS_ADMINISTER, anyrights,
+		parentptr);
+	GetStatus(parentptr, OutDirStatus, rights, anyrights, 0);
+    }
 
     /* convert the write lock to a read lock before breaking callbacks */
     VVnodeWriteToRead(&errorCode, parentptr);
     osi_Assert(!errorCode || errorCode == VSALVAGE);
 
     /* break call back on parent dir */
-    BreakCallBack(client->host, DirFid, 0);
+    BreakCallBack(remote ? NULL : client->host, DirFid, 0);
 
     /* Return a callback promise for the newly created file to the caller */
     SetCallBackStruct(AddCallBack(client->host, OutFid), CallBack);
 
   Bad_CreateFile:
     /* Update and store volume/vnode and parent vnodes back */
-    (void)PutVolumePackage(acall, parentwhentargetnotdir, targetptr, parentptr,
-			   volptr, &client);
+    PutVolumePackage(acall, parentwhentargetnotdir, targetptr, parentptr,
+	    volptr, &client);
     FidZap(&dir);
+    if (remote)
+	free(client);
     ViceLog(2, ("SAFS_CreateFile returns %d\n", errorCode));
     return errorCode;
 
@@ -3462,7 +3477,7 @@ SRXAFS_CreateFile(struct rx_call * acall, struct AFSFid * DirFid, char *Name,
 
     code =
 	SAFSS_CreateFile(acall, DirFid, Name, InStatus, OutFid, OutFidStatus,
-			 OutDirStatus, CallBack, Sync);
+			 OutDirStatus, CallBack, Sync, 0, 0);
 
   Bad_CreateFile:
     code = CallPostamble(tcon, code, thost);
@@ -3984,15 +3999,12 @@ SRXAFS_Rename(struct rx_call * acall, struct AFSFid * OldDirFid,
 }				/*SRXAFS_Rename */
 
 
-/*
- * This routine is called exclusively by SRXAFS_Symlink(), and should be
- * merged into it when possible.
- */
-static afs_int32
+afs_int32
 SAFSS_Symlink(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
-	      char *LinkContents, struct AFSStoreStatus *InStatus,
-	      struct AFSFid *OutFid, struct AFSFetchStatus *OutFidStatus,
-	      struct AFSFetchStatus *OutDirStatus, struct AFSVolSync *Sync)
+	char *LinkContents, struct AFSStoreStatus *InStatus,
+	struct AFSFid *OutFid, struct AFSFetchStatus *OutFidStatus,
+	struct AFSFetchStatus *OutDirStatus, struct AFSVolSync *Sync,
+	int remote, afs_int32 clientViceId)
 {
     Vnode *parentptr = 0;	/* vnode of input Directory */
     Vnode *targetptr = 0;	/* vnode of the new link */
@@ -4011,13 +4023,18 @@ SAFSS_Symlink(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
 
     FidZero(&dir);
 
-    /* Get ptr to client data for user Id for logging */
-    t_client = (struct client *)rx_GetSpecific(tcon, rxcon_client_key);
-    logHostAddr.s_addr = rxr_HostOf(tcon);
-    ViceLog(1,
-	    ("SAFS_Symlink %s to %s,  Did = %u.%u.%u, Host %s:%d, Id %d\n", Name,
-	     LinkContents, DirFid->Volume, DirFid->Vnode, DirFid->Unique,
-	     inet_ntoa(logHostAddr), ntohs(rxr_PortOf(tcon)), t_client->ViceId));
+    if (!remote) {
+	/* Get ptr to client data for user Id for logging */
+	t_client = (struct client *)rx_GetSpecific(tcon, rxcon_client_key);
+	logHostAddr.s_addr = rxr_HostOf(tcon);
+	ViceLog(1, ("SAFS_Symlink %s to %s,  Did = %u.%u.%u, Host %s:%d, Id %d\n",
+		Name, LinkContents, DirFid->Volume, DirFid->Vnode, DirFid->Unique,
+		inet_ntoa(logHostAddr), ntohs(rxr_PortOf(tcon)), t_client->ViceId));
+    } else {
+	ViceLog(1, ("SAFS_Symlink (remote) %s to %s,  Did = %u.%u.%u, Id %d\n",
+		Name, LinkContents, DirFid->Volume, DirFid->Vnode, DirFid->Unique,
+		clientViceId));
+    }
     FS_LOCK;
     AFSCallStats.Symlink++, AFSCallStats.TotalCalls++;
     FS_UNLOCK;
@@ -4031,47 +4048,55 @@ SAFSS_Symlink(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
      * rights to it
      */
     if ((errorCode =
-	 GetVolumePackage(acall, DirFid, &volptr, &parentptr, MustBeDIR,
-			  &parentwhentargetnotdir, &client, WRITE_LOCK,
-			  &rights, &anyrights)))
+	GetVolumePackageWithCall(acall, NULL, DirFid, &volptr, &parentptr,
+		MustBeDIR, &parentwhentargetnotdir, &client, WRITE_LOCK,
+		&rights, &anyrights, remote)))
 	goto Bad_SymLink;
 
     /* set volume synchronization information */
     SetVolumeSync(Sync, volptr);
 
-    /* Does the caller has insert (and write) access to the parent directory? */
-    if ((errorCode = CheckWriteMode(parentptr, rights, PRSFS_INSERT)))
-	goto Bad_SymLink;
+    if (!remote) {
+	/* Does the caller has insert (and write) access to the parent directory? */
+	if ((errorCode = CheckWriteMode(parentptr, rights, PRSFS_INSERT)))
+	    goto Bad_SymLink;
 
-    /*
-     * If we're creating a mount point (any x bits clear), we must have
-     * administer access to the directory, too.  Always allow sysadmins
-     * to do this.
-     */
-    if ((InStatus->Mask & AFS_SETMODE) && !(InStatus->UnixModeBits & 0111)) {
-	if (readonlyServer) {
-	    errorCode = VREADONLY;
-	    goto Bad_SymLink;
-	}
 	/*
-	 * We have a mountpoint, 'cause we're trying to set the Unix mode
-	 * bits to something with some x bits missing (default mode bits
-	 * if AFS_SETMODE is false is 0777)
+	 * If we're creating a mount point (any x bits clear), we must have
+	 * administer access to the directory, too.  Always allow sysadmins
+	 * to do this.
 	 */
-	if (VanillaUser(client) && !(rights & PRSFS_ADMINISTER)) {
-	    errorCode = EACCES;
-	    goto Bad_SymLink;
+	if ((InStatus->Mask & AFS_SETMODE) && !(InStatus->UnixModeBits & 0111)) {
+	    if (readonlyServer) {
+		errorCode = VREADONLY;
+		goto Bad_SymLink;
+	    }
+	    /*
+	     * We have a mountpoint, 'cause we're trying to set the Unix mode
+	     * bits to something with some x bits missing (default mode bits
+	     * if AFS_SETMODE is false is 0777)
+	     */
+	    if (VanillaUser(client) && !(rights & PRSFS_ADMINISTER)) {
+		errorCode = EACCES;
+		goto Bad_SymLink;
+	    }
 	}
     }
 
     /* get a new vnode for the symlink and set it up */
     if ((errorCode =
-	 Alloc_NewVnode(parentptr, &dir, volptr, &targetptr, Name, OutFid,
-			vSymlink, nBlocks(strlen((char *)LinkContents)), 0))) {
+	Alloc_NewVnode(parentptr, &dir, volptr, &targetptr, Name, OutFid,
+		vSymlink, nBlocks(strlen((char *)LinkContents)), remote))) {
 	goto Bad_SymLink;
     }
 
     /* update the status of the parent vnode */
+    if (remote) {
+	client = malloc(sizeof(struct client));
+	client->ViceId = clientViceId;
+	client->InSameNetwork = 1;
+    }
+
     Update_ParentVnodeStatus(parentptr, volptr, &dir, client->ViceId,
 			     parentptr->disk.linkCount,
 			     client->InSameNetwork);
@@ -4099,8 +4124,10 @@ SAFSS_Symlink(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
      * Set up and return modified status for the parent dir and new symlink
      * to caller.
      */
-    GetStatus(targetptr, OutFidStatus, rights, anyrights, parentptr);
-    GetStatus(parentptr, OutDirStatus, rights, anyrights, 0);
+    if (!remote) {
+	GetStatus(targetptr, OutFidStatus, rights, anyrights, parentptr);
+	GetStatus(parentptr, OutDirStatus, rights, anyrights, 0);
+    }
 
     /* convert the write lock to a read lock before breaking callbacks */
     VVnodeWriteToRead(&errorCode, parentptr);
@@ -4109,13 +4136,15 @@ SAFSS_Symlink(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
     rx_KeepAliveOn(acall);
 
     /* break call back on the parent dir */
-    BreakCallBack(client->host, DirFid, 0);
+    BreakCallBack(remote ? NULL : client->host, DirFid, 0);
 
   Bad_SymLink:
     /* Write the all modified vnodes (parent, new files) and volume back */
     (void)PutVolumePackage(acall, parentwhentargetnotdir, targetptr, parentptr,
 			   volptr, &client);
     FidZap(&dir);
+    if (remote)
+	free(client);
     ViceLog(2, ("SAFS_Symlink returns %d\n", errorCode));
     return ( errorCode ? errorCode : code );
 
@@ -4144,9 +4173,8 @@ SRXAFS_Symlink(struct rx_call *acall,	/* Rx call */
     if ((code = CallPreamble(acall, ACTIVECALL, &tcon, &thost)))
 	goto Bad_Symlink;
 
-    code =
-	SAFSS_Symlink(acall, DirFid, Name, LinkContents, InStatus, OutFid,
-		      OutFidStatus, OutDirStatus, Sync);
+    code = SAFSS_Symlink(acall, DirFid, Name, LinkContents, InStatus, OutFid,
+	    OutFidStatus, OutDirStatus, Sync, 0, 0);
 
   Bad_Symlink:
     code = CallPostamble(tcon, code, thost);

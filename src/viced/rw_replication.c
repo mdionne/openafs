@@ -143,7 +143,13 @@ afs_int32
 SREPL_CreateFile(struct rx_call *acall, IN  AFSFid *DirFid, char *Name,
 		AFSStoreStatus *InStatus, AFSFid *InFid, afs_int32 clientViceId)
 {
-    return 0;
+    struct AFSFetchStatus OutFidStatus;
+    struct AFSFetchStatus OutDirStatus;
+    struct AFSCallBack CallBack;
+    struct AFSVolSync Sync;
+
+    return SAFSS_CreateFile(acall, DirFid, Name, InStatus, InFid, &OutFidStatus,
+	    &OutDirStatus, &CallBack, &Sync, 1, clientViceId);
 }
 
 afs_int32
@@ -219,7 +225,12 @@ SREPL_Symlink(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
 	char *Link, struct AFSStoreStatus *InStatus, struct AFSFid *InFid,
 	afs_int32 clientViceId)
 {
-    return 0;
+    struct AFSFetchStatus OutFidStatus;
+    struct AFSFetchStatus OutDirStatus;
+    struct AFSVolSync Sync;
+
+    return SAFSS_Symlink(acall, DirFid, Name, Link, InStatus, InFid,
+	    &OutFidStatus, &OutDirStatus, &Sync, 1, clientViceId);
 }
 
 afs_int32
