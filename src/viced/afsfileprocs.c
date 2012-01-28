@@ -193,7 +193,8 @@ static afs_int32 StoreData_RXStyle(Volume * volptr, Vnode * targetptr,
 				   afs_fsize_t Length, afs_fsize_t FileLength,
 				   int sync,
 				   afs_sfsize_t * a_bytesToStoreP,
-				   afs_sfsize_t * a_bytesStoredP);
+				   afs_sfsize_t * a_bytesStoredP,
+				   int remote, char **rbuf);
 
 #ifdef AFS_SGI_XFS_IOPS_ENV
 #include <afs/xfsattrs.h>
@@ -2804,12 +2805,12 @@ SRXAFS_FetchStatus(struct rx_call * acall, struct AFSFid * Fid,
 
 }				/*SRXAFS_FetchStatus */
 
-static
-  afs_int32
-common_StoreData64(struct rx_call *acall, struct AFSFid *Fid,
-		   struct AFSStoreStatus *InStatus, afs_fsize_t Pos,
-		   afs_fsize_t Length, afs_fsize_t FileLength,
-		   struct AFSFetchStatus *OutStatus, struct AFSVolSync *Sync)
+afs_int32
+SAFSS_StoreData64(struct rx_call *acall, struct AFSFid *Fid,
+	struct AFSStoreStatus *InStatus, afs_fsize_t Pos,
+	afs_fsize_t Length, afs_fsize_t FileLength,
+	struct AFSFetchStatus *OutStatus, struct AFSVolSync *Sync,
+	int remote, afs_int32 clientViceId)
 {
     Vnode *targetptr = 0;	/* pointer to input fid */
     Vnode *parentwhentargetnotdir = 0;	/* parent of Fid to get ACL */
@@ -2821,41 +2822,36 @@ common_StoreData64(struct rx_call *acall, struct AFSFid *Fid,
     afs_int32 rights, anyrights;	/* rights for this and any user */
     struct client *t_client = NULL;	/* tmp ptr to client data */
     struct in_addr logHostAddr;	/* host ip holder for inet_ntoa */
-    struct rx_connection *tcon;
-    struct host *thost;
     struct fsstats fsstats;
     afs_sfsize_t bytesToXfer;
     afs_sfsize_t bytesXferred;
     static int remainder = 0;
+    struct rx_connection *tcon = rx_ConnectionOf(acall);
 
-    ViceLog(1,
-	    ("StoreData: Fid = %u.%u.%u\n", Fid->Volume, Fid->Vnode,
-	     Fid->Unique));
-
-    fsstats_StartOp(&fsstats, FS_STATS_RPCIDX_STOREDATA);
-
+    if (!remote) {
+	/* Get ptr to client data for user Id for logging */
+	t_client = (struct client *)rx_GetSpecific(tcon, rxcon_client_key);
+	logHostAddr.s_addr = rxr_HostOf(tcon);
+	ViceLog(5,
+		("StoreData: Fid = %u.%u.%u, Host %s:%d, Id %d\n", Fid->Volume,
+		 Fid->Vnode, Fid->Unique, inet_ntoa(logHostAddr),
+		 ntohs(rxr_PortOf(tcon)), t_client->ViceId));
+    } else {
+	ViceLog(5, ("StoreData (remote): Fid = %u.%u.%u, Id %d\n", Fid->Volume,
+		Fid->Vnode, Fid->Unique, clientViceId));
+    }
     FS_LOCK;
     AFSCallStats.StoreData++, AFSCallStats.TotalCalls++;
     FS_UNLOCK;
-    if ((errorCode = CallPreamble(acall, ACTIVECALL, &tcon, &thost)))
-	goto Bad_StoreData;
-
-    /* Get ptr to client data for user Id for logging */
-    t_client = (struct client *)rx_GetSpecific(tcon, rxcon_client_key);
-    logHostAddr.s_addr = rxr_HostOf(tcon);
-    ViceLog(5,
-	    ("StoreData: Fid = %u.%u.%u, Host %s:%d, Id %d\n", Fid->Volume,
-	     Fid->Vnode, Fid->Unique, inet_ntoa(logHostAddr),
-	     ntohs(rxr_PortOf(tcon)), t_client->ViceId));
 
     /*
      * Get associated volume/vnode for the stored file; caller's rights
      * are also returned
      */
     if ((errorCode =
-	 GetVolumePackage(acall, Fid, &volptr, &targetptr, MustNOTBeDIR,
-			  &parentwhentargetnotdir, &client, WRITE_LOCK,
-			  &rights, &anyrights))) {
+	GetVolumePackageWithCall(acall, NULL, Fid, &volptr, &targetptr,
+		MustNOTBeDIR, &parentwhentargetnotdir, &client, WRITE_LOCK,
+		&rights, &anyrights, remote))) {
 	goto Bad_StoreData;
     }
 
@@ -2871,7 +2867,7 @@ common_StoreData64(struct rx_call *acall, struct AFSFid *Fid,
     }
 
     /* Check if we're allowed to store the data */
-    if ((errorCode =
+    if (!remote && (errorCode =
 	 Check_PermissionRights(targetptr, client, rights, CHK_STOREDATA,
 				InStatus))) {
 	goto Bad_StoreData;
@@ -2895,7 +2891,7 @@ common_StoreData64(struct rx_call *acall, struct AFSFid *Fid,
     errorCode =
 	StoreData_RXStyle(volptr, targetptr, Fid, client, acall, Pos, Length,
 			  FileLength, (InStatus->Mask & AFS_FSYNC),
-			  &bytesToXfer, &bytesXferred);
+			  &bytesToXfer, &bytesXferred, remote, NULL);
 
     fsstats_FinishXfer(&fsstats, errorCode, bytesToXfer, bytesXferred,
 		       &remainder);
@@ -2905,20 +2901,55 @@ common_StoreData64(struct rx_call *acall, struct AFSFid *Fid,
 
     rx_KeepAliveOff(acall);
     /* Update the status of the target's vnode */
+    if (remote) {
+	client = malloc(sizeof(struct client));
+	client->ViceId = clientViceId;
+	client->InSameNetwork = 1;
+    }
+
     Update_TargetVnodeStatus(targetptr, TVS_SDATA, client, InStatus,
-			     targetptr, volptr, 0, 0);
+			     targetptr, volptr, 0, remote);
     rx_KeepAliveOn(acall);
 
     /* Get the updated File's status back to the caller */
-    GetStatus(targetptr, OutStatus, rights, anyrights,
-	      &tparentwhentargetnotdir);
+    if (!remote)
+	GetStatus(targetptr, OutStatus, rights, anyrights, &tparentwhentargetnotdir);
 
   Bad_StoreData:
     /* Update and store volume/vnode and parent vnodes back */
     (void)PutVolumePackage(acall, parentwhentargetnotdir, targetptr,
 			   (Vnode *) 0, volptr, &client);
-    ViceLog(2, ("SAFS_StoreData	returns	%d\n", errorCode));
+    ViceLog(2, ("SAFSS_StoreData returns %d\n", errorCode));
+    if (remote)
+	free(client);
+    return errorCode;
+}
 
+afs_int32
+common_StoreData64(struct rx_call *acall, struct AFSFid *Fid,
+		   struct AFSStoreStatus *InStatus, afs_fsize_t Pos,
+		   afs_fsize_t Length, afs_fsize_t FileLength,
+		   struct AFSFetchStatus *OutStatus, struct AFSVolSync *Sync)
+{
+    Error errorCode = 0;		/* return code for caller */
+    struct client *t_client = NULL;	/* tmp ptr to client data */
+    struct rx_connection *tcon;
+    struct host *thost;
+    struct fsstats fsstats;
+
+    ViceLog(1,
+	    ("StoreData: Fid = %u.%u.%u\n", Fid->Volume, Fid->Vnode,
+	     Fid->Unique));
+
+    fsstats_StartOp(&fsstats, FS_STATS_RPCIDX_STOREDATA);
+
+    if ((errorCode = CallPreamble(acall, ACTIVECALL, &tcon, &thost)))
+	goto Bad_StoreData;
+
+    errorCode = SAFSS_StoreData64(acall, Fid, InStatus, Pos, Length, FileLength,
+	    OutStatus, Sync, 0, 0);
+
+Bad_StoreData:
     errorCode = CallPostamble(tcon, errorCode, thost);
 
     fsstats_FinishOp(&fsstats, errorCode);
@@ -6465,12 +6496,11 @@ GetLinkCountAndSize(Volume * vp, FdHandle_t * fdP, int *lc,
  *			  the File Server.
  */
 afs_int32
-StoreData_RXStyle(Volume * volptr, Vnode * targetptr, struct AFSFid * Fid,
-		  struct client * client, struct rx_call * Call,
-		  afs_fsize_t Pos, afs_fsize_t Length, afs_fsize_t FileLength,
-		  int sync,
-		  afs_sfsize_t * a_bytesToStoreP,
-		  afs_sfsize_t * a_bytesStoredP)
+StoreData_RXStyle(Volume *volptr, Vnode *targetptr, struct AFSFid *Fid,
+	struct client *client, struct rx_call *Call, afs_fsize_t Pos,
+	afs_fsize_t Length, afs_fsize_t FileLength, int sync,
+	afs_sfsize_t * a_bytesToStoreP, afs_sfsize_t * a_bytesStoredP,
+	int remote, char **rbuf)
 {
     afs_sfsize_t bytesTransfered;	/* number of bytes actually transfered */
     struct timeval StartTime, StopTime;	/* Used to measure how long the store takes */
@@ -6493,6 +6523,7 @@ StoreData_RXStyle(Volume * volptr, Vnode * targetptr, struct AFSFid * Fid,
     FdHandle_t *fdP;
     struct in_addr logHostAddr;	/* host ip holder for inet_ntoa */
     afs_ino_str_t stmp;
+    char *rpos = NULL;
 
     /*
      * Initialize the byte count arguments.
@@ -6504,7 +6535,7 @@ StoreData_RXStyle(Volume * volptr, Vnode * targetptr, struct AFSFid * Fid,
      * We break the callbacks here so that the following signal will not
      * leave a window.
      */
-    BreakCallBack(client->host, Fid, 0);
+    BreakCallBack(remote ? NULL : client->host, Fid, 0);
 
     if (Pos == -1 || VN_GET_INO(targetptr) == 0) {
 	/* the inode should have been created in Alloc_NewVnode */
@@ -6649,6 +6680,12 @@ StoreData_RXStyle(Volume * volptr, Vnode * targetptr, struct AFSFid * Fid,
     } else {
 	/* have some data to copy */
 	(*a_bytesToStoreP) = Length;
+	if (remote && rbuf) {
+	    *rbuf = malloc(Length);
+	    if (!*rbuf)
+		ViceLog(0, ("StoreData_RXStyle: Warning: allocation of remote buffer failed\n"));
+	    rpos = *rbuf;
+	}
 	while (1) {
 	    int rlen;
 	    if (bytesTransfered >= Length) {
@@ -6673,8 +6710,23 @@ StoreData_RXStyle(Volume * volptr, Vnode * targetptr, struct AFSFid * Fid,
 	    rlen = errorCode;
 #ifndef HAVE_PIOV
 	    nBytes = FDH_PWRITE(fdP, tbuffer, rlen, Pos);
+	    if (remote && rbuf) {
+		if (*rbuf) {
+		    memcpy(rpos, tbuffer, rlen);
+		    rpos += rlen;
+		}
+	    }
 #else /* HAVE_PIOV */
 	    nBytes = FDH_PWRITEV(fdP, tiov, tnio, Pos);
+	    if (remote && rbuf) {
+		if (*rbuf) {
+		    int io;
+		    for (io = 0; io < tnio; io++) {
+			memcpy(rpos, tiov[io].iov_base, tiov[io].iov_len);
+			rpos += tiov[io].iov_len;
+		    }
+		}
+	    }
 #endif /* HAVE_PIOV */
 	    if (nBytes != rlen) {
 		errorCode = VDISKFULL;

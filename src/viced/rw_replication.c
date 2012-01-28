@@ -180,7 +180,11 @@ SREPL_StoreData64(struct rx_call *acall, struct AFSFid *Fid,
 	struct AFSStoreStatus *InStatus, afs_uint64 Pos, afs_uint64 Length,
 	afs_uint64 FileLength, afs_int32 clientViceId)
 {
-    return 0;
+    struct AFSFetchStatus OutStatus;
+    struct AFSVolSync Sync;
+
+    return SAFSS_StoreData64(acall, Fid, InStatus, Pos, Length, FileLength,
+	    &OutStatus, &Sync, 1, clientViceId);
 }
 
 afs_int32
