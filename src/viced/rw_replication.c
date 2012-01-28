@@ -217,10 +217,14 @@ SREPL_StoreACL(struct rx_call *call, struct AFSFid *Fid,
 }
 
 afs_int32
-SREPL_StoreStatus(struct rx_call *acall, struct AFSFid *Fid, struct AFSStoreStatus *InStatus,
-	afs_int32 clientViceId)
+SREPL_StoreStatus(struct rx_call *acall, struct AFSFid *Fid,
+	struct AFSStoreStatus *InStatus, afs_int32 clientViceId)
 {
-    return 0;
+    struct AFSFetchStatus OutStatus;
+    struct AFSVolSync Sync;
+
+    return SAFSS_StoreStatus(acall, Fid, InStatus, &OutStatus, &Sync, 1,
+	    clientViceId);
 }
 
 afs_int32

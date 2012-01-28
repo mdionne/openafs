@@ -3080,14 +3080,11 @@ Bad_StoreACL:
     return errorCode;
 }                               /*SRXAFS_StoreACL */
 
-/*
- * Note: This routine is called exclusively from SRXAFS_StoreStatus(), and
- * should be merged when possible.
- */
-static afs_int32
+afs_int32
 SAFSS_StoreStatus(struct rx_call *acall, struct AFSFid *Fid,
-		  struct AFSStoreStatus *InStatus,
-		  struct AFSFetchStatus *OutStatus, struct AFSVolSync *Sync)
+	struct AFSStoreStatus *InStatus,
+	struct AFSFetchStatus *OutStatus, struct AFSVolSync *Sync,
+	int remote, afs_int32 clientViceId)
 {
     Vnode *targetptr = 0;	/* pointer to input fid */
     Vnode *parentwhentargetnotdir = 0;	/* parent of Fid to get ACL */
@@ -3099,13 +3096,18 @@ SAFSS_StoreStatus(struct rx_call *acall, struct AFSFid *Fid,
     struct in_addr logHostAddr;	/* host ip holder for inet_ntoa */
     struct rx_connection *tcon = rx_ConnectionOf(acall);
 
-    /* Get ptr to client data for user Id for logging */
-    t_client = (struct client *)rx_GetSpecific(tcon, rxcon_client_key);
-    logHostAddr.s_addr = rxr_HostOf(tcon);
-    ViceLog(1,
+    if (!remote) {
+	/* Get ptr to client data for user Id for logging */
+	t_client = (struct client *)rx_GetSpecific(tcon, rxcon_client_key);
+	logHostAddr.s_addr = rxr_HostOf(tcon);
+	ViceLog(1,
 	    ("SAFS_StoreStatus,  Fid	= %u.%u.%u, Host %s:%d, Id %d\n",
 	     Fid->Volume, Fid->Vnode, Fid->Unique, inet_ntoa(logHostAddr),
 	     ntohs(rxr_PortOf(tcon)), t_client->ViceId));
+    } else {
+	ViceLog(1, ("SAFS_StoreStatus (remote),  Fid   = %u.%u.%u, Id %d\n",
+		Fid->Volume, Fid->Vnode, Fid->Unique, clientViceId));
+    }
     FS_LOCK;
     AFSCallStats.StoreStatus++, AFSCallStats.TotalCalls++;
     FS_UNLOCK;
@@ -3114,9 +3116,9 @@ SAFSS_StoreStatus(struct rx_call *acall, struct AFSFid *Fid,
      * also returned
      */
     if ((errorCode =
-	 GetVolumePackage(acall, Fid, &volptr, &targetptr, DONTCHECK,
-			  &parentwhentargetnotdir, &client, WRITE_LOCK,
-			  &rights, &anyrights))) {
+	GetVolumePackageWithCall(acall, NULL, Fid, &volptr, &targetptr,
+		DONTCHECK, &parentwhentargetnotdir, &client, WRITE_LOCK,
+		&rights, &anyrights, remote))) {
 	goto Bad_StoreStatus;
     }
 
@@ -3124,9 +3126,8 @@ SAFSS_StoreStatus(struct rx_call *acall, struct AFSFid *Fid,
     SetVolumeSync(Sync, volptr);
 
     /* Check if the caller has proper permissions to store status to Fid */
-    if ((errorCode =
-	 Check_PermissionRights(targetptr, client, rights, CHK_STORESTATUS,
-				InStatus))) {
+    if (!remote && (errorCode = Check_PermissionRights(targetptr, client, rights,
+	    CHK_STORESTATUS, InStatus))) {
 	goto Bad_StoreStatus;
     }
     /*
@@ -3139,9 +3140,15 @@ SAFSS_StoreStatus(struct rx_call *acall, struct AFSFid *Fid,
     }
 
     /* Update the status of the target's vnode */
+    if (remote) {
+	client = malloc(sizeof(struct client));
+	client->ViceId = clientViceId;
+	client->InSameNetwork = 1;
+    }
+
     Update_TargetVnodeStatus(targetptr, TVS_SSTATUS, client, InStatus,
-			     (parentwhentargetnotdir ? parentwhentargetnotdir
-			      : targetptr), volptr, 0, 0);
+	    (parentwhentargetnotdir ? parentwhentargetnotdir : targetptr),
+	    volptr, 0, remote);
 
     rx_KeepAliveOn(acall);
 
@@ -3150,17 +3157,19 @@ SAFSS_StoreStatus(struct rx_call *acall, struct AFSFid *Fid,
     osi_Assert(!errorCode || errorCode == VSALVAGE);
 
     /* Break call backs on Fid */
-    BreakCallBack(client->host, Fid, 0);
+    BreakCallBack(remote ? NULL : client->host, Fid, 0);
 
     /* Return the updated status back to caller */
-    GetStatus(targetptr, OutStatus, rights, anyrights,
-	      parentwhentargetnotdir);
+    if (!remote)
+	GetStatus(targetptr, OutStatus, rights, anyrights, parentwhentargetnotdir);
 
   Bad_StoreStatus:
     /* Update and store volume/vnode and parent vnodes back */
     PutVolumePackage(acall, parentwhentargetnotdir, targetptr, (Vnode *) 0,
 		     volptr, &client);
     ViceLog(2, ("SAFS_StoreStatus returns %d\n", errorCode));
+    if (remote)
+	free(client);
     return errorCode;
 
 }				/*SAFSS_StoreStatus */
@@ -3183,7 +3192,7 @@ SRXAFS_StoreStatus(struct rx_call * acall, struct AFSFid * Fid,
     if ((code = CallPreamble(acall, ACTIVECALL, &tcon, &thost)))
 	goto Bad_StoreStatus;
 
-    code = SAFSS_StoreStatus(acall, Fid, InStatus, OutStatus, Sync);
+    code = SAFSS_StoreStatus(acall, Fid, InStatus, OutStatus, Sync, 0, 0);
 
   Bad_StoreStatus:
     code = CallPostamble(tcon, code, thost);

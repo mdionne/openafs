@@ -110,5 +110,9 @@ extern afs_int32 SAFSS_Rename(struct rx_call *acall, struct AFSFid *OldDirFid,
 	struct AFSFetchStatus *OutOldDirStatus,
 	struct AFSFetchStatus *OutNewDirStatus, struct AFSVolSync *Sync,
 	int remote, afs_int32 clientViceId);
+extern afs_int32 SAFSS_StoreStatus(struct rx_call *acall, struct AFSFid *Fid,
+        struct AFSStoreStatus *InStatus,
+        struct AFSFetchStatus *OutStatus, struct AFSVolSync *Sync,
+        int remote, afs_int32 clientViceId);
 
 #endif /* _AFS_VICED_RW_REPLICATION_H */
