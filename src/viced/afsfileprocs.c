@@ -3494,15 +3494,12 @@ SRXAFS_CreateFile(struct rx_call * acall, struct AFSFid * DirFid, char *Name,
 }				/*SRXAFS_CreateFile */
 
 
-/*
- * This routine is called exclusively from SRXAFS_Rename(), and should be
- * merged in when possible.
- */
-static afs_int32
+afs_int32
 SAFSS_Rename(struct rx_call *acall, struct AFSFid *OldDirFid, char *OldName,
-	     struct AFSFid *NewDirFid, char *NewName,
-	     struct AFSFetchStatus *OutOldDirStatus,
-	     struct AFSFetchStatus *OutNewDirStatus, struct AFSVolSync *Sync)
+	struct AFSFid *NewDirFid, char *NewName,
+	struct AFSFetchStatus *OutOldDirStatus,
+	struct AFSFetchStatus *OutNewDirStatus, struct AFSVolSync *Sync,
+	int remote, afs_int32 clientViceId)
 {
     Vnode *oldvptr = 0;		/* vnode of the old Directory */
     Vnode *newvptr = 0;		/* vnode of the new Directory */
@@ -3538,14 +3535,22 @@ SAFSS_Rename(struct rx_call *acall, struct AFSFid *OldDirFid, char *OldName,
     FidZero(&filedir);
     FidZero(&newfiledir);
 
-    /* Get ptr to client data for user Id for logging */
-    t_client = (struct client *)rx_GetSpecific(tcon, rxcon_client_key);
-    logHostAddr.s_addr = rxr_HostOf(tcon);
-    ViceLog(1,
+    if (!remote) {
+	/* Get ptr to client data for user Id for logging */
+	t_client = (struct client *)rx_GetSpecific(tcon, rxcon_client_key);
+	logHostAddr.s_addr = rxr_HostOf(tcon);
+	ViceLog(1,
 	    ("SAFS_Rename %s	to %s,	Fid = %u.%u.%u to %u.%u.%u, Host %s:%d, Id %d\n",
 	     OldName, NewName, OldDirFid->Volume, OldDirFid->Vnode,
 	     OldDirFid->Unique, NewDirFid->Volume, NewDirFid->Vnode,
-	     NewDirFid->Unique, inet_ntoa(logHostAddr), ntohs(rxr_PortOf(tcon)), t_client->ViceId));
+	     NewDirFid->Unique, inet_ntoa(logHostAddr), ntohs(rxr_PortOf(tcon)),
+	     t_client->ViceId));
+    } else {
+	ViceLog(1, ("SAFS_Rename (remote) %s to %s,    Fid = %u.%u.%u to %u.%u.%u, Id %d\n",
+		OldName, NewName, OldDirFid->Volume, OldDirFid->Vnode,
+		OldDirFid->Unique, NewDirFid->Volume, NewDirFid->Vnode,
+		NewDirFid->Unique, clientViceId));
+    }
     FS_LOCK;
     AFSCallStats.Rename++, AFSCallStats.TotalCalls++;
     FS_UNLOCK;
@@ -3568,9 +3573,9 @@ SAFSS_Rename(struct rx_call *acall, struct AFSFid *OldDirFid, char *OldName,
 
     if (OldDirFid->Vnode <= NewDirFid->Vnode) {
 	if ((errorCode =
-	     GetVolumePackage(acall, OldDirFid, &volptr, &oldvptr, MustBeDIR,
-			      &parent, &client, WRITE_LOCK, &rights,
-			      &anyrights))) {
+	    GetVolumePackageWithCall(acall, NULL, OldDirFid, &volptr, &oldvptr,
+		    MustBeDIR, &parent, &client, WRITE_LOCK, &rights,
+		    &anyrights, remote))) {
 	    DFlush();
 	    goto Bad_Rename;
 	}
@@ -3579,24 +3584,24 @@ SAFSS_Rename(struct rx_call *acall, struct AFSFid *OldDirFid, char *OldName,
 	    newrights = rights, newanyrights = anyrights;
 	} else
 	    if ((errorCode =
-		 GetVolumePackage(acall, NewDirFid, &volptr, &newvptr,
-				  MustBeDIR, &parent, &client, WRITE_LOCK,
-				  &newrights, &newanyrights))) {
+		 GetVolumePackageWithCall(acall, NULL, NewDirFid, &volptr,
+			&newvptr, MustBeDIR, &parent, &client, WRITE_LOCK,
+			&newrights, &newanyrights, remote))) {
 	    DFlush();
 	    goto Bad_Rename;
 	}
     } else {
 	if ((errorCode =
-	     GetVolumePackage(acall, NewDirFid, &volptr, &newvptr, MustBeDIR,
-			      &parent, &client, WRITE_LOCK, &newrights,
-			      &newanyrights))) {
+	    GetVolumePackageWithCall(acall, NULL, NewDirFid, &volptr, &newvptr,
+		    MustBeDIR, &parent, &client, WRITE_LOCK, &newrights,
+		    &newanyrights, remote))) {
 	    DFlush();
 	    goto Bad_Rename;
 	}
 	if ((errorCode =
-	     GetVolumePackage(acall, OldDirFid, &volptr, &oldvptr, MustBeDIR,
-			      &parent, &client, WRITE_LOCK, &rights,
-			      &anyrights))) {
+	    GetVolumePackageWithCall(acall, NULL, OldDirFid, &volptr, &oldvptr,
+		    MustBeDIR, &parent, &client, WRITE_LOCK, &rights,
+		    &anyrights, remote))) {
 	    DFlush();
 	    goto Bad_Rename;
 	}
@@ -3605,11 +3610,13 @@ SAFSS_Rename(struct rx_call *acall, struct AFSFid *OldDirFid, char *OldName,
     /* set volume synchronization information */
     SetVolumeSync(Sync, volptr);
 
-    if ((errorCode = CheckWriteMode(oldvptr, rights, PRSFS_DELETE))) {
-	goto Bad_Rename;
-    }
-    if ((errorCode = CheckWriteMode(newvptr, newrights, PRSFS_INSERT))) {
-	goto Bad_Rename;
+    if (!remote) {
+	if ((errorCode = CheckWriteMode(oldvptr, rights, PRSFS_DELETE))) {
+	    goto Bad_Rename;
+	}
+	if ((errorCode = CheckWriteMode(newvptr, newrights, PRSFS_INSERT))) {
+	    goto Bad_Rename;
+	}
     }
 
     if (CheckLength(volptr, oldvptr, -1) ||
@@ -3684,7 +3691,7 @@ SAFSS_Rename(struct rx_call *acall, struct AFSFid *OldDirFid, char *OldName,
 	    errorCode = VREADONLY;
 	    goto Bad_Rename;
 	}
-	if (!(newrights & PRSFS_DELETE)) {
+	if (!remote && !(newrights & PRSFS_DELETE)) {
 	    errorCode = EACCES;
 	    goto Bad_Rename;
 	}
@@ -3862,6 +3869,12 @@ SAFSS_Rename(struct rx_call *acall, struct AFSFid *OldDirFid, char *OldName,
     osi_Assert(afs_dir_Delete(&olddir, OldName) == 0);
 
     /* if the directory length changes, reflect it in the statistics */
+    if (remote) {
+	client = malloc(sizeof(struct client));
+	client->ViceId = clientViceId;
+	client->InSameNetwork = 1;
+    }
+
     Update_ParentVnodeStatus(oldvptr, volptr, &olddir, client->ViceId,
 			     oldvptr->disk.linkCount, client->InSameNetwork);
     Update_ParentVnodeStatus(newvptr, volptr, &newdir, client->ViceId,
@@ -3896,8 +3909,10 @@ SAFSS_Rename(struct rx_call *acall, struct AFSFid *OldDirFid, char *OldName,
     }
 
     /* set up return status */
-    GetStatus(oldvptr, OutOldDirStatus, rights, anyrights, 0);
-    GetStatus(newvptr, OutNewDirStatus, newrights, newanyrights, 0);
+    if (!remote) {
+	GetStatus(oldvptr, OutOldDirStatus, rights, anyrights, 0);
+	GetStatus(newvptr, OutNewDirStatus, newrights, newanyrights, 0);
+    }
     if (newfileptr && doDelete) {
 	DeleteFileCallBacks(&newFileFid);	/* no other references */
     }
@@ -3920,9 +3935,9 @@ SAFSS_Rename(struct rx_call *acall, struct AFSFid *OldDirFid, char *OldName,
     rx_KeepAliveOn(acall);
 
     /* break call back on NewDirFid, OldDirFid, NewDirFid and newFileFid  */
-    BreakCallBack(client->host, NewDirFid, 0);
+    BreakCallBack(remote ? NULL : client->host, NewDirFid, 0);
     if (oldvptr != newvptr) {
-	BreakCallBack(client->host, OldDirFid, 0);
+	BreakCallBack(remote ? NULL : client->host, OldDirFid, 0);
     }
     if (updatefile) {
 	/* if a dir moved, .. changed */
@@ -3932,7 +3947,7 @@ SAFSS_Rename(struct rx_call *acall, struct AFSFid *OldDirFid, char *OldName,
 	 * enough to know that the callback could be broken implicitly,
 	 * but that may not be clear, and some client implementations
 	 * may not know to. */
-	BreakCallBack(client->host, &fileFid, 1);
+	BreakCallBack(remote ? NULL : client->host, &fileFid, 1);
     }
     if (newfileptr) {
 	/* Note:  it is not necessary to break the callback */
@@ -3940,7 +3955,7 @@ SAFSS_Rename(struct rx_call *acall, struct AFSFid *OldDirFid, char *OldName,
 	    DeleteFileCallBacks(&newFileFid);	/* no other references */
 	else
 	    /* other's still exist (with wrong link count) */
-	    BreakCallBack(client->host, &newFileFid, 1);
+	    BreakCallBack(remote ? NULL : client->host, &newFileFid, 1);
     }
 
   Bad_Rename:
@@ -3955,6 +3970,8 @@ SAFSS_Rename(struct rx_call *acall, struct AFSFid *OldDirFid, char *OldName,
     FidZap(&newdir);
     FidZap(&filedir);
     FidZap(&newfiledir);
+    if (remote)
+	free(client);
     ViceLog(2, ("SAFS_Rename returns %d\n", errorCode));
     return errorCode;
 
@@ -3981,7 +3998,7 @@ SRXAFS_Rename(struct rx_call * acall, struct AFSFid * OldDirFid,
 
     code =
 	SAFSS_Rename(acall, OldDirFid, OldName, NewDirFid, NewName,
-		     OutOldDirStatus, OutNewDirStatus, Sync);
+		     OutOldDirStatus, OutNewDirStatus, Sync, 0, 0);
 
   Bad_Rename:
     code = CallPostamble(tcon, code, thost);

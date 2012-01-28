@@ -167,7 +167,12 @@ afs_int32
 SREPL_Rename(struct rx_call *acall, AFSFid *OldDirFid, char *OldName,
 	AFSFid *NewDirFid, char *NewName, afs_int32 clientViceId)
 {
-    return 0;
+    struct AFSFetchStatus OutNewDirStatus;
+    struct AFSFetchStatus OutOldDirStatus;
+    struct AFSVolSync Sync;
+
+    return SAFSS_Rename(acall, OldDirFid, OldName, NewDirFid, NewName,
+	    &OutOldDirStatus, &OutNewDirStatus, &Sync, 1, clientViceId);
 }
 
 afs_int32

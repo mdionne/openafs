@@ -105,5 +105,10 @@ extern afs_int32 SAFSS_MakeDir(struct rx_call *acall, struct AFSFid *DirFid,
         struct AFSFetchStatus *OutFidStatus, struct AFSFetchStatus *OutDirStatus,
         struct AFSCallBack *CallBack, struct AFSVolSync *Sync,
         int remote, afs_int32 clientViceId);
+extern afs_int32 SAFSS_Rename(struct rx_call *acall, struct AFSFid *OldDirFid,
+	char *OldName, struct AFSFid *NewDirFid, char *NewName,
+	struct AFSFetchStatus *OutOldDirStatus,
+	struct AFSFetchStatus *OutNewDirStatus, struct AFSVolSync *Sync,
+	int remote, afs_int32 clientViceId);
 
 #endif /* _AFS_VICED_RW_REPLICATION_H */
