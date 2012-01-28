@@ -253,5 +253,10 @@ afs_int32
 SREPL_Link(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
 	struct AFSFid *TargetFid, afs_int32 clientViceId)
 {
-    return 0;
+    struct AFSFetchStatus OutFidStatus;
+    struct AFSFetchStatus OutDirStatus;
+    struct AFSVolSync Sync;
+
+    return SAFSS_Link(acall, DirFid, Name, TargetFid, &OutFidStatus,
+	    &OutDirStatus, &Sync, 1, clientViceId);
 }

@@ -4218,14 +4218,11 @@ SRXAFS_Symlink(struct rx_call *acall,	/* Rx call */
 }				/*SRXAFS_Symlink */
 
 
-/*
- * This routine is called exclusively by SRXAFS_Link(), and should be
- * merged into it when possible.
- */
-static afs_int32
+afs_int32
 SAFSS_Link(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
-	   struct AFSFid *ExistingFid, struct AFSFetchStatus *OutFidStatus,
-	   struct AFSFetchStatus *OutDirStatus, struct AFSVolSync *Sync)
+	struct AFSFid *ExistingFid, struct AFSFetchStatus *OutFidStatus,
+	struct AFSFetchStatus *OutDirStatus, struct AFSVolSync *Sync,
+	int remote, afs_int32 clientViceId)
 {
     Vnode *parentptr = 0;	/* vnode of input Directory */
     Vnode *targetptr = 0;	/* vnode of the new file */
@@ -4241,14 +4238,22 @@ SAFSS_Link(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
 
     FidZero(&dir);
 
-    /* Get ptr to client data for user Id for logging */
-    t_client = (struct client *)rx_GetSpecific(tcon, rxcon_client_key);
-    logHostAddr.s_addr = rxr_HostOf(tcon);
-    ViceLog(1,
-	    ("SAFS_Link %s,	Did = %u.%u.%u,	Fid = %u.%u.%u, Host %s:%d, Id %d\n",
-	     Name, DirFid->Volume, DirFid->Vnode, DirFid->Unique,
-	     ExistingFid->Volume, ExistingFid->Vnode, ExistingFid->Unique,
-	     inet_ntoa(logHostAddr), ntohs(rxr_PortOf(tcon)), t_client->ViceId));
+    if (!remote) {
+	/* Get ptr to client data for user Id for logging */
+	t_client = (struct client *)rx_GetSpecific(tcon, rxcon_client_key);
+	logHostAddr.s_addr = rxr_HostOf(tcon);
+	ViceLog(1,
+		("SAFS_Link %s,	Did = %u.%u.%u,	Fid = %u.%u.%u, Host %s:%d, Id %d\n",
+		Name, DirFid->Volume, DirFid->Vnode, DirFid->Unique,
+		ExistingFid->Volume, ExistingFid->Vnode, ExistingFid->Unique,
+		inet_ntoa(logHostAddr), ntohs(rxr_PortOf(tcon)), t_client->ViceId));
+    } else {
+	ViceLog(1,
+		("SAFS_Link (remote) %s,	Did = %u.%u.%u,	Fid = %u.%u.%u, Id %d\n",
+		Name, DirFid->Volume, DirFid->Vnode, DirFid->Unique,
+		ExistingFid->Volume, ExistingFid->Vnode, ExistingFid->Unique,
+		clientViceId));
+    }
     FS_LOCK;
     AFSCallStats.Link++, AFSCallStats.TotalCalls++;
     FS_UNLOCK;
@@ -4266,9 +4271,9 @@ SAFSS_Link(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
      * rights to it
      */
     if ((errorCode =
-	 GetVolumePackage(acall, DirFid, &volptr, &parentptr, MustBeDIR,
-			  &parentwhentargetnotdir, &client, WRITE_LOCK,
-			  &rights, &anyrights))) {
+	GetVolumePackageWithCall(acall, NULL, DirFid, &volptr, &parentptr,
+		MustBeDIR, &parentwhentargetnotdir, &client, WRITE_LOCK,
+		&rights, &anyrights, remote))) {
 	goto Bad_Link;
     }
 
@@ -4276,7 +4281,7 @@ SAFSS_Link(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
     SetVolumeSync(Sync, volptr);
 
     /* Can the caller insert into the parent directory? */
-    if ((errorCode = CheckWriteMode(parentptr, rights, PRSFS_INSERT))) {
+    if (!remote && (errorCode = CheckWriteMode(parentptr, rights, PRSFS_INSERT))) {
 	goto Bad_Link;
     }
 
@@ -4320,6 +4325,12 @@ SAFSS_Link(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
 
     /* update the status in the parent vnode */
     /**WARNING** --> disk.author SHOULDN'T be modified???? */
+    if (remote) {
+	client = malloc(sizeof(struct client));
+	client->ViceId = clientViceId;
+	client->InSameNetwork = 1;
+    }
+
     Update_ParentVnodeStatus(parentptr, volptr, &dir, client->ViceId,
 			     parentptr->disk.linkCount,
 			     client->InSameNetwork);
@@ -4329,8 +4340,10 @@ SAFSS_Link(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
     targetptr->changed_newTime = 1;	/* Status change of linked-to file */
 
     /* set up return status */
-    GetStatus(targetptr, OutFidStatus, rights, anyrights, parentptr);
-    GetStatus(parentptr, OutDirStatus, rights, anyrights, 0);
+    if (!remote) {
+	GetStatus(targetptr, OutFidStatus, rights, anyrights, parentptr);
+	GetStatus(parentptr, OutDirStatus, rights, anyrights, 0);
+    }
 
     /* convert the write locks to read locks before breaking callbacks */
     VVnodeWriteToRead(&errorCode, targetptr);
@@ -4341,18 +4354,20 @@ SAFSS_Link(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
     rx_KeepAliveOn(acall);
 
     /* break call back on DirFid */
-    BreakCallBack(client->host, DirFid, 0);
+    BreakCallBack(remote ? NULL : client->host, DirFid, 0);
     /*
      * We also need to break the callback for the file that is hard-linked since part
      * of its status (like linkcount) is changed
      */
-    BreakCallBack(client->host, ExistingFid, 0);
+    BreakCallBack(remote ? NULL : client->host, ExistingFid, 0);
 
   Bad_Link:
     /* Write the all modified vnodes (parent, new files) and volume back */
     (void)PutVolumePackage(acall, parentwhentargetnotdir, targetptr, parentptr,
 			   volptr, &client);
     FidZap(&dir);
+    if (remote)
+	free(client);
     ViceLog(2, ("SAFS_Link returns %d\n", errorCode));
     return errorCode;
 
@@ -4377,7 +4392,7 @@ SRXAFS_Link(struct rx_call * acall, struct AFSFid * DirFid, char *Name,
 
     code =
 	SAFSS_Link(acall, DirFid, Name, ExistingFid, OutFidStatus,
-		   OutDirStatus, Sync);
+		   OutDirStatus, Sync, 0, 0);
 
   Bad_Link:
     code = CallPostamble(tcon, code, thost);

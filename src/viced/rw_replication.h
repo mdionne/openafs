@@ -114,5 +114,10 @@ extern afs_int32 SAFSS_StoreStatus(struct rx_call *acall, struct AFSFid *Fid,
         struct AFSStoreStatus *InStatus,
         struct AFSFetchStatus *OutStatus, struct AFSVolSync *Sync,
         int remote, afs_int32 clientViceId);
+extern afs_int32 SAFSS_Link(struct rx_call *acall, struct AFSFid *DirFid,
+	char *Name, struct AFSFid *ExistingFid,
+	struct AFSFetchStatus *OutFidStatus,
+        struct AFSFetchStatus *OutDirStatus, struct AFSVolSync *Sync,
+        int remote, afs_int32 clientViceId);
 
 #endif /* _AFS_VICED_RW_REPLICATION_H */
