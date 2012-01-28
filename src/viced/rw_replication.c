@@ -190,9 +190,16 @@ SREPL_RemoveDir(struct rx_call *acall, struct AFSFid *DirFid, char *Name, afs_in
 
 afs_int32
 SREPL_MakeDir(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
-	struct AFSStoreStatus *InStatus, struct AFSFid *InFid, afs_int32 clientViceId)
+	struct AFSStoreStatus *InStatus, struct AFSFid *InFid,
+	afs_int32 clientViceId)
 {
-    return 0;
+    struct AFSFetchStatus OutFidStatus;
+    struct AFSFetchStatus OutDirStatus;
+    struct AFSCallBack CallBack;
+    struct AFSVolSync Sync;
+
+    return SAFSS_MakeDir(acall, DirFid, Name, InStatus, InFid, &OutFidStatus,
+	    &OutDirStatus, &CallBack, &Sync, 1, clientViceId);
 }
 
 afs_int32
