@@ -1775,13 +1775,13 @@ AdjustDiskUsage(Volume * volptr, afs_sfsize_t length,
 }				/*AdjustDiskUsage */
 
 /*
- * Common code that handles the creation of a new file (SAFS_CreateFile and
- * SAFS_Symlink) or a new dir (SAFS_MakeDir)
+ * Common code that handles the creation of a new file (SAFSS_CreateFile and
+ * SAFSS_Symlink) or a new dir (SAFSS_MakeDir)
  */
 static afs_int32
 Alloc_NewVnode(Vnode * parentptr, DirHandle * dir, Volume * volptr,
-	       Vnode ** targetptr, char *Name, struct AFSFid *OutFid,
-	       int FileType, afs_sfsize_t BlocksPreallocatedForVnode)
+	Vnode **targetptr, char *Name, struct AFSFid *Fid, int FileType,
+	afs_sfsize_t BlocksPreallocatedForVnode, int remote)
 {
     Error errorCode = 0;		/* Error code returned back */
     Error temp;
@@ -1804,14 +1804,20 @@ Alloc_NewVnode(Vnode * parentptr, DirHandle * dir, Volume * volptr,
 	return VSALVAGE;
     }
 
-    *targetptr = VAllocVnode(&errorCode, volptr, FileType, 0, 0);
+    if (remote)
+	*targetptr = VAllocVnode(&errorCode, volptr, FileType, Fid->Vnode, Fid->Unique);
+    else
+	*targetptr = VAllocVnode(&errorCode, volptr, FileType, 0, 0);
+
     if (errorCode != 0) {
 	VAdjustDiskUsage(&temp, volptr, -BlocksPreallocatedForVnode, 0);
 	return (errorCode);
     }
-    OutFid->Volume = V_id(volptr);
-    OutFid->Vnode = (*targetptr)->vnodeNumber;
-    OutFid->Unique = (*targetptr)->disk.uniquifier;
+    if (!remote) {
+	Fid->Volume = V_id(volptr);
+	Fid->Vnode = (*targetptr)->vnodeNumber;
+	Fid->Unique = (*targetptr)->disk.uniquifier;
+    }
 
     nearInode = VN_GET_INO(parentptr);	/* parent is also in same vol */
 
@@ -1858,7 +1864,7 @@ Alloc_NewVnode(Vnode * parentptr, DirHandle * dir, Volume * volptr,
 
     /* add the name to the directory */
     SetDirHandle(dir, parentptr);
-    if ((errorCode = afs_dir_Create(dir, Name, OutFid))) {
+    if ((errorCode = afs_dir_Create(dir, Name, Fid))) {
 	(*targetptr)->delete = 1;
 	VAdjustDiskUsage(&temp, volptr, -BlocksPreallocatedForVnode, 0);
 	IH_REALLYCLOSE((*targetptr)->handle);
@@ -3395,7 +3401,7 @@ SAFSS_CreateFile(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
     /* get a new vnode for the file to be created and set it up */
     if ((errorCode =
 	 Alloc_NewVnode(parentptr, &dir, volptr, &targetptr, Name, OutFid,
-			vFile, nBlocks(0))))
+			vFile, nBlocks(0), 0)))
 	goto Bad_CreateFile;
 
     /* update the status of the parent vnode */
@@ -4061,7 +4067,7 @@ SAFSS_Symlink(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
     /* get a new vnode for the symlink and set it up */
     if ((errorCode =
 	 Alloc_NewVnode(parentptr, &dir, volptr, &targetptr, Name, OutFid,
-			vSymlink, nBlocks(strlen((char *)LinkContents))))) {
+			vSymlink, nBlocks(strlen((char *)LinkContents)), 0))) {
 	goto Bad_SymLink;
     }
 
@@ -4413,7 +4419,7 @@ SAFSS_MakeDir(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
     /* get a new vnode and set it up */
     if ((errorCode =
 	 Alloc_NewVnode(parentptr, &parentdir, volptr, &targetptr, Name,
-			OutFid, vDirectory, EMPTYDIRBLOCKS))) {
+			OutFid, vDirectory, EMPTYDIRBLOCKS, 0))) {
 	goto Bad_MakeDir;
     }
 
