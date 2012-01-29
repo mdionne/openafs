@@ -264,3 +264,146 @@ SREPL_Link(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
     return SAFSS_Link(acall, DirFid, Name, TargetFid, &OutFidStatus,
 	    &OutDirStatus, &Sync, 1, clientViceId);
 }
+
+static int
+repl_fidmatch(struct AFSFid fid1, struct AFSFid fid2) {
+    if (fid1.Vnode == 0 || fid2.Vnode == 0)
+	return 0;
+    if (fid1.Vnode == fid2.Vnode && fid1.Volume == fid2.Volume)
+	return 1;
+    else
+	return 0;
+}
+
+/*
+ * Determine if there's an ordering dependency between two updates
+ */
+int
+repl_depends_on(struct updateItem *it1, struct updateItem *it2) {
+    switch (it1->rpcId) {
+	case RPC_SetVolumeStatus:
+		/* No conflict with anything */
+		return 0;
+	case RPC_StoreACL:
+	case RPC_StoreData64:
+	case RPC_StoreStatus:
+		/* Wait for operations specific to this vnode */
+		if (repl_fidmatch(it1->fid1, it2->fid1) &&
+			(it2->rpcId == RPC_StoreACL ||
+			it2->rpcId == RPC_StoreData64 ||
+			it2->rpcId == RPC_StoreStatus))
+		    return 1;
+		if (repl_fidmatch(it1->fid1, it2->fid2) &&
+			(it2->rpcId == RPC_Symlink ||
+			it2->rpcId == RPC_CreateFile ||
+			it2->rpcId == RPC_RemoveFile ||
+			it2->rpcId == RPC_RemoveDir ||
+			it2->rpcId == RPC_MakeDir))
+		    return 1;
+		if (repl_fidmatch(it1->fid1, it2->delFid) &&
+			it2->rpcId == RPC_Rename)
+		    return 1;
+		break;
+	case RPC_Symlink:
+	case RPC_CreateFile:
+	case RPC_RemoveFile:
+	case RPC_MakeDir:
+		/* Wait for operations specific to this vnode */
+		if (repl_fidmatch(it1->fid2, it2->fid1) &&
+			(it2->rpcId == RPC_StoreACL ||
+			it2->rpcId == RPC_StoreData64 ||
+			it2->rpcId == RPC_StoreStatus))
+		    return 1;
+		if (repl_fidmatch(it1->fid2, it2->fid2) &&
+			(it2->rpcId == RPC_Symlink ||
+			it2->rpcId == RPC_CreateFile ||
+			it2->rpcId == RPC_RemoveFile ||
+			it2->rpcId == RPC_RemoveDir ||
+			it2->rpcId == RPC_MakeDir))
+		    return 1;
+		if (repl_fidmatch(it1->fid2, it2->delFid) &&
+			it2->rpcId == RPC_Rename)
+		    return 1;
+		/* Wait for operations in same directory, but
+		 * only if the names match */
+		if (repl_fidmatch(it1->fid1, it2->fid1) &&
+			!strcmp(it1->name1, it2->name1) &&
+			(it2->rpcId == RPC_Symlink ||
+			it2->rpcId == RPC_CreateFile ||
+			it2->rpcId == RPC_RemoveFile ||
+			it2->rpcId == RPC_RemoveDir ||
+			it2->rpcId == RPC_MakeDir))
+		    return 1;
+		/* Wait for major operations on parent directory */
+		if (repl_fidmatch(it1->fid1, it2->fid2) &&
+			(it2->rpcId == RPC_RemoveDir ||
+			it2->rpcId == RPC_MakeDir))
+		    return 1;
+		/* Wait for rename that targets this file */
+		if (repl_fidmatch(it1->fid1, it2->fid1) &&
+			it2->rpcId == RPC_Rename &&
+			!strcmp(it1->name1, it2->name1))
+		    return 1;
+		if (repl_fidmatch(it1->fid1, it2->fid2) &&
+			it2->rpcId == RPC_Rename &&
+			!strcmp(it1->name1, it2->name2))
+		    return 1;
+		break;
+	case RPC_RemoveDir:
+		/* Wait for operations specific to this vnode */
+		if (repl_fidmatch(it1->fid2, it2->fid1) &&
+			(it2->rpcId == RPC_StoreACL ||
+			it2->rpcId == RPC_StoreData64 ||
+			it2->rpcId == RPC_StoreStatus))
+		    return 1;
+		if (repl_fidmatch(it1->fid2, it2->fid2) &&
+			(it2->rpcId == RPC_Symlink ||
+			it2->rpcId == RPC_CreateFile ||
+			it2->rpcId == RPC_RemoveFile ||
+			it2->rpcId == RPC_RemoveDir ||
+			it2->rpcId == RPC_MakeDir))
+		    return 1;
+		/* Wait for operations specific to the directory */
+		if (repl_fidmatch(it1->fid2, it2->fid1) &&
+			(it2->rpcId == RPC_Symlink ||
+			it2->rpcId == RPC_CreateFile ||
+			it2->rpcId == RPC_RemoveFile ||
+			it2->rpcId == RPC_RemoveDir ||
+			it2->rpcId == RPC_MakeDir))
+		    return 1;
+		break;
+	case RPC_Rename:
+		/* Wait for operations specific to the deleted file (if any) */
+		if (repl_fidmatch(it1->delFid, it2->fid2) &&
+			(it2->rpcId == RPC_Symlink ||
+			it2->rpcId == RPC_CreateFile ||
+			it2->rpcId == RPC_RemoveFile ||
+			it2->rpcId == RPC_RemoveDir ||
+			it2->rpcId == RPC_MakeDir))
+		    return 1;
+		if (repl_fidmatch(it1->delFid, it2->fid1) &&
+			(it2->rpcId == RPC_StoreACL ||
+			it2->rpcId == RPC_StoreData64 ||
+			it2->rpcId == RPC_StoreStatus))
+		    return 1;
+		/* Wait for operations specific to the directories */
+		if ((repl_fidmatch(it1->fid1, it2->fid1) ||
+			repl_fidmatch(it1->fid2, it2->fid1)) &&
+			(it2->rpcId == RPC_Symlink ||
+			it2->rpcId == RPC_CreateFile ||
+			it2->rpcId == RPC_RemoveFile ||
+			it2->rpcId == RPC_RemoveDir ||
+			it2->rpcId == RPC_MakeDir))
+		    return 1;
+		/* Wait for other renames, same fid or same directories */
+		if (it2->rpcId == RPC_Rename &&
+			(repl_fidmatch(it1->fid1, it2->fid1) ||
+			repl_fidmatch(it1->fid1, it2->fid2) ||
+			repl_fidmatch(it1->fid2, it2->fid1) ||
+			repl_fidmatch(it1->fid2, it2->fid2) ||
+			repl_fidmatch(it1->delFid, it2->delFid)))
+		    return 1;
+		break;
+    }
+    return 0;
+}
