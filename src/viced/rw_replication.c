@@ -403,3 +403,80 @@ repl_depends_on(struct updateItem *it1, struct updateItem *it2) {
     }
     return 0;
 }
+
+/*
+ * Get RW replica information from the VLDB
+ * Store the information in the volume structure.
+ * It is not stored in the volume header on disk.
+ *
+ * The volume must be locked by the caller.
+ */
+int
+repl_getVldb(Volume *vptr)
+{
+    afs_int32 code;
+    int i;
+    int have_rw = 0;
+    struct repl_server *r_server, *n_server, *prev;
+    struct vldbentry entry;
+
+    ViceLog(0, ("Getting VLDB entry for volume %u\n", vptr->header->diskstuff.id));
+    code = ubik_VL_GetEntryByID(cstruct, 0, vptr->header->diskstuff.id,
+	    RWVOL, &entry);
+    if (code)
+	return code;
+    ViceLog(0, ("GetEntryByID returned %u\n", code));
+
+    /* Wipe current info */
+    for (r_server = n_server = vptr-> repl_servers; n_server; r_server = n_server) {
+	n_server = r_server->next;
+	free(r_server);
+    }
+    prev = NULL;
+    for (i = 0; i < entry.nServers; i++) {
+	ViceLog(0, ("site %d, flags: %u\n", i, entry.serverFlags[i]));
+	ViceLog(0, ("site %d, addr: %u\n", i, entry.serverNumber[i]));
+	if (entry.serverFlags[i] & VLSF_RWREPLICA) {
+	    have_rw++;
+	    r_server = malloc(sizeof(struct repl_server));
+	    r_server->next = NULL;
+	    r_server->addr = entry.serverNumber[i];
+	    r_server->state = REPL_SERVER_OK;
+	    if (!prev)
+		vptr->repl_servers = r_server;
+	    else
+		prev->next = r_server;
+	    prev = r_server;
+	}
+    }
+    vptr->repl_flags &= !REPL_FLAG_NEEDVLDB;
+
+    if (!have_rw) {
+	vptr->repl_status = REPL_NONE;
+	ViceLog(0, ("Volume %u has no RW replicas\n", vptr->header->diskstuff.id));
+    } else {
+	ViceLog(0, ("Volume %u has %d RW replicas\n", vptr->header->diskstuff.id, have_rw));
+	for (r_server = vptr-> repl_servers; r_server; r_server = r_server->next)
+	    ViceLog(0, ("Vol %u replica on server %u\n", vptr->header->diskstuff.id, r_server->addr));
+    }
+    return 0;
+}
+
+
+/*
+ * Determine if updates need to be stashed for the given volume.
+ * - Get VLDB information if we don't already have it
+ * - Check that at least one RW replica exists
+ * - Check current replication status
+ */
+int
+repl_checkStash(Volume *vptr) {
+    /* Get info from VLDB if needed - no info or requested */
+    if (vptr->repl_flags & REPL_FLAG_NEEDVLDB) {
+	repl_getVldb(vptr);
+    }
+    if (vptr->repl_status == REPL_STOPPED)
+	return 0;
+    else
+	return 1;
+}

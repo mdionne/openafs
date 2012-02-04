@@ -205,6 +205,8 @@ extern pthread_mutex_t fsync_glock_mutex;
 #define MustNOTBeDIR    1
 #define MustBeDIR       2
 
+extern struct ubik_client *cstruct;
+
 #ifdef AFS_DEMAND_ATTACH_FS
 /*
  * demand attach fs

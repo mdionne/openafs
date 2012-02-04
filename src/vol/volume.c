@@ -933,6 +933,10 @@ VInitVolumePackageThread(void *args)
             vp->hashid = vid;
             queue_Init(&vp->vnode_list);
             queue_Init(&vp->rx_call_list);
+	    vp->repl_servers = NULL;
+	    vp->repl_status = REPL_STOPPED;
+ViceLog(0, ("Setting VLDB needed flag\n"));
+	    vp->repl_flags = REPL_FLAG_NEEDVLDB;
 	    CV_INIT(&V_attachCV(vp), "partattach", CV_DEFAULT, 0);
 
             vb->batch[vb->size++] = vp;
@@ -2450,6 +2454,10 @@ VAttachVolumeByName_r(Error * ec, char *partition, char *name, int mode)
       vp->partition = partp;
       queue_Init(&vp->vnode_list);
       queue_Init(&vp->rx_call_list);
+	vp->repl_servers = NULL;
+	vp->repl_status = REPL_STOPPED;
+ViceLog(0, ("Setting VLDB needed flag\n"));
+	vp->repl_flags = REPL_FLAG_NEEDVLDB;
 #ifdef AFS_DEMAND_ATTACH_FS
       CV_INIT(&V_attachCV(vp), "vp attach", CV_DEFAULT, 0);
 #endif /* AFS_DEMAND_ATTACH_FS */

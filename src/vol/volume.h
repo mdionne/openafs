@@ -642,6 +642,23 @@ struct VCallByVol {
     struct rx_call *call;
 };
 
+struct repl_server {
+    afs_int32 addr;
+    struct repl_server *next;
+    afs_int32 state;
+    afs_int32 flags;
+};
+
+#define REPL_NONE	0	/* No active replication */
+#define REPL_STOPPED	1	/* No active replication */
+#define REPL_STASHING	2	/* Updates are being stashed, but not sent to replicas */
+#define REPL_ACTIVE	3	/* Updates are stashed and forwarded to replicas */
+
+#define REPL_FLAG_NEEDVLDB	0x01	/* VLDB info needs to be refreshed */
+
+#define REPL_SERVER_OK	0	/* Remote server is responding */
+#define REPL_SERVER_DOWN	0	/* Remote server is down */
+
 typedef struct Volume {
     struct rx_queue q;          /* Volume hash chain pointers */
     VolumeId hashid;		/* Volume number -- for hash table lookup */
@@ -708,6 +725,9 @@ typedef struct Volume {
 #endif /* AFS_DEMAND_ATTACH_FS */
     int usage_bumps_outstanding; /**< to rate limit the usage update i/o by accesses */
     int usage_bumps_next_write;  /**< to rate limit the usage update i/o by time */
+    struct repl_server *repl_servers;
+    afs_int32 repl_flags;
+    afs_int32 repl_status;
 } Volume;
 
 struct volHeader {

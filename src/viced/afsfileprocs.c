@@ -3010,6 +3010,7 @@ SAFSS_StoreACL(struct rx_call *acall, struct AFSFid *Fid,
     afs_int32 rights, anyrights;	/* rights for this and any user */
     struct client *t_client = NULL;	/* tmp ptr to client data */
     struct in_addr logHostAddr;	/* host ip holder for inet_ntoa */
+    struct updateItem *update;
     struct rx_connection *tcon = rx_ConnectionOf(acall);
 
     if (!remote) {
@@ -3068,8 +3069,15 @@ SAFSS_StoreACL(struct rx_call *acall, struct AFSFid *Fid,
     BreakCallBack(client->host, Fid, 0);
 
     /* Get the updated dir's status back to the caller */
-    if (!remote)
+    if (!remote) {
 	GetStatus(targetptr, OutStatus, rights, anyrights, 0);
+	/* Stash update if replication is needed and active for the volume */
+	if (repl_checkStash(volptr)) {
+	    update = stashUpdate(RPC_StoreACL, Fid, NULL, NULL, NULL, NULL,
+		    AccessList, 0, 0, 0, t_client->ViceId, NULL, 0, NULL, NULL);
+	    pthread_setspecific(fs_update, update);
+	};
+    }
 
 Bad_StoreACL:
     /* Update and store volume/vnode and parent vnodes back */

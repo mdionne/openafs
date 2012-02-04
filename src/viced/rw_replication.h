@@ -72,6 +72,8 @@ extern struct updateItem *stashUpdate(afs_int32 rpcId, struct AFSFid *fid1,
         AFSStoreVolumeStatus *volStatus, struct AFSFid *delFid);
 extern afs_int32 repl_init(afs_uint32 bindhost, struct rx_securityClass **securityClasses,
 	afs_int32 numClasses);
+extern int repl_checkStash(Volume *vptr);
+
 
 /* Functions from afsfileprocs.c */
 extern afs_int32 SAFSS_StoreACL(struct rx_call *acall, struct AFSFid *Fid,
