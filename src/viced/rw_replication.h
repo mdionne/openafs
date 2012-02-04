@@ -26,18 +26,15 @@ struct updateItem {
     AFSStoreVolumeStatus volStatus;
 
     /* Fields used for synchronisation */
-#if defined(AFS_PTHREAD_ENV)
     pthread_mutex_t item_lock;
     pthread_cond_t item_cv;
     int ref_count;
     int deleted;
-#endif
 };
 
 extern struct updateItem *update_list_head;
 extern struct updateItem *update_list_tail;
 
-#if defined(AFS_PTHREAD_ENV)
 /* Thread local pointer to this thread's update */
 extern pthread_key_t fs_update;
 
@@ -47,7 +44,6 @@ extern pthread_mutex_t update_list_mutex;
         osi_Assert(pthread_mutex_lock(&update_list_mutex) == 0)
 #define UPDATE_LIST_UNLOCK \
         osi_Assert(pthread_mutex_unlock(&update_list_mutex) == 0)
-#endif
 
 /* Define constants to identify update operations (rpcId field) */
 #define RPC_StoreData 133

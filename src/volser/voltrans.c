@@ -126,7 +126,7 @@ DeleteTrans(struct volser_trans *atrans, afs_int32 lock)
 	    if (tt->rxCallPtr)
 		rxi_CallError(tt->rxCallPtr, RX_CALL_DEAD);
 	    *lt = tt->next;
-            VTRANS_OBJ_LOCK_DESTROY(tt);
+		VTRANS_OBJ_LOCK_DESTROY(tt);
 	    free(tt);
 	    if (lock) VTRANS_UNLOCK;
 	    return 0;

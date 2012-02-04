@@ -160,6 +160,8 @@ static afs_int32 FSYNC_com_VGQuery(FSSYNC_VolOp_command * com, SYNC_response * r
 static afs_int32 FSYNC_com_VGScan(FSSYNC_VolOp_command * com, SYNC_response * res);
 static afs_int32 FSYNC_com_VGScanAll(FSSYNC_VolOp_command * com, SYNC_response * res);
 #endif /* AFS_DEMAND_ATTACH_FS */
+static afs_int32 FSYNC_com_VolReplOn(FSSYNC_VolOp_command * com, SYNC_response * res);
+static afs_int32 FSYNC_com_VolReplOff(FSSYNC_VolOp_command * com, SYNC_response * res);
 
 static afs_int32 FSYNC_com_VnQry(osi_socket fd, SYNC_command * com, SYNC_response * res);
 
@@ -517,6 +519,8 @@ FSYNC_com(osi_socket fd)
     case FSYNC_VG_SCAN:
     case FSYNC_VG_SCAN_ALL:
 #endif
+    case FSYNC_VOL_REPL_ON:
+    case FSYNC_VOL_REPL_OFF:
 	res.hdr.response = FSYNC_com_VolOp(fd, &com, &res);
 	break;
     case FSYNC_VOL_STATS_GENERAL:
@@ -633,6 +637,12 @@ FSYNC_com_VolOp(osi_socket fd, SYNC_command * com, SYNC_response * res)
 	code = FSYNC_com_VGScanAll(&vcom, res);
 	break;
 #endif /* AFS_DEMAND_ATTACH_FS */
+    case FSYNC_VOL_REPL_ON:
+	code = FSYNC_com_VolReplOn(&vcom, res);
+	break;
+    case FSYNC_VOL_REPL_OFF:
+	code = FSYNC_com_VolReplOff(&vcom, res);
+	break;
     default:
 	code = SYNC_BAD_COMMAND;
     }
@@ -1546,6 +1556,32 @@ FSYNC_com_VolHdrQuery(FSSYNC_VolOp_command * vcom, SYNC_response * res)
 #endif
 
  done:
+    return code;
+}
+
+static afs_int32
+FSYNC_com_VolReplOn(FSSYNC_VolOp_command *vcom, SYNC_response *res)
+{
+    afs_int32 code = SYNC_OK;
+
+    /*
+     * We're asked to turn on replication for a specified volume
+     * Set flag to trigger forwarding of updates
+     */
+    ViceLog(0, ("FSYNC: got ReplOn for volume %d\n", vcom->vop->volume));
+    return code;
+}
+
+static afs_int32
+FSYNC_com_VolReplOff(FSSYNC_VolOp_command *vcom, SYNC_response *res)
+{
+    afs_int32 code = SYNC_OK;
+
+    /*
+     * We're asked to turn on replication for a specified volume
+     * Set flag to trigger forwarding of updates
+     */
+    ViceLog(0, ("FSYNC: got ReplOff for volume %d\n", vcom->vop->volume));
     return code;
 }
 

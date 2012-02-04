@@ -13,11 +13,9 @@
 #include <afs/volume.h>
 #include "rw_replication.h"
 
-#if defined(AFS_PTHREAD_ENV)
 #include <pthread.h>
 pthread_key_t fs_update;
 pthread_mutex_t update_list_mutex;
-#endif
 
 struct updateItem *update_list_head = NULL;
 struct updateItem *update_list_tail = NULL;
@@ -100,7 +98,6 @@ stashUpdate(afs_int32 rpcId, struct AFSFid *fid1, struct AFSFid *fid2, char *nam
     item->storeBuf = buf;
     item->volid = volid;
 
-#if defined(AFS_PTHREAD_ENV)
     /* Initialize synchronization bits and insert item in update list */
     CV_INIT(&item->item_cv, "update item cv", CV_DEFAULT, 0);
     MUTEX_INIT(&item->item_lock, "update item lock", MUTEX_DEFAULT, 0);
@@ -114,7 +111,6 @@ stashUpdate(afs_int32 rpcId, struct AFSFid *fid1, struct AFSFid *fid2, char *nam
 	update_list_tail = item;
     }
     UPDATE_LIST_UNLOCK;
-#endif
 
     return item;
 }

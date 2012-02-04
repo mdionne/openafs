@@ -833,6 +833,9 @@ VolClone(struct rx_call *acid, afs_int32 atrans, afs_uint32 purgeId,
 	LogError(error);
 	goto fail;
     }
+
+    FSYNC_VolOp(V_id(originalvp), V_partition(originalvp)->name, FSYNC_VOL_REPL_ON, 0, NULL);
+
     VDetachVolume(&error, newvp);	/* allow file server to get it's hands on it */
     newvp = NULL;
     VUpdateVolume(&error, originalvp);
