@@ -46,6 +46,7 @@ stashUpdate(afs_int32 rpcId, struct AFSFid *fid1, struct AFSFid *fid2, char *nam
     memset(item, 0, sizeof(struct updateItem));
 
     item->rpcId = rpcId;
+    ViceLog(0, ("Stashing update of type %d\n", rpcId));
     item->clientViceId = clientViceId;
 
     if (fid1)
@@ -419,6 +420,7 @@ repl_getVldb(Volume *vptr)
     int have_rw = 0;
     struct repl_server *r_server, *n_server, *prev;
     struct vldbentry entry;
+    char host[16];
 
     ViceLog(0, ("Getting VLDB entry for volume %u\n", vptr->header->diskstuff.id));
     code = ubik_VL_GetEntryByID(cstruct, 0, vptr->header->diskstuff.id,
@@ -435,7 +437,7 @@ repl_getVldb(Volume *vptr)
     prev = NULL;
     for (i = 0; i < entry.nServers; i++) {
 	ViceLog(0, ("site %d, flags: %u\n", i, entry.serverFlags[i]));
-	ViceLog(0, ("site %d, addr: %u\n", i, entry.serverNumber[i]));
+	ViceLog(0, ("site %d, addr: %s\n", i, afs_inet_ntoa_r(htonl(entry.serverNumber[i]), host)));
 	if (entry.serverFlags[i] & VLSF_RWREPLICA) {
 	    have_rw++;
 	    r_server = malloc(sizeof(struct repl_server));
@@ -449,15 +451,15 @@ repl_getVldb(Volume *vptr)
 	    prev = r_server;
 	}
     }
-    vptr->repl_flags &= !REPL_FLAG_NEEDVLDB;
+    vptr->repl_flags &= ~REPL_FLAG_NEEDVLDB;
 
     if (!have_rw) {
 	vptr->repl_status = REPL_NONE;
-	ViceLog(0, ("Volume %u has no RW replicas\n", vptr->header->diskstuff.id));
+	ViceLog(0, ("Volume %u has no RW replicas.  Resetting repl_status\n", vptr->header->diskstuff.id));
     } else {
 	ViceLog(0, ("Volume %u has %d RW replicas\n", vptr->header->diskstuff.id, have_rw));
 	for (r_server = vptr-> repl_servers; r_server; r_server = r_server->next)
-	    ViceLog(0, ("Vol %u replica on server %u\n", vptr->header->diskstuff.id, r_server->addr));
+	    ViceLog(0, ("Vol %u replica on server %s\n", vptr->header->diskstuff.id, afs_inet_ntoa_r(htonl(r_server->addr), host)));
     }
     return 0;
 }
@@ -472,10 +474,23 @@ repl_getVldb(Volume *vptr)
 int
 repl_checkStash(Volume *vptr) {
     /* Get info from VLDB if needed - no info or requested */
+
+    ViceLog(0, ("In check stash, volume %u\n", vptr->header->diskstuff.id));
+    ViceLog(0, ("repl_status: %d\n", vptr->repl_status));
+    ViceLog(0, ("repl_flags: %d\n", vptr->repl_flags));
+
     if (vptr->repl_flags & REPL_FLAG_NEEDVLDB) {
 	repl_getVldb(vptr);
+	ViceLog(0, ("(after VLDB refresh) repl_status: %d\n", vptr->repl_status));
+	ViceLog(0, ("(after VLDB refresh) repl_flags: %d\n", vptr->repl_flags));
     }
-    if (vptr->repl_status == REPL_STOPPED)
+    if (vptr->repl_status == REPL_STASHING)
+	ViceLog(0, ("Stashing, but not forwarding for volume %d\n", vptr->header->diskstuff.id));
+    if (vptr->repl_status == REPL_ACTIVE)
+	ViceLog(0, ("Stashing and forwarding for volume %d\n", vptr->header->diskstuff.id));
+    if (vptr->repl_status == REPL_NONE)
+	ViceLog(0, ("Volume %d has no RW replicas\n", vptr->header->diskstuff.id));
+    if (vptr->repl_status == REPL_STOPPED || vptr->repl_status == REPL_NONE)
 	return 0;
     else
 	return 1;

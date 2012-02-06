@@ -153,8 +153,8 @@ struct partList {		/*used by the backup system */
 #define ITSROVOL    0x02
 #define ITSRWVOL    0x04
 #define ITSBACKVOL  0x08
-#define ITSRWREPL   0x10
 #define RO_DONTUSE  0x20
+#define ITSRWREPL   0x40
 
 #define VLOP_RESTORE 0x100	/*this is bogus, clashes with VLOP_DUMP */
 #define VLOP_ADDSITE 0x80	/*this is bogus, clashes with VLOP_DELETE */

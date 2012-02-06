@@ -54,7 +54,7 @@
 #include "lockprocs_prototypes.h"
 
 extern struct ubik_client *cstruct;
-int verbose = 0, noresolve = 0;
+int verbose = 1, noresolve = 0;
 
 struct release {
     afs_uint32 crtime;
@@ -3340,7 +3340,8 @@ GetTrans(struct nvldbentry *vldbEntryPtr, afs_int32 index,
 	    PrintError("Failed to create the ro volume: ", code);
 	    goto fail;
 	}
-	vldbEntryPtr->volumeId[ROVOL] = volid;
+	if (!rwreplica)
+	    vldbEntryPtr->volumeId[ROVOL] = volid;
 
 	VDONE;
 
@@ -4118,7 +4119,6 @@ UV_ReleaseVolume(afs_uint32 afromvol, afs_uint32 afromserver,
 
     /* Update the VLDB */
     VPRINT("updating VLDB ...");
-
     MapNetworkToHost(&entry, &storeEntry);
     vcode =
 	VLDB_ReplaceEntry(afromvol, RWVOL, &storeEntry,

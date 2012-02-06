@@ -935,7 +935,6 @@ VInitVolumePackageThread(void *args)
             queue_Init(&vp->rx_call_list);
 	    vp->repl_servers = NULL;
 	    vp->repl_status = REPL_STOPPED;
-ViceLog(0, ("Setting VLDB needed flag\n"));
 	    vp->repl_flags = REPL_FLAG_NEEDVLDB;
 	    CV_INIT(&V_attachCV(vp), "partattach", CV_DEFAULT, 0);
 
@@ -2224,6 +2223,9 @@ VPreAttachVolumeByVp_r(Error * ec,
 	memset(vp, 0, sizeof(Volume));
 	queue_Init(&vp->vnode_list);
 	queue_Init(&vp->rx_call_list);
+	vp->repl_servers = NULL;
+	vp->repl_status = REPL_STOPPED;
+	vp->repl_flags = REPL_FLAG_NEEDVLDB;
 	CV_INIT(&V_attachCV(vp), "vp attach", CV_DEFAULT, 0);
     }
 

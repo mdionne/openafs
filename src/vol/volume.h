@@ -655,9 +655,10 @@ struct repl_server {
 #define REPL_ACTIVE	3	/* Updates are stashed and forwarded to replicas */
 
 #define REPL_FLAG_NEEDVLDB	0x01	/* VLDB info needs to be refreshed */
+#define REPL_FLAG_PURGE		0x02	/* Update queue must be purged */
 
-#define REPL_SERVER_OK	0	/* Remote server is responding */
-#define REPL_SERVER_DOWN	0	/* Remote server is down */
+#define REPL_SERVER_OK		0	/* Remote server is responding */
+#define REPL_SERVER_DOWN	1	/* Remote server is down */
 
 typedef struct Volume {
     struct rx_queue q;          /* Volume hash chain pointers */

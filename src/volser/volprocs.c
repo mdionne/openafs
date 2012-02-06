@@ -1449,6 +1449,8 @@ SAFSVolForwardMultiple(struct rx_call *acid, afs_int32 fromTrans, afs_int32
     free(tcons);
     free(tcalls);
 
+    FSYNC_VolOp(V_parentId(vp), V_partition(vp)->name, FSYNC_VOL_REPL_FWD_ON, 0, NULL);
+
     if (tt) {
         TClearRxCall(tt);
 	if (TRELE(tt) && !code)	/* return the first code if it's set */

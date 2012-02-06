@@ -2865,6 +2865,7 @@ ReleaseVolume(struct cmd_syndesc *as, void *arock)
 		    as->parms[0].items->data);
 	return ENOENT;
     }
+printf("Getting vol info for volid: %d\n", avolid);
     code = GetVolumeInfo(avolid, &aserver, &apart, &vtype, &entry);
     if (code)
 	return code;

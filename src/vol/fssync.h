@@ -58,8 +58,10 @@ enum FSYNCOpCode {
     FSYNC_VG_DEL              = SYNC_COM_CODE_DECL(21), /**< delete a volume id from a vg */
     FSYNC_VG_SCAN             = SYNC_COM_CODE_DECL(22), /**< force a re-scan of a given partition */
     FSYNC_VG_SCAN_ALL         = SYNC_COM_CODE_DECL(23), /**< force a re-scan of all vice partitions */
-    FSYNC_VOL_REPL_ON         = SYNC_COM_CODE_DECL(24), /**< activate forwarding of updates to rw replicas */
-    FSYNC_VOL_REPL_OFF        = SYNC_COM_CODE_DECL(25), /**< stop forwarding updates to rw replicas */
+    FSYNC_VOL_REPL_ON         = SYNC_COM_CODE_DECL(24), /**< activate stashing of updates for rw replicas */
+    FSYNC_VOL_REPL_OFF        = SYNC_COM_CODE_DECL(25), /**< stop stashing updates for rw replicas */
+    FSYNC_VOL_REPL_FWD_ON     = SYNC_COM_CODE_DECL(26), /**< activate forwarding of updates to rw replicas */
+    FSYNC_VOL_REPL_FWD_OFF    = SYNC_COM_CODE_DECL(27), /**< stop forwarding updates to rw replicas */
     FSYNC_OP_CODE_END
 };
 

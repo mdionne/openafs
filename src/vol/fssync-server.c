@@ -162,6 +162,8 @@ static afs_int32 FSYNC_com_VGScanAll(FSSYNC_VolOp_command * com, SYNC_response *
 #endif /* AFS_DEMAND_ATTACH_FS */
 static afs_int32 FSYNC_com_VolReplOn(FSSYNC_VolOp_command * com, SYNC_response * res);
 static afs_int32 FSYNC_com_VolReplOff(FSSYNC_VolOp_command * com, SYNC_response * res);
+static afs_int32 FSYNC_com_VolReplFwdOn(FSSYNC_VolOp_command * com, SYNC_response * res);
+static afs_int32 FSYNC_com_VolReplFwdOff(FSSYNC_VolOp_command * com, SYNC_response * res);
 
 static afs_int32 FSYNC_com_VnQry(osi_socket fd, SYNC_command * com, SYNC_response * res);
 
@@ -521,6 +523,8 @@ FSYNC_com(osi_socket fd)
 #endif
     case FSYNC_VOL_REPL_ON:
     case FSYNC_VOL_REPL_OFF:
+    case FSYNC_VOL_REPL_FWD_ON:
+    case FSYNC_VOL_REPL_FWD_OFF:
 	res.hdr.response = FSYNC_com_VolOp(fd, &com, &res);
 	break;
     case FSYNC_VOL_STATS_GENERAL:
@@ -642,6 +646,12 @@ FSYNC_com_VolOp(osi_socket fd, SYNC_command * com, SYNC_response * res)
 	break;
     case FSYNC_VOL_REPL_OFF:
 	code = FSYNC_com_VolReplOff(&vcom, res);
+	break;
+    case FSYNC_VOL_REPL_FWD_ON:
+	code = FSYNC_com_VolReplFwdOn(&vcom, res);
+	break;
+    case FSYNC_VOL_REPL_FWD_OFF:
+	code = FSYNC_com_VolReplFwdOff(&vcom, res);
 	break;
     default:
 	code = SYNC_BAD_COMMAND;
@@ -1563,12 +1573,25 @@ static afs_int32
 FSYNC_com_VolReplOn(FSSYNC_VolOp_command *vcom, SYNC_response *res)
 {
     afs_int32 code = SYNC_OK;
+    Volume *vp;
+    Error error;
 
     /*
      * We're asked to turn on replication for a specified volume
-     * Set flag to trigger forwarding of updates
+     * Set flag to trigger stashing of updates
      */
     ViceLog(0, ("FSYNC: got ReplOn for volume %d\n", vcom->vop->volume));
+    vp = VLookupVolume_r(&error, vcom->vop->volume, 0);
+    if (!vp) {
+	ViceLog(0, ("FSYNC: ReplOn failed to lookup volume %d, error: %d\n", vcom->vop->volume, error));
+	return code;
+    }
+    /* Force vldb refresh */
+    vp->repl_flags |= REPL_FLAG_NEEDVLDB;
+    if (vp->repl_status == REPL_ACTIVE || vp->repl_status == REPL_STASHING)
+	vp->repl_flags |= REPL_FLAG_PURGE;
+    vp->repl_status = REPL_STASHING;
+
     return code;
 }
 
@@ -1579,12 +1602,49 @@ FSYNC_com_VolReplOff(FSSYNC_VolOp_command *vcom, SYNC_response *res)
 
     /*
      * We're asked to turn on replication for a specified volume
-     * Set flag to trigger forwarding of updates
+     * Set flag to stop stashing of updates
      */
     ViceLog(0, ("FSYNC: got ReplOff for volume %d\n", vcom->vop->volume));
     return code;
 }
 
+static afs_int32
+FSYNC_com_VolReplFwdOn(FSSYNC_VolOp_command *vcom, SYNC_response *res)
+{
+    afs_int32 code = SYNC_OK;
+    Volume *vp;
+    Error error;
+
+    /*
+     * We're asked to turn on forwarding for replication for a specified volume
+     * Set flag to trigger forwarding of updates
+     */
+    ViceLog(0, ("FSYNC: got ReplFwdOn for volume %d\n", vcom->vop->volume));
+    vp = VLookupVolume_r(&error, vcom->vop->volume, 0);
+    if (!vp) {
+	ViceLog(0, ("FSYNC: ReplFwdOn failed to lookup volume %d, error: %d\n", vcom->vop->volume, error));
+	return code;
+    }
+    /* Force vldb refresh */
+    vp->repl_flags |= REPL_FLAG_NEEDVLDB;
+    /* Set flag unconditionally.  Will be reset elsewhere if it doesn't make sense (ex: no replica sites) */
+    vp->repl_status = REPL_ACTIVE;
+
+    return code;
+}
+
+static afs_int32
+FSYNC_com_VolReplFwdOff(FSSYNC_VolOp_command *vcom, SYNC_response *res)
+{
+    afs_int32 code = SYNC_OK;
+
+    /*
+     * We're asked to turn on replication for a specified volume
+     * Set flag to trigger forwarding of updates
+     */
+    ViceLog(0, ("FSYNC: got ReplFwdOff for volume %d\n", vcom->vop->volume));
+    return code;
+}
 #ifdef AFS_DEMAND_ATTACH_FS
 static afs_int32
 FSYNC_com_VolOpQuery(FSSYNC_VolOp_command * vcom, SYNC_response * res)
