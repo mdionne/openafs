@@ -11,6 +11,7 @@
 #include "viced_prototypes.h"
 #include <afs/vnode.h>
 #include <afs/volume.h>
+#include <afs/cellconfig.h>
 #include "rw_replication.h"
 
 #include <pthread.h>
@@ -114,26 +115,6 @@ stashUpdate(afs_int32 rpcId, struct AFSFid *fid1, struct AFSFid *fid2, char *nam
     UPDATE_LIST_UNLOCK;
 
     return item;
-}
-
-afs_int32
-repl_init(afs_uint32 rx_bindhost, struct rx_securityClass **securityClasses,
-	afs_int32 numClasses)
-{
-    struct rx_service *service;
-
-    service = rx_NewServiceHost(rx_bindhost, 0, REPL_SERVICE_ID,
-                                 "REPL", securityClasses, numClasses,
-                                 REPL_ExecuteRequest);
-    if (!service) {
-        ViceLog(0,
-                ("Failed to initialize REPL, probably two servers running.\n"));
-        return -1;
-    }
-    rx_SetMinProcs(service, 2);
-    rx_SetMaxProcs(service, 10);
-    rx_SetCheckReach(service, 1);
-    return 0;
 }
 
 afs_int32
@@ -494,4 +475,200 @@ repl_checkStash(Volume *vptr) {
 	return 0;
     else
 	return 1;
+}
+
+void
+get_item(struct updateItem *item)
+{
+    pthread_mutex_lock(&item->item_lock);
+    item->ref_count++;
+    pthread_mutex_unlock(&item->item_lock);
+}
+
+/* Make Connection to make fileserver->fileserver RPC call*/
+struct rx_connection *
+repl_MakeConnection(afs_int32 serverIp)
+{
+    struct rx_securityClass *sc;
+    struct afsconf_dir *conf_dir;
+    afs_uint32 ip = htonl(serverIp);
+    afs_int32 scIndex;
+    afs_int32 code;
+    struct rx_connection *conn;
+
+    conf_dir = afsconf_Open(AFSDIR_SERVER_ETC_DIRPATH);
+
+    code = afsconf_ClientAuth(conf_dir, &sc, &scIndex);
+    if (code)
+	return NULL;
+    conn = rx_NewConnection(ip, htons(7000), REPL_SERVICE_ID, sc, scIndex);
+
+    afsconf_Close(conf_dir);
+    rxs_Release(sc);
+    return conn;
+}
+
+void
+repl_PostProc(afs_int32 code)
+{
+    struct rx_connection *rcon;
+    struct updateItem *item;
+    struct updateItem *it, *prev;
+    afs_int32 ret;
+    Volume *vptr;
+    struct repl_server *rserver;
+    Error ec, client_ec;
+    char host[16];
+
+    item = pthread_getspecific(fs_update);
+    ViceLog(0, ("In POstProc\n"));
+    if (item) {
+    ViceLog(0, ("In POstProc, have item\n"));
+	/* Need to wait for any earlier related update */
+restart:
+	UPDATE_LIST_LOCK;
+	for (it = update_list_head; it != NULL && it != item; it = it->next) {
+	    if (repl_depends_on(item, it)) {
+		/* Get a ref so it doesn't go away after we unlock */
+		get_item(it);
+		UPDATE_LIST_UNLOCK;
+		pthread_mutex_lock(&it->item_lock);
+		/* If we're the only remaining ref, the item has been removed.  move on */
+		if (it->deleted) {
+		    it->ref_count--;
+		    if (it->ref_count == 0)
+			free(it);
+		    else
+			pthread_mutex_unlock(&it->item_lock);
+		    goto restart;
+		}
+		pthread_cond_wait(&it->item_cv, &it->item_lock);
+		it->ref_count--;
+		if (it->ref_count == 0)
+		    free(it);
+		else
+		    pthread_mutex_unlock(&it->item_lock);
+		goto restart;
+	    }
+	}
+	UPDATE_LIST_UNLOCK;
+	/* If no FID provided, use root vnode - for SetVolumeStatus */
+	if (!item->fid1.Volume) {
+	    item->fid1.Volume = item->volid;
+	    item->fid1.Vnode = ROOTVNODE;
+	    item->fid1.Unique = 1;
+	}
+	vptr = VGetVolume(&ec, &client_ec, item->volid);
+	ViceLog(0, ("In PostProc, got vptr %p, ec: %d, c_ec: %d\n", vptr, ec, client_ec));
+	if (!vptr) return;
+	for (rserver = vptr->repl_servers; rserver; rserver = rserver->next) {
+	    ViceLog(0, ("In PostProc, replication server: %s\n", afs_inet_ntoa_r(htonl(rserver->addr), host)));
+	    /* Only forward if replication is currently active */
+	    if (vptr->repl_status == REPL_ACTIVE) {
+		/* make connections for each Slave */
+		rcon = repl_MakeConnection(rserver->addr);
+		ViceLog(0, ("In PostProc, got rcon %p\n", rcon));
+		switch(item->rpcId) {
+		    case RPC_CreateFile:
+			ret = REPL_CreateFile(rcon, &item->fid1, item->name1, &item->status,
+				&item->fid2, item->clientViceId);
+			break;
+		    case RPC_RemoveFile:
+			ret = REPL_RemoveFile(rcon, &item->fid1, item->name1, item->clientViceId);
+			break;
+		    case RPC_Rename:
+			ret = REPL_Rename(rcon, &item->fid1, item->name1, &item->fid2, item->name2,
+				item->clientViceId);
+			break;
+		    case RPC_StoreData64:
+/*
+			ret = rw_StoreData64(rcon, &item->fid1, &item->status, item->pos,
+				item->length, item->fileLength, item->clientViceId,
+				item->storeBuf);
+*/
+			ret = 0;
+			break;
+		    case RPC_RemoveDir:
+			ret = REPL_RemoveDir(rcon, &item->fid1, item->name1, item->clientViceId);
+			break;
+		    case RPC_MakeDir:
+			ret = REPL_MakeDir(rcon, &item->fid1, item->name1, &item->status,
+				&item->fid2, item->clientViceId);
+			break;
+		    case RPC_StoreACL:
+			ret = REPL_StoreACL(rcon, &item->fid1, &item->acl);
+			break;
+		    case RPC_StoreStatus:
+			ret = REPL_StoreStatus(rcon, &item->fid1, &item->status, item->clientViceId);
+			break;
+		    case RPC_SetVolumeStatus:
+			ret = REPL_SetVolumeStatus(rcon, item->volid, &item->volStatus,
+				item->name1, item->name2, item->clientViceId);
+			break;
+		    case RPC_Symlink:
+			ret = REPL_Symlink(rcon, &item->fid1, item->name1, item->name2,
+				&item->status, &item->fid2, item->clientViceId);
+			break;
+		    default:
+			ViceLog(0, ("Warning: unhandled stashed RPC, op: %d\n", item->rpcId));
+			ret = -1;
+		}
+		if (ret != 0) {
+		    ViceLog(0, ("Error return from remote RPC: %d\n", ret));
+		    ViceLog(0, ("Disabling remote updates\n"));
+		    /* TODO: remove specific server from list.  should mark replica as bad, break all callbacks */
+		}
+	    }
+	}
+	VPutVolume(vptr);
+	if (item->rpcId == RPC_StoreData64 && item->storeBuf)
+	    free(item->storeBuf);
+	/* Remove item from list */
+	UPDATE_LIST_LOCK;
+	if (item == update_list_head) {
+	    update_list_head = item->next;
+	    if (update_list_head == NULL)
+		update_list_tail = NULL;
+	} else {
+	    prev = update_list_head;
+	    for (it = update_list_head; it != NULL && it != item; it = it->next)
+		prev = it;
+		ViceLog(0, ("Removing %p from list, prev: %p\n", item, prev));
+	    prev->next = item->next;
+	    if (item == update_list_tail)
+		update_list_tail = prev;
+	}
+	pthread_mutex_lock(&item->item_lock);
+	item->ref_count--;
+	item->deleted = 1;
+	pthread_cond_broadcast(&item->item_cv);
+	if (item->ref_count == 0)
+	    free(item);
+	else
+	    pthread_mutex_unlock(&item->item_lock);
+	UPDATE_LIST_UNLOCK;
+    } else {
+    }
+    pthread_setspecific(fs_update, NULL);
+}
+
+afs_int32
+repl_init(afs_uint32 rx_bindhost, struct rx_securityClass **securityClasses,
+	afs_int32 numClasses)
+{
+    struct rx_service *service;
+
+    service = rx_NewServiceHost(rx_bindhost, 0, REPL_SERVICE_ID,
+                                 "REPL", securityClasses, numClasses,
+                                 REPL_ExecuteRequest);
+    if (!service) {
+        ViceLog(0,
+                ("Failed to initialize REPL, probably two servers running.\n"));
+        return -1;
+    }
+    rx_SetMinProcs(service, 2);
+    rx_SetMaxProcs(service, 10);
+    rx_SetCheckReach(service, 1);
+
+    return 0;
 }

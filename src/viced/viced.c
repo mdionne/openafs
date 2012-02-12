@@ -1995,6 +1995,10 @@ main(int argc, char *argv[])
     rx_SetMaxProcs(tservice, lwps);
     rx_SetCheckReach(tservice, 1);
     rx_SetServerIdleDeadErr(tservice, VNOSERVICE);
+    /* RW Replication bits */
+    rx_SetPostProc(tservice, repl_PostProc);
+    MUTEX_INIT(&update_list_mutex, "update list lock", MUTEX_DEFAULT, 0);
+    pthread_key_create(&fs_update, NULL);
 
     /* Start replication service */
     code = repl_init(rx_bindhost, securityClasses, numClasses);

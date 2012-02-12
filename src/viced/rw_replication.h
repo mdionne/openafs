@@ -73,6 +73,7 @@ extern struct updateItem *stashUpdate(afs_int32 rpcId, struct AFSFid *fid1,
 extern afs_int32 repl_init(afs_uint32 bindhost, struct rx_securityClass **securityClasses,
 	afs_int32 numClasses);
 extern int repl_checkStash(Volume *vptr);
+extern void repl_PostProc(afs_int32 code);
 
 
 /* Functions from afsfileprocs.c */

@@ -3074,7 +3074,7 @@ SAFSS_StoreACL(struct rx_call *acall, struct AFSFid *Fid,
 	/* Stash update if replication is needed and active for the volume */
 	if (repl_checkStash(volptr)) {
 	    update = stashUpdate(RPC_StoreACL, Fid, NULL, NULL, NULL, NULL,
-		    AccessList, 0, 0, 0, t_client->ViceId, NULL, 0, NULL, NULL);
+		    AccessList, 0, 0, 0, t_client->ViceId, NULL, V_id(volptr), NULL, NULL);
 	    pthread_setspecific(fs_update, update);
 	};
     }
