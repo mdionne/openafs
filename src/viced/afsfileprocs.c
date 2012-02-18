@@ -3066,7 +3066,7 @@ SAFSS_StoreACL(struct rx_call *acall, struct AFSFid *Fid,
     rx_KeepAliveOn(acall);
 
     /* break call backs on the directory  */
-    BreakCallBack(client->host, Fid, 0);
+    BreakCallBack(remote ? NULL : client->host, Fid, 0);
 
     /* Get the updated dir's status back to the caller */
     if (!remote) {
