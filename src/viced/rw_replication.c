@@ -609,6 +609,10 @@ restart:
 			ret = REPL_Symlink(rcon, &item->fid1, item->name1, item->name2,
 				&item->status, &item->fid2, item->clientViceId);
 			break;
+		    case RPC_Link:
+			ret = REPL_Link(rcon, &item->fid1, item->name1,
+				&item->fid2, item->clientViceId);
+			break;
 		    default:
 			ViceLog(0, ("Warning: unhandled stashed RPC, op: %d\n", item->rpcId));
 			ret = -1;

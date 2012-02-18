@@ -906,10 +906,9 @@ GetVolumePackage(struct rx_call *acall, AFSFid * Fid, Volume ** volptr,
  *      Enables keepalives on the call.
  *------------------------------------------------------------------------*/
 static void
-PutVolumePackageWithCall(struct rx_call *acall, Vnode *
-			 parentwhentargetnotdir, Vnode * targetptr,
-                         Vnode * parentptr, Volume * volptr,
-                         struct client **client, struct VCallByVol *cbv)
+PutVolumePackageWithCall(struct rx_call *acall, Vnode *parentwhentargetnotdir,
+	Vnode *targetptr, Vnode *parentptr, Volume *volptr,
+	struct client **client, struct VCallByVol *cbv, int remote)
 {
     Error fileCode = 0;		/* Error code returned by the volume package */
 
@@ -931,19 +930,10 @@ PutVolumePackageWithCall(struct rx_call *acall, Vnode *
     }
     rx_KeepAliveOn(acall);
 
-    if (*client) {
+    if (!remote && *client) {
 	PutClient(client);
     }
 }				/*PutVolumePackage */
-
-static_inline void
-PutVolumePackage(struct rx_call *acall, Vnode * parentwhentargetnotdir,
-		 Vnode * targetptr, Vnode * parentptr, Volume * volptr,
-		 struct client **client)
-{
-    PutVolumePackageWithCall(acall, parentwhentargetnotdir, targetptr,
-			     parentptr, volptr, client, NULL);
-}
 
 static int
 VolumeOwner(struct client *client, Vnode * targetptr)
@@ -2296,8 +2286,8 @@ common_FetchData64(struct rx_call *acall, struct AFSFid *Fid,
 
   Bad_FetchData:
     /* Update and store volume/vnode and parent vnodes back */
-    (void)PutVolumePackageWithCall(acall, parentwhentargetnotdir, targetptr,
-                                   (Vnode *) 0, volptr, &client, cbv);
+    PutVolumePackageWithCall(acall, parentwhentargetnotdir, targetptr,
+                                   (Vnode *) 0, volptr, &client, cbv, 0);
     ViceLog(2, ("SRXAFS_FetchData returns %d\n", errorCode));
     errorCode = CallPostamble(tcon, errorCode, thost);
 
@@ -2406,8 +2396,8 @@ SRXAFS_FetchACL(struct rx_call * acall, struct AFSFid * Fid,
 
   Bad_FetchACL:
     /* Update and store volume/vnode and parent vnodes back */
-    (void)PutVolumePackage(acall, parentwhentargetnotdir, targetptr,
-			   (Vnode *) 0, volptr, &client);
+    PutVolumePackageWithCall(acall, parentwhentargetnotdir, targetptr,
+	    (Vnode *) 0, volptr, &client, NULL, 0);
     ViceLog(2,
 	    ("SAFS_FetchACL returns %d (ACL=%s)\n", errorCode,
 	     AccessList->AFSOpaque_val));
@@ -2494,8 +2484,8 @@ SAFSS_FetchStatus(struct rx_call *acall, struct AFSFid *Fid,
 
   Bad_FetchStatus:
     /* Update and store volume/vnode and parent vnodes back */
-    (void)PutVolumePackage(acall, parentwhentargetnotdir, targetptr,
-			   (Vnode *) 0, volptr, &client);
+    PutVolumePackageWithCall(acall, parentwhentargetnotdir, targetptr,
+			   (Vnode *) 0, volptr, &client, NULL, 0);
     ViceLog(2, ("SAFS_FetchStatus returns %d\n", errorCode));
     return errorCode;
 
@@ -2596,8 +2586,8 @@ SRXAFS_BulkStatus(struct rx_call * acall, struct AFSCBFids * Fids,
 	}
 
 	/* put back the file ID and volume */
-	(void)PutVolumePackage(acall, parentwhentargetnotdir, targetptr,
-			       (Vnode *) 0, volptr, &client);
+	PutVolumePackageWithCall(acall, parentwhentargetnotdir, targetptr,
+			       (Vnode *) 0, volptr, &client, NULL, 0);
 	parentwhentargetnotdir = (Vnode *) 0;
 	targetptr = (Vnode *) 0;
 	volptr = (Volume *) 0;
@@ -2606,8 +2596,8 @@ SRXAFS_BulkStatus(struct rx_call * acall, struct AFSCBFids * Fids,
 
   Bad_BulkStatus:
     /* Update and store volume/vnode and parent vnodes back */
-    (void)PutVolumePackage(acall, parentwhentargetnotdir, targetptr,
-			   (Vnode *) 0, volptr, &client);
+    PutVolumePackageWithCall(acall, parentwhentargetnotdir, targetptr,
+			   (Vnode *) 0, volptr, &client, NULL, 0);
     errorCode = CallPostamble(tcon, errorCode, thost);
 
     t_client = (struct client *)rx_GetSpecific(tcon, rxcon_client_key);
@@ -2692,8 +2682,8 @@ SRXAFS_InlineBulkStatus(struct rx_call * acall, struct AFSCBFids * Fids,
 			      &rights, &anyrights))) {
 	    tstatus = &OutStats->AFSBulkStats_val[i];
 	    tstatus->errorCode = errorCode;
-	    PutVolumePackage(acall, parentwhentargetnotdir, targetptr,
-			     (Vnode *) 0, volptr, &client);
+	    PutVolumePackageWithCall(acall, parentwhentargetnotdir, targetptr,
+			     (Vnode *) 0, volptr, &client, NULL, 0);
 	    parentwhentargetnotdir = (Vnode *) 0;
 	    targetptr = (Vnode *) 0;
 	    volptr = (Volume *) 0;
@@ -2716,9 +2706,8 @@ SRXAFS_InlineBulkStatus(struct rx_call * acall, struct AFSCBFids * Fids,
 					CHK_FETCHSTATUS, 0))) {
 		tstatus = &OutStats->AFSBulkStats_val[i];
 		tstatus->errorCode = errorCode;
-		(void)PutVolumePackage(acall, parentwhentargetnotdir,
-				       targetptr, (Vnode *) 0, volptr,
-				       &client);
+		PutVolumePackageWithCall(acall, parentwhentargetnotdir,
+			targetptr, (Vnode *) 0, volptr, &client, NULL, 0);
 		parentwhentargetnotdir = (Vnode *) 0;
 		targetptr = (Vnode *) 0;
 		volptr = (Volume *) 0;
@@ -2745,8 +2734,8 @@ SRXAFS_InlineBulkStatus(struct rx_call * acall, struct AFSCBFids * Fids,
 	}
 
 	/* put back the file ID and volume */
-	(void)PutVolumePackage(acall, parentwhentargetnotdir, targetptr,
-			       (Vnode *) 0, volptr, &client);
+	PutVolumePackageWithCall(acall, parentwhentargetnotdir, targetptr,
+			       (Vnode *) 0, volptr, &client, NULL, 0);
 	parentwhentargetnotdir = (Vnode *) 0;
 	targetptr = (Vnode *) 0;
 	volptr = (Volume *) 0;
@@ -2755,8 +2744,8 @@ SRXAFS_InlineBulkStatus(struct rx_call * acall, struct AFSCBFids * Fids,
 
   Bad_InlineBulkStatus:
     /* Update and store volume/vnode and parent vnodes back */
-    (void)PutVolumePackage(acall, parentwhentargetnotdir, targetptr,
-			   (Vnode *) 0, volptr, &client);
+    PutVolumePackageWithCall(acall, parentwhentargetnotdir, targetptr,
+			   (Vnode *) 0, volptr, &client, NULL, 0);
     errorCode = CallPostamble(tcon, errorCode, thost);
 
     t_client = (struct client *)rx_GetSpecific(tcon, rxcon_client_key);
@@ -2917,8 +2906,8 @@ SAFSS_StoreData64(struct rx_call *acall, struct AFSFid *Fid,
 
   Bad_StoreData:
     /* Update and store volume/vnode and parent vnodes back */
-    (void)PutVolumePackage(acall, parentwhentargetnotdir, targetptr,
-			   (Vnode *) 0, volptr, &client);
+    PutVolumePackageWithCall(acall, parentwhentargetnotdir, targetptr,
+			   (Vnode *) 0, volptr, &client, NULL, remote);
     ViceLog(2, ("SAFSS_StoreData returns %d\n", errorCode));
     if (remote)
 	free(client);
@@ -3081,8 +3070,8 @@ SAFSS_StoreACL(struct rx_call *acall, struct AFSFid *Fid,
 
 Bad_StoreACL:
     /* Update and store volume/vnode and parent vnodes back */
-    PutVolumePackage(acall, parentwhentargetnotdir, targetptr, (Vnode *) 0,
-		     volptr, &client);
+    PutVolumePackageWithCall(acall, parentwhentargetnotdir, targetptr, (Vnode *) 0,
+		     volptr, &client, NULL, remote);
     ViceLog(2, ("SAFS_StoreACL returns %d\n", errorCode));
     return errorCode;
 
@@ -3134,6 +3123,7 @@ SAFSS_StoreStatus(struct rx_call *acall, struct AFSFid *Fid,
     struct client *t_client = NULL;	/* tmp ptr to client data */
     struct in_addr logHostAddr;	/* host ip holder for inet_ntoa */
     struct rx_connection *tcon = rx_ConnectionOf(acall);
+    struct updateItem *update;
 
     if (!remote) {
 	/* Get ptr to client data for user Id for logging */
@@ -3199,13 +3189,20 @@ SAFSS_StoreStatus(struct rx_call *acall, struct AFSFid *Fid,
     BreakCallBack(remote ? NULL : client->host, Fid, 0);
 
     /* Return the updated status back to caller */
-    if (!remote)
+    if (!remote) {
 	GetStatus(targetptr, OutStatus, rights, anyrights, parentwhentargetnotdir);
+	if (repl_checkStash(volptr)) {
+	    update = stashUpdate(RPC_StoreStatus, Fid, NULL, NULL, NULL,
+		    InStatus, NULL, 0, 0, 0, clientViceId, NULL, V_id(volptr),
+		    NULL, NULL);
+	    pthread_setspecific(fs_update, update);
+	}
+    }
 
   Bad_StoreStatus:
     /* Update and store volume/vnode and parent vnodes back */
-    PutVolumePackage(acall, parentwhentargetnotdir, targetptr, (Vnode *) 0,
-		     volptr, &client);
+    PutVolumePackageWithCall(acall, parentwhentargetnotdir, targetptr, (Vnode *) 0,
+		     volptr, &client, NULL, remote);
     ViceLog(2, ("SAFS_StoreStatus returns %d\n", errorCode));
     if (remote)
 	free(client);
@@ -3265,6 +3262,7 @@ SAFSS_RemoveFile(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
     struct client *t_client;	/* tmp ptr to client data */
     struct in_addr logHostAddr;	/* host ip holder for inet_ntoa */
     struct rx_connection *tcon = rx_ConnectionOf(acall);
+    struct updateItem *update;
 
     FidZero(&dir);
     if (!remote) {
@@ -3343,10 +3341,19 @@ SAFSS_RemoveFile(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
     /* break call back on the directory */
     BreakCallBack(remote ? NULL : client->host, DirFid, 0);
 
+    if (!remote) {
+	if (repl_checkStash(volptr)) {
+	    update = stashUpdate(RPC_RemoveFile, DirFid, &fileFid, Name, NULL,
+		    NULL, NULL, 0, 0, 0, clientViceId, NULL, V_id(volptr),
+		    NULL, NULL);
+	    pthread_setspecific(fs_update, update);
+	}
+    }
+
   Bad_RemoveFile:
     /* Update and store volume/vnode and parent vnodes back */
-    PutVolumePackage(acall, parentwhentargetnotdir, targetptr, parentptr,
-		     volptr, &client);
+    PutVolumePackageWithCall(acall, parentwhentargetnotdir, targetptr, parentptr,
+		     volptr, &client, NULL, remote);
     FidZap(&dir);
     ViceLog(2, ("SAFS_RemoveFile returns %d\n", errorCode));
     return errorCode;
@@ -3405,6 +3412,7 @@ SAFSS_CreateFile(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
     struct client *t_client;	/* tmp ptr to client data */
     struct in_addr logHostAddr;	/* host ip holder for inet_ntoa */
     struct rx_connection *tcon = rx_ConnectionOf(acall);
+    struct updateItem *update;
 
     FidZero(&dir);
 
@@ -3465,7 +3473,7 @@ SAFSS_CreateFile(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
 
     /* update the status of the new file's vnode */
     Update_TargetVnodeStatus(targetptr, TVS_CFILE, client, InStatus,
-			     parentptr, volptr, 0, 0);
+	    parentptr, volptr, 0, remote);
 
     rx_KeepAliveOn(acall);
 
@@ -3487,13 +3495,21 @@ SAFSS_CreateFile(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
     /* break call back on parent dir */
     BreakCallBack(remote ? NULL : client->host, DirFid, 0);
 
-    /* Return a callback promise for the newly created file to the caller */
-    SetCallBackStruct(AddCallBack(client->host, OutFid), CallBack);
+    if (!remote) {
+	/* Return a callback promise for the newly created file to the caller */
+	SetCallBackStruct(AddCallBack(client->host, OutFid), CallBack);
+	if (repl_checkStash(volptr)) {
+	    update = stashUpdate(RPC_CreateFile, DirFid, OutFid, Name, NULL,
+		    InStatus, NULL, 0, 0, 0, clientViceId, NULL, V_id(volptr),
+		    NULL, NULL);
+	    pthread_setspecific(fs_update, update);
+	}
+    }
 
   Bad_CreateFile:
     /* Update and store volume/vnode and parent vnodes back */
-    PutVolumePackage(acall, parentwhentargetnotdir, targetptr, parentptr,
-	    volptr, &client);
+    PutVolumePackageWithCall(acall, parentwhentargetnotdir, targetptr, parentptr,
+	    volptr, &client, NULL, remote);
     FidZap(&dir);
     if (remote)
 	free(client);
@@ -3577,6 +3593,8 @@ SAFSS_Rename(struct rx_call *acall, struct AFSFid *OldDirFid, char *OldName,
     struct in_addr logHostAddr;	/* host ip holder for inet_ntoa */
     struct rx_connection *tcon = rx_ConnectionOf(acall);
     afs_ino_str_t stmp;
+    struct updateItem *update;
+    struct AFSFid RenameFid;
 
     FidZero(&olddir);
     FidZero(&newdir);
@@ -3978,6 +3996,11 @@ SAFSS_Rename(struct rx_call *acall, struct AFSFid *OldDirFid, char *OldName,
 	/* convert the write lock to a read lock before breaking callbacks */
 	VVnodeWriteToRead(&errorCode, newfileptr);
 	osi_Assert(!errorCode || errorCode == VSALVAGE);
+	if (remote) {
+	    RenameFid.Volume = newFileFid.Volume;
+	    RenameFid.Vnode = newFileFid.Vnode;
+	    RenameFid.Unique = newFileFid.Unique;
+	}
     }
 
     rx_KeepAliveOn(acall);
@@ -4006,14 +4029,23 @@ SAFSS_Rename(struct rx_call *acall, struct AFSFid *OldDirFid, char *OldName,
 	    BreakCallBack(remote ? NULL : client->host, &newFileFid, 1);
     }
 
+    if (!remote) {
+	if (repl_checkStash(volptr)) {
+	    update = stashUpdate(RPC_Rename, OldDirFid, NewDirFid, OldName, NewName,
+		    NULL, NULL, 0, 0, 0, clientViceId, NULL, V_id(volptr),
+		    NULL, &RenameFid);
+	    pthread_setspecific(fs_update, update);
+	}
+    }
+
   Bad_Rename:
     if (newfileptr) {
 	rx_KeepAliveOff(acall);
 	VPutVnode(&fileCode, newfileptr);
 	osi_Assert(fileCode == 0);
     }
-    (void)PutVolumePackage(acall, fileptr, (newvptr && newvptr != oldvptr ?
-				     newvptr : 0), oldvptr, volptr, &client);
+    PutVolumePackageWithCall(acall, fileptr, (newvptr && newvptr != oldvptr ?
+	    newvptr : 0), oldvptr, volptr, &client, NULL, remote);
     FidZap(&olddir);
     FidZap(&newdir);
     FidZap(&filedir);
@@ -4085,6 +4117,7 @@ SAFSS_Symlink(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
     struct in_addr logHostAddr;	/* host ip holder for inet_ntoa */
     FdHandle_t *fdP;
     struct rx_connection *tcon = rx_ConnectionOf(acall);
+    struct updateItem *update;
 
     FidZero(&dir);
 
@@ -4168,13 +4201,13 @@ SAFSS_Symlink(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
 
     /* update the status of the new symbolic link file vnode */
     Update_TargetVnodeStatus(targetptr, TVS_SLINK, client, InStatus,
-			     parentptr, volptr, strlen((char *)LinkContents), 0);
+			     parentptr, volptr, strlen((char *)LinkContents), remote);
 
     /* Write the contents of the symbolic link name into the target inode */
     fdP = IH_OPEN(targetptr->handle);
     if (fdP == NULL) {
-	(void)PutVolumePackage(acall, parentwhentargetnotdir, targetptr,
-			       parentptr, volptr, &client);
+	PutVolumePackageWithCall(acall, parentwhentargetnotdir, targetptr,
+			       parentptr, volptr, &client, NULL, remote);
 	VTakeOffline(volptr);
 	ViceLog(0, ("Volume %u now offline, must be salvaged.\n",
 		    volptr->hashid));
@@ -4203,10 +4236,19 @@ SAFSS_Symlink(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
     /* break call back on the parent dir */
     BreakCallBack(remote ? NULL : client->host, DirFid, 0);
 
+    if (!remote) {
+	if (repl_checkStash(volptr)) {
+	    update = stashUpdate(RPC_Symlink, DirFid, OutFid, Name, LinkContents,
+		    InStatus, NULL, 0, 0, 0, clientViceId, NULL, V_id(volptr),
+		    NULL, NULL);
+	    pthread_setspecific(fs_update, update);
+	}
+    }
+
   Bad_SymLink:
     /* Write the all modified vnodes (parent, new files) and volume back */
-    (void)PutVolumePackage(acall, parentwhentargetnotdir, targetptr, parentptr,
-			   volptr, &client);
+    PutVolumePackageWithCall(acall, parentwhentargetnotdir, targetptr, parentptr,
+	    volptr, &client, NULL, remote);
     FidZap(&dir);
     if (remote)
 	free(client);
@@ -4274,6 +4316,7 @@ SAFSS_Link(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
     struct client *t_client;	/* tmp ptr to client data */
     struct in_addr logHostAddr;	/* host ip holder for inet_ntoa */
     struct rx_connection *tcon = rx_ConnectionOf(acall);
+    struct updateItem *update;
 
     FidZero(&dir);
 
@@ -4400,10 +4443,19 @@ SAFSS_Link(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
      */
     BreakCallBack(remote ? NULL : client->host, ExistingFid, 0);
 
+    if (!remote) {
+	if (repl_checkStash(volptr)) {
+	    update = stashUpdate(RPC_Link, DirFid, ExistingFid, Name, NULL,
+		    NULL, NULL, 0, 0, 0, clientViceId, NULL, V_id(volptr),
+		    NULL, NULL);
+	    pthread_setspecific(fs_update, update);
+	}
+    }
+
   Bad_Link:
     /* Write the all modified vnodes (parent, new files) and volume back */
-    (void)PutVolumePackage(acall, parentwhentargetnotdir, targetptr, parentptr,
-			   volptr, &client);
+    PutVolumePackageWithCall(acall, parentwhentargetnotdir, targetptr, parentptr,
+	    volptr, &client, NULL, remote);
     FidZap(&dir);
     if (remote)
 	free(client);
@@ -4470,6 +4522,7 @@ SAFSS_MakeDir(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
     struct client *t_client;	/* tmp ptr to client data */
     struct in_addr logHostAddr;	/* host ip holder for inet_ntoa */
     struct rx_connection *tcon = rx_ConnectionOf(acall);
+    struct updateItem *update;
 
     FidZero(&dir);
     FidZero(&parentdir);
@@ -4580,13 +4633,20 @@ SAFSS_MakeDir(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
     BreakCallBack(remote ? NULL : client->host, DirFid, 0);
 
     /* Return a callback promise to caller */
-    if (!remote)
+    if (!remote) {
 	SetCallBackStruct(AddCallBack(client->host, OutFid), CallBack);
+	if (repl_checkStash(volptr)) {
+	    update = stashUpdate(RPC_MakeDir, DirFid, OutFid, Name, NULL,
+		    InStatus, NULL, 0, 0, 0, clientViceId, NULL, V_id(volptr),
+		    NULL, NULL);
+	    pthread_setspecific(fs_update, update);
+	}
+    }
 
   Bad_MakeDir:
     /* Write the all modified vnodes (parent, new files) and volume back */
-    (void)PutVolumePackage(acall, parentwhentargetnotdir, targetptr, parentptr,
-			   volptr, &client);
+    PutVolumePackageWithCall(acall, parentwhentargetnotdir, targetptr, parentptr,
+	    volptr, &client, NULL, remote);
     FidZap(&dir);
     FidZap(&parentdir);
     if (remote)
@@ -4656,6 +4716,7 @@ SAFSS_RemoveDir(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
     struct client *t_client;	/* tmp ptr to client data */
     struct in_addr logHostAddr;	/* host ip holder for inet_ntoa */
     struct rx_connection *tcon = rx_ConnectionOf(acall);
+    struct updateItem *update;
 
     FidZero(&dir);
 
@@ -4731,10 +4792,19 @@ SAFSS_RemoveDir(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
     /* break call back on DirFid and fileFid */
     BreakCallBack(remote ? NULL : client->host, DirFid, 0);
 
+    if (!remote) {
+	if (repl_checkStash(volptr)) {
+	    update = stashUpdate(RPC_RemoveDir, DirFid, &fileFid, Name, NULL,
+		    NULL, NULL, 0, 0, 0, clientViceId, NULL, V_id(volptr),
+		    NULL, NULL);
+	    pthread_setspecific(fs_update, update);
+	}
+    }
+
 Bad_RemoveDir:
     /* Write the all modified vnodes (parent, new files) and volume back */
-    PutVolumePackage(acall, parentwhentargetnotdir, targetptr, parentptr,
-	    volptr, &client);
+    PutVolumePackageWithCall(acall, parentwhentargetnotdir, targetptr, parentptr,
+	    volptr, &client, NULL, remote);
     FidZap(&dir);
     ViceLog(2, ("SAFS_RemoveDir	returns	%d\n", errorCode));
     return errorCode;
@@ -4828,8 +4898,8 @@ SAFSS_SetLock(struct rx_call *acall, struct AFSFid *Fid, ViceLockType type,
 
   Bad_SetLock:
     /* Write the all modified vnodes (parent, new files) and volume back */
-    (void)PutVolumePackage(acall, parentwhentargetnotdir, targetptr,
-			   (Vnode *) 0, volptr, &client);
+    PutVolumePackageWithCall(acall, parentwhentargetnotdir, targetptr,
+	    NULL, volptr, &client, NULL, 0);
 
     if ((errorCode == VREADONLY) && (type == LockRead))
 	errorCode = 0;		/* allow read locks on RO volumes without saving state */
@@ -4926,8 +4996,8 @@ SAFSS_ExtendLock(struct rx_call *acall, struct AFSFid *Fid,
 
   Bad_ExtendLock:
     /* Put back file's vnode and volume */
-    (void)PutVolumePackage(acall, parentwhentargetnotdir, targetptr,
-			   (Vnode *) 0, volptr, &client);
+    PutVolumePackageWithCall(acall, parentwhentargetnotdir, targetptr,
+			   (Vnode *) 0, volptr, &client, NULL, 0);
 
     if ((errorCode == VREADONLY))	/* presumably, we already granted this lock */
 	errorCode = 0;		/* under our generous policy re RO vols */
@@ -5035,8 +5105,8 @@ SAFSS_ReleaseLock(struct rx_call *acall, struct AFSFid *Fid,
 
   Bad_ReleaseLock:
     /* Put back file's vnode and volume */
-    (void)PutVolumePackage(acall, parentwhentargetnotdir, targetptr,
-			   (Vnode *) 0, volptr, &client);
+    PutVolumePackageWithCall(acall, parentwhentargetnotdir, targetptr,
+			   (Vnode *) 0, volptr, &client, NULL, 0);
 
     if ((errorCode == VREADONLY))	/* presumably, we already granted this lock */
 	errorCode = 0;		/* under our generous policy re RO vols */
@@ -6034,8 +6104,8 @@ SRXAFS_GetVolumeStatus(struct rx_call * acall, afs_int32 avolid,
     (void)RXGetVolumeStatus(FetchVolStatus, Name, OfflineMsg, Motd, volptr);
 
   Bad_GetVolumeStatus:
-    (void)PutVolumePackage(acall, parentwhentargetnotdir, targetptr,
-			   (Vnode *) 0, volptr, &client);
+    PutVolumePackageWithCall(acall, parentwhentargetnotdir, targetptr,
+			   (Vnode *) 0, volptr, &client, NULL, 0);
     ViceLog(2, ("SAFS_GetVolumeStatus returns %d\n", errorCode));
     /* next is to guarantee out strings exist for stub */
     if (*Name == 0) {
@@ -6076,6 +6146,7 @@ SAFSS_SetVolumeStatus(struct rx_call *acall, afs_int32 avolid,
     struct client *client = 0;	/* pointer to client entry */
     afs_int32 rights, anyrights;	/* rights for this and any user */
     AFSFid dummyFid;
+    struct updateItem *update;
 
     ViceLog(1, ("SAFS_SetVolumeStatus for volume %u\n", avolid));
 
@@ -6107,9 +6178,18 @@ SAFSS_SetVolumeStatus(struct rx_call *acall, afs_int32 avolid,
     errorCode =
 	RXUpdate_VolumeStatus(volptr, StoreVolStatus, Name, OfflineMsg, Motd);
 
+    if (!errorCode && !remote) {
+	if (repl_checkStash(volptr)) {
+	    update = stashUpdate(RPC_SetVolumeStatus, NULL, NULL, Name, OfflineMsg,
+		    NULL, NULL, 0, 0, 0, clientViceId, NULL, V_id(volptr),
+		    StoreVolStatus, NULL);
+	    pthread_setspecific(fs_update, update);
+	}
+    }
+
   Bad_SetVolumeStatus:
-    PutVolumePackage(acall, parentwhentargetnotdir, targetptr, (Vnode *) 0,
-		     volptr, &client);
+    PutVolumePackageWithCall(acall, parentwhentargetnotdir, targetptr, (Vnode *) 0,
+		     volptr, &client, NULL, remote);
     ViceLog(2, ("SAFS_SetVolumeStatus returns %d\n", errorCode));
 
     return (errorCode);
