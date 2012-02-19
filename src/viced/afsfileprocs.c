@@ -2816,6 +2816,8 @@ SAFSS_StoreData64(struct rx_call *acall, struct AFSFid *Fid,
     afs_sfsize_t bytesXferred;
     static int remainder = 0;
     struct rx_connection *tcon = rx_ConnectionOf(acall);
+    struct updateItem *update;
+    char *rbuf = NULL;
 
     if (!remote) {
 	/* Get ptr to client data for user Id for logging */
@@ -2879,8 +2881,8 @@ SAFSS_StoreData64(struct rx_call *acall, struct AFSFid *Fid,
 
     errorCode =
 	StoreData_RXStyle(volptr, targetptr, Fid, client, acall, Pos, Length,
-			  FileLength, (InStatus->Mask & AFS_FSYNC),
-			  &bytesToXfer, &bytesXferred, remote, NULL);
+		FileLength, (InStatus->Mask & AFS_FSYNC),
+		&bytesToXfer, &bytesXferred, remote, &rbuf);
 
     fsstats_FinishXfer(&fsstats, errorCode, bytesToXfer, bytesXferred,
 		       &remainder);
@@ -2901,8 +2903,15 @@ SAFSS_StoreData64(struct rx_call *acall, struct AFSFid *Fid,
     rx_KeepAliveOn(acall);
 
     /* Get the updated File's status back to the caller */
-    if (!remote)
+    if (!remote) {
 	GetStatus(targetptr, OutStatus, rights, anyrights, &tparentwhentargetnotdir);
+	if (repl_checkStash(volptr)) {
+	    update = stashUpdate(RPC_StoreData64, Fid, NULL, NULL, NULL,
+		    InStatus, NULL, Pos, Length, FileLength, clientViceId,
+		    rbuf, V_id(volptr), NULL, NULL);
+	    pthread_setspecific(fs_update, update);
+	}
+    }
 
   Bad_StoreData:
     /* Update and store volume/vnode and parent vnodes back */
@@ -3065,7 +3074,7 @@ SAFSS_StoreACL(struct rx_call *acall, struct AFSFid *Fid,
 	    update = stashUpdate(RPC_StoreACL, Fid, NULL, NULL, NULL, NULL,
 		    AccessList, 0, 0, 0, t_client->ViceId, NULL, V_id(volptr), NULL, NULL);
 	    pthread_setspecific(fs_update, update);
-	};
+	}
     }
 
 Bad_StoreACL:
@@ -3981,6 +3990,11 @@ SAFSS_Rename(struct rx_call *acall, struct AFSFid *OldDirFid, char *OldName,
     }
     if (newfileptr && doDelete) {
 	DeleteFileCallBacks(&newFileFid);	/* no other references */
+	if (!remote) {
+	    RenameFid.Volume = newFileFid.Volume;
+	    RenameFid.Vnode = newFileFid.Vnode;
+	    RenameFid.Unique = newFileFid.Unique;
+	}
     }
 
     DFlush();
@@ -3996,11 +4010,6 @@ SAFSS_Rename(struct rx_call *acall, struct AFSFid *OldDirFid, char *OldName,
 	/* convert the write lock to a read lock before breaking callbacks */
 	VVnodeWriteToRead(&errorCode, newfileptr);
 	osi_Assert(!errorCode || errorCode == VSALVAGE);
-	if (remote) {
-	    RenameFid.Volume = newFileFid.Volume;
-	    RenameFid.Vnode = newFileFid.Vnode;
-	    RenameFid.Unique = newFileFid.Unique;
-	}
     }
 
     rx_KeepAliveOn(acall);
@@ -6768,7 +6777,7 @@ StoreData_RXStyle(Volume *volptr, Vnode *targetptr, struct AFSFid *Fid,
     } else {
 	/* have some data to copy */
 	(*a_bytesToStoreP) = Length;
-	if (remote && rbuf) {
+	if (!remote && rbuf) {
 	    *rbuf = malloc(Length);
 	    if (!*rbuf)
 		ViceLog(0, ("StoreData_RXStyle: Warning: allocation of remote buffer failed\n"));
@@ -6798,7 +6807,7 @@ StoreData_RXStyle(Volume *volptr, Vnode *targetptr, struct AFSFid *Fid,
 	    rlen = errorCode;
 #ifndef HAVE_PIOV
 	    nBytes = FDH_PWRITE(fdP, tbuffer, rlen, Pos);
-	    if (remote && rbuf) {
+	    if (!remote && rbuf) {
 		if (*rbuf) {
 		    memcpy(rpos, tbuffer, rlen);
 		    rpos += rlen;
@@ -6806,7 +6815,7 @@ StoreData_RXStyle(Volume *volptr, Vnode *targetptr, struct AFSFid *Fid,
 	    }
 #else /* HAVE_PIOV */
 	    nBytes = FDH_PWRITEV(fdP, tiov, tnio, Pos);
-	    if (remote && rbuf) {
+	    if (!remote && rbuf) {
 		if (*rbuf) {
 		    int io;
 		    for (io = 0; io < tnio; io++) {

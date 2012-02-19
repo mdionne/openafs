@@ -243,6 +243,34 @@ SREPL_Link(struct rx_call *acall, struct AFSFid *DirFid, char *Name,
 	    &OutDirStatus, &Sync, 1, clientViceId);
 }
 
+static afs_int32
+repl_StoreData64(struct rx_connection *rcon, struct AFSFid *Fid,
+	struct AFSStoreStatus *InStatus, afs_uint64 Pos, afs_uint64 Length,
+	afs_uint64 FileLength, afs_int32 clientViceId, char *StoreBuffer)
+{
+    struct rx_call *call;
+    unsigned long bytes;
+    char *pos;
+    int code;
+
+    call = rx_NewCall(rcon);
+    code = StartREPL_StoreData64(call, Fid, InStatus, Pos, Length, FileLength, clientViceId);
+    /* Loop, sending data with rx_Write */
+    pos = StoreBuffer;
+    while (Length > 0) {
+	bytes = rx_Write(call, pos, Length);
+	if (bytes != Length) {
+	    code = rx_Error(call);
+	    break;
+	}
+	Length -= bytes;
+	pos += bytes;
+    }
+    code = EndREPL_StoreData64(call);
+    code = rx_EndCall(call, code);
+    return code;
+}
+
 static int
 repl_fidmatch(struct AFSFid fid1, struct AFSFid fid2) {
     if (fid1.Vnode == 0 || fid2.Vnode == 0)
@@ -348,6 +376,12 @@ repl_depends_on(struct updateItem *it1, struct updateItem *it2) {
 			it2->rpcId == RPC_RemoveFile ||
 			it2->rpcId == RPC_RemoveDir ||
 			it2->rpcId == RPC_MakeDir))
+		    return 1;
+		if (repl_fidmatch(it1->fid2, it2->fid1) &&
+			it2->rpcId == RPC_Rename)
+		    return 1;
+		if (repl_fidmatch(it1->fid2, it2->fid2) &&
+			it2->rpcId == RPC_Rename)
 		    return 1;
 		break;
 	case RPC_Rename:
@@ -581,11 +615,10 @@ restart:
 				item->clientViceId);
 			break;
 		    case RPC_StoreData64:
-/*
-			ret = rw_StoreData64(rcon, &item->fid1, &item->status, item->pos,
+ViceLog(0, ("PostProc, buf is: %p\n", item->storeBuf));
+			ret = repl_StoreData64(rcon, &item->fid1, &item->status, item->pos,
 				item->length, item->fileLength, item->clientViceId,
 				item->storeBuf);
-*/
 			ret = 0;
 			break;
 		    case RPC_RemoveDir:
